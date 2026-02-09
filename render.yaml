@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: tz-generator-backend
+    env: docker
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /docs
+    envVars:
+      - key: PORT
+        value: 8000

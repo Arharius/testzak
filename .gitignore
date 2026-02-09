@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+node_modules/
+.next/
+out/
+.env
+temp/
+debug_*.png
+error_*.png
+*.docx

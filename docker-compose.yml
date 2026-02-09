@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: tz-generator-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/temp:/app/temp
+    restart: always
+
+  frontend:
+    build: ./frontend
+    container_name: tz-generator-frontend
+    ports:
+      - "3000:3000"
+    restart: always
+    environment:
+      # In production, Next.js executes on the server side, so it needs to know how to reach backend internally
+      # We might need a reverse proxy (Nginx) later, but for simple deployment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      # Note: Client-side fetches need public URL. Server-side fetches need internal URL.
+      # For this simple prototype, client-side fetching to localhost is assumed for local use,
+      # BUT for a real server, this must be the domain name or IP.

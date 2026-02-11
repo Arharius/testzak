@@ -260,6 +260,37 @@ async def scrape_dns(product_name: str):
                          }
                      ]
 
+                 # 4. PC / System Unit Mock
+                 elif any(x in p_lower for x in ['пк', 'pc', 'системный блок', 'компьютер', 'cube', 'box', 'nettop', 'неттоп', 'десктоп']):
+                     return [
+                         {
+                             "group": "Основные характеристики",
+                             "specs": [
+                                 {"name": "Тип оборудования", "value": "Персональный компьютер"},
+                                 {"name": "Форм-фактор корпуса", "value": "Mini-Tower / Mini-PC"},
+                                 {"name": "Процессор", "value": "Intel Core / AMD Ryzen (современный)"},
+                                 {"name": "Количество ядер", "value": "не менее 6"},
+                                 {"name": "Оперативная память", "value": "не менее 16 Гб DDR4/DDR5"},
+                                 {"name": "Накопитель", "value": "SSD не менее 512 Гб"}
+                             ]
+                         },
+                         {
+                             "group": "Видеосистема",
+                             "specs": [
+                                 {"name": "Тип видеокарты", "value": "Дискретная или встроенная"},
+                                 {"name": "Видеоразъемы", "value": "HDMI, DisplayPort"}
+                             ]
+                         },
+                         {
+                             "group": "Интерфейсы",
+                             "specs": [
+                                 {"name": "Порты USB", "value": "не менее 4 шт (USB 3.0+)"},
+                                 {"name": "Сетевой интерфейс", "value": "LAN 1000 Мбит/с"},
+                                 {"name": "Беспроводная связь", "value": "Wi-Fi (опционально)"}
+                             ]
+                         }
+                     ]
+
                  # Default: Keyboard Mock (Procurement Style)
                  else:
                      return [

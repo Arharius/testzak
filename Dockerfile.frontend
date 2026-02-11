@@ -5,6 +5,7 @@ COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ . 
 # Note: COPY frontend/ . copies contents of frontend/ to /app/.
+# So source code is in /app (e.g. /app/src, /app/public, etc)
 
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL

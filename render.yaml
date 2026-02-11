@@ -2,7 +2,7 @@ services:
   - type: web
     name: tz-generator-backend
     env: docker
-    dockerfilePath: backend/Dockerfile
+    dockerfilePath: Dockerfile.backend
     plan: free
     healthCheckPath: /docs
     envVars:
@@ -18,7 +18,7 @@ services:
   - type: web
     name: tz-generator-frontend
     env: docker
-    dockerfilePath: frontend/Dockerfile
+    dockerfilePath: Dockerfile.frontend
     plan: free
     envVars:
       - key: NEXT_PUBLIC_API_URL

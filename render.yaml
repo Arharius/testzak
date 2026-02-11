@@ -17,8 +17,6 @@ services:
 
   - type: web
     name: tz-generator-frontend
-  - type: web
-    name: tz-generator-frontend
     env: docker
     dockerfilePath: frontend/Dockerfile
     plan: free

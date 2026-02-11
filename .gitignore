@@ -10,3 +10,9 @@ temp/
 debug_*.png
 error_*.png
 *.docx
+*.log
+*.db
+backend/tz_generator.db
+frontend/frontend.log
+backend/backend.log
+test_*.py

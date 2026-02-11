@@ -147,59 +147,149 @@ async def scrape_dns(product_name: str):
                  
                  # 1. Laptop Mock (Procurement Style)
                  if any(x in p_lower for x in ['ноутбук', 'laptop', 'macbook', 'гравитон']):
-                     return {
-                         "Тип оборудования": "Ноутбук",
-                         "Центральный процессор": "Архитектура x86-64, Количество ядер не менее 4, Базовая частота не менее 2.4 ГГц",
-                         "Оперативная память": "Объем не менее 16 Гб, Тип DDR4 или выше",
-                         "Накопитель данных": "Тип SSD, Объем не менее 512 Гб",
-                         "Экран": "Диагональ не менее 15.6 дюймов, Разрешение не менее 1920x1080 (FHD), Матрица IPS или эквивалент",
-                         "Видеоадаптер": "Интегрированный или дискретный",
-                         "Беспроводная связь": "Поддержка Wi-Fi 802.11ac (Wi-Fi 5) или новее, Bluetooth 5.0 или новее",
-                         "Интерфейсы": "USB 3.x Type-A (не менее 2 шт), HDMI (не менее 1 шт), Audio Jack 3.5mm",
-                         "Веб-камера": "Встроенная, разрешение не менее 720p",
-                         "Операционная система": "Предустановленная ОС, включенная в единый реестр российских программ (или эквивалент)",
-                         "Вес": "Не более 1.8 кг"
-                     }
-                 
+                     return [
+                         {
+                             "group": "Основные характеристики",
+                             "specs": [
+                                 {"name": "Тип оборудования", "value": "Ноутбук"},
+                                 {"name": "Архитектура процессора", "value": "x86-64"},
+                                 {"name": "Количество ядер процессора", "value": "не менее 4"},
+                                 {"name": "Базовая частота процессора", "value": "не менее 2.4 ГГц"},
+                                 {"name": "Объем оперативной памяти", "value": "не менее 16 Гб"},
+                                 {"name": "Тип оперативной памяти", "value": "DDR4 или выше"},
+                                 {"name": "Тип накопителя", "value": "SSD"},
+                                 {"name": "Объем накопителя", "value": "не менее 512 Гб"}
+                             ]
+                         },
+                         {
+                             "group": "Экран",
+                             "specs": [
+                                 {"name": "Диагональ экрана", "value": "не менее 15.6 дюймов"},
+                                 {"name": "Разрешение экрана", "value": "не менее 1920x1080 (FHD)"},
+                                 {"name": "Тип матрицы", "value": "IPS или эквивалент"}
+                             ]
+                         },
+                         {
+                             "group": "Видео и графика",
+                             "specs": [
+                                 {"name": "Тип видеоадаптера", "value": "Интегрированный или дискретный"}
+                             ]
+                         },
+                         {
+                             "group": "Сетевые интерфейсы",
+                             "specs": [
+                                 {"name": "Wi-Fi", "value": "802.11ac (Wi-Fi 5) или новее"},
+                                 {"name": "Bluetooth", "value": "5.0 или новее"}
+                             ]
+                         },
+                         {
+                             "group": "Порты и разъёмы",
+                             "specs": [
+                                 {"name": "Количество портов USB 3.x Type-A", "value": "не менее 2 шт"},
+                                 {"name": "Количество портов HDMI", "value": "не менее 1 шт"},
+                                 {"name": "Audio Jack", "value": "3.5mm"}
+                             ]
+                         },
+                         {
+                             "group": "Дополнительно",
+                             "specs": [
+                                 {"name": "Веб-камера", "value": "Встроенная"},
+                                 {"name": "Разрешение веб-камеры", "value": "не менее 720p"},
+                                 {"name": "Операционная система", "value": "Предустановленная ОС"},
+                                 {"name": "Реестр ОС", "value": "Включена в единый реестр российских программ (или эквивалент)"},
+                                 {"name": "Вес", "value": "не более 1.8 кг"}
+                             ]
+                         }
+                     ]
+
                  # 2. Monitor Mock (Procurement Style)
                  elif any(x in p_lower for x in ['монитор', 'monitor', 'display', 'экран']):
-                     return {
-                         "Тип оборудования": "Монитор",
-                         "Диагональ экрана": "Не менее 27 дюймов",
-                         "Разрешение экрана": "Не менее 1920x1080 пикселей",
-                         "Тип матрицы": "IPS или VA",
-                         "Частота обновления": "Не менее 75 Гц",
-                         "Яркость": "Не менее 250 Кд/м²",
-                         "Видеоразъемы": "Наличие HDMI (не менее 1), наличие DisplayPort или VGA",
-                         "Регулировка подставки": "Наклон (Tilt)",
-                         "Комплектация": "Кабель питания, кабель HDMI"
-                     }
+                     return [
+                         {
+                             "group": "Основные характеристики",
+                             "specs": [
+                                 {"name": "Тип оборудования", "value": "Монитор"},
+                                 {"name": "Диагональ экрана", "value": "не менее 27 дюймов"},
+                                 {"name": "Разрешение экрана", "value": "не менее 1920x1080 пикселей"},
+                                 {"name": "Тип матрицы", "value": "IPS или VA"}
+                             ]
+                         },
+                         {
+                             "group": "Технические характеристики",
+                             "specs": [
+                                 {"name": "Частота обновления", "value": "не менее 75 Гц"},
+                                 {"name": "Яркость", "value": "не менее 250 Кд/м²"}
+                             ]
+                         },
+                         {
+                             "group": "Подключение и комплектация",
+                             "specs": [
+                                 {"name": "Количество портов HDMI", "value": "не менее 1 шт"},
+                                 {"name": "DisplayPort или VGA", "value": "наличие"},
+                                 {"name": "Регулировка подставки", "value": "Наклон (Tilt)"},
+                                 {"name": "Кабель питания", "value": "наличие"},
+                                 {"name": "Кабель HDMI", "value": "наличие"}
+                             ]
+                         }
+                     ]
 
                  # 3. Mouse Mock (Procurement Style)
                  elif any(x in p_lower for x in ['мышь', 'mouse', 'logitech g', 'razer']):
-                     return {
-                         "Тип манипулятора": "Мышь компьютерная",
-                         "Тип сенсора": "Оптический светодиодный",
-                         "Разрешение сенсора": "Не менее 8000 dpi",
-                         "Количество кнопок": "Не менее 6",
-                         "Интерфейс подключения": "USB Type-A",
-                         "Длина кабеля": "Не менее 1.8 м",
-                         "Особенности": "Наличие RGB подсветки (отключаемой)"
-                     }
+                     return [
+                         {
+                             "group": "Основные характеристики",
+                             "specs": [
+                                 {"name": "Тип манипулятора", "value": "Мышь компьютерная"},
+                                 {"name": "Тип сенсора", "value": "Оптический светодиодный"},
+                                 {"name": "Разрешение сенсора", "value": "не менее 8000 dpi"},
+                                 {"name": "Количество кнопок", "value": "не менее 6"}
+                             ]
+                         },
+                         {
+                             "group": "Подключение",
+                             "specs": [
+                                 {"name": "Интерфейс подключения", "value": "USB Type-A"},
+                                 {"name": "Длина кабеля", "value": "не менее 1.8 м"}
+                             ]
+                         },
+                         {
+                             "group": "Дополнительно",
+                             "specs": [
+                                 {"name": "RGB подсветка", "value": "наличие (отключаемая)"}
+                             ]
+                         }
+                     ]
 
                  # Default: Keyboard Mock (Procurement Style)
                  else:
-                     return {
-                         "Тип устройства": "Клавиатура проводная",
-                         "Форм-фактор": "Полноразмерная (с цифровым блоком)",
-                         "Тип клавиш": "Мембранные",
-                         "Количество клавиш": "Не менее 104",
-                         "Интерфейс подключения": "USB",
-                         "Защита от попадания влаги": "Наличие",
-                         "Длина кабеля": "Не менее 1.5 метра",
-                         "Цвет": "Черный",
-                         "Совместимость": "Windows, Linux"
-                     }
+                     return [
+                         {
+                             "group": "Основные характеристики",
+                             "specs": [
+                                 {"name": "Тип устройства", "value": "Клавиатура проводная"},
+                                 {"name": "Форм-фактор", "value": "Полноразмерная (с цифровым блоком)"},
+                                 {"name": "Тип клавиш", "value": "Мембранные"},
+                                 {"name": "Количество клавиш", "value": "не менее 104"}
+                             ]
+                         },
+                         {
+                             "group": "Подключение",
+                             "specs": [
+                                 {"name": "Интерфейс подключения", "value": "USB"},
+                                 {"name": "Длина кабеля", "value": "не менее 1.5 м"}
+                             ]
+                         },
+                         {
+                             "group": "Физические параметры",
+                             "specs": [
+                                 {"name": "Защита от попадания влаги", "value": "наличие"},
+                                 {"name": "Цвет", "value": "Черный"},
+                                 {"name": "Совместимость с Windows", "value": "да"},
+                                 {"name": "Совместимость с Linux", "value": "да"}
+                             ]
+                         }
+                     ]
+
 
             # 3. Navigate to the found product page
             print(f"Navigating to product page: {target_url}")
@@ -230,31 +320,58 @@ async def scrape_dns(product_name: str):
                 # Could be a captcha or layout change
                 pass
             
-            # 3. Extract Specs
-            specs = {}
-            # Re-check selectors
-            spec_items = await page.query_selector_all('.product-characteristics__spec')
+            # 3. Extract Specs (Grouped)
+            specs = []
             
-            if not spec_items:
-                print("No spec items found on page.")
+            # Check for groups
+            groups = await page.query_selector_all('.product-characteristics__group')
             
-            for item in spec_items:
-                name_el = await item.query_selector('.product-characteristics__spec-title')
-                value_el = await item.query_selector('.product-characteristics__spec-value')
-                
-                if name_el and value_el:
-                    name = await name_el.inner_text()
-                    value = await value_el.inner_text()
-                    # Clean up
-                    name = name.strip()
-                    value = value.strip()
-                    if name and value:
-                        specs[name] = value
+            if groups:
+                print(f"Found {len(groups)} spec groups.")
+                for group in groups:
+                    group_data = {"group": "Общие", "specs": []}
+                    title_el = await group.query_selector('.product-characteristics__group-title')
+                    if title_el:
+                        group_data["group"] = (await title_el.inner_text()).strip()
+                    
+                    spec_items = await group.query_selector_all('.product-characteristics__spec')
+                    for item in spec_items:
+                        name_el = await item.query_selector('.product-characteristics__spec-title')
+                        value_el = await item.query_selector('.product-characteristics__spec-value')
+                        
+                        if name_el and value_el:
+                            name = await name_el.inner_text()
+                            value = await value_el.inner_text()
+                            
+                            group_data["specs"].append({
+                                "name": name.strip(),
+                                "value": value.strip()
+                            })
+                    
+                    if group_data["specs"]:
+                        specs.append(group_data)
+            else:
+                # Fallback to flat list if no groups found (or different layout)
+                print("No groups found, falling back to flat list...")
+                spec_items = await page.query_selector_all('.product-characteristics__spec')
+                flat_specs = []
+                for item in spec_items:
+                    name_el = await item.query_selector('.product-characteristics__spec-title')
+                    value_el = await item.query_selector('.product-characteristics__spec-value')
+                    
+                    if name_el and value_el:
+                         name = await name_el.inner_text()
+                         value = await value_el.inner_text()
+                         flat_specs.append({
+                             "name": name.strip(),
+                             "value": value.strip()
+                         })
+                if flat_specs:
+                    specs.append({"group": "Характеристики", "specs": flat_specs})
             
-            print(f"--- Extracted {len(specs)} Specifications ---")
-            for k, v in list(specs.items())[:5]: # Print first 5
-                print(f"{k}: {v}")
-                
+            print(f"--- Extracted {len(specs)} Groups ---")
+            
+            # Update return type to match new structure
             return specs
 
         except Exception as e:

@@ -1,3 +1,6 @@
+pytest
+pytest-asyncio
+httpx
 fastapi
 uvicorn
 python-docx
@@ -6,3 +9,6 @@ playwright-stealth
 duckduckgo-search
 python-multipart
 thefuzz
+sqlalchemy
+python-jose[cryptography]
+bcrypt

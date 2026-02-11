@@ -8,3 +8,23 @@ services:
     envVars:
       - key: PORT
         value: 8000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///./data/tz_generator.db
+    disk:
+      name: sqlite-data
+      mountPath: /app/data
+      sizeGB: 1
+
+  - type: web
+    name: tz-generator-frontend
+    env: docker
+    dockerContext: ./frontend
+    plan: free
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: tz-generator-backend
+          property: url

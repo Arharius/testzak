@@ -11,11 +11,9 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: DATABASE_URL
-        value: sqlite:///./data/tz_generator.db
-    disk:
-      name: sqlite-data
-      mountPath: /app/data
-      sizeGB: 1
+        fromDatabase:
+          name: tz-db
+          property: connectionString
 
   - type: web
     name: tz-generator-frontend
@@ -24,7 +22,10 @@ services:
     plan: free
     envVars:
       - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: tz-generator-backend
-          property: url
+        value: https://tz-generator-backend.onrender.com
+
+databases:
+  - name: tz-db
+    plan: free
+    databaseName: tz_generator
+    user: tz_user

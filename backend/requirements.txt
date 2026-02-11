@@ -12,3 +12,4 @@ thefuzz
 sqlalchemy
 python-jose[cryptography]
 bcrypt
+psycopg2-binary

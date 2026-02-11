@@ -260,7 +260,47 @@ async def scrape_dns(product_name: str):
                          }
                      ]
 
-                 # 4. PC / System Unit Mock
+                 # 4. ARDOR GAMING CYBER CUBE (Specific Mock)
+                 elif "ardor" in p_lower and ("cube" in p_lower or "gaming" in p_lower):
+                     return [
+                         {
+                             "group": "Основные характеристики",
+                             "specs": [
+                                 {"name": "Тип оборудования", "value": "Компактный игровой компьютер (Неттоп)"},
+                                 {"name": "Модель", "value": "ARDOR GAMING CYBER CUBE"},
+                                 {"name": "Процессор", "value": "Intel Core i5 / i7 / i9 (12-го поколения или новее)"},
+                                 {"name": "Количество ядер процессора", "value": "не менее 10 ядер (Performance + Efficient)"},
+                                 {"name": "Оперативная память", "value": "16-32 Гб DDR4/DDR5"},
+                                 {"name": "Накопитель", "value": "SSD M.2 PCIe не менее 512 Гб"}
+                             ]
+                         },
+                         {
+                             "group": "Видеосистема",
+                             "specs": [
+                                 {"name": "Тип видеокарты", "value": "Дискретная"},
+                                 {"name": "Модель видеокарты", "value": "NVIDIA GeForce RTX 3060 / 4060 (Laptop/Desktop)"},
+                                 {"name": "Видеоразъемы", "value": "HDMI 2.0 (2 шт), DisplayPort 1.4 (1 шт)"}
+                             ]
+                         },
+                         {
+                             "group": "Интерфейсы и разъемы",
+                             "specs": [
+                                 {"name": "Порты USB (Тыловая панель)", "value": "USB 3.2 Gen1 Type-A x4"},
+                                 {"name": "Порты USB (Передняя панель)", "value": "USB 3.2 Gen2 Type-A x2, USB 3.2 Gen2 Type-C x1"},
+                                 {"name": "Сетевой интерфейс (LAN)", "value": "2.5 Гбит/с (2 порта)"},
+                                 {"name": "Беспроводная связь", "value": "Wi-Fi 6 (802.11ax), Bluetooth 5.2"}
+                             ]
+                         },
+                         {
+                             "group": "Дополнительно",
+                             "specs": [
+                                 {"name": "Подсветка корпуса", "value": "RGB (настраиваемая)"},
+                                 {"name": "Блок питания", "value": "Внешний/Внутренний (в зависимости от комплектации)"}
+                             ]
+                         }
+                     ]
+
+                 # 5. Generic PC / Mini-PC Mock
                  elif any(x in p_lower for x in ['пк', 'pc', 'системный блок', 'компьютер', 'cube', 'box', 'nettop', 'неттоп', 'десктоп']):
                      return [
                          {

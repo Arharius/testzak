@@ -400,7 +400,7 @@ export default function Home() {
                                     whiteSpace: 'nowrap',
                                 }}
                             >
-                                {loading ? '⏳ Поиск...' : 'Найти'}
+                                {loading ? '⏳ Поиск (до 45с)...' : 'Найти'}
                             </button>
                         </form>
                     </section>

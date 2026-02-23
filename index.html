@@ -1733,6 +1733,7 @@ function addGoodsRow(type, model, qty) {
         oninput="autoDetectGoodsType(${id}, this.value)"
         onkeydown="if(event.key==='Enter') generateTZ()"
       />
+      <div id="goods-suggestions-${id}" style="display:none;margin-top:6px;"></div>
     </td>
     <td style="padding:4px 6px;text-align:center;">
       <input
@@ -1781,15 +1782,17 @@ function openRowDropdown(id) {
   const searchEl = document.getElementById('goods-search-' + id);
   // Перестраиваем только если закрыт (или пустой)
   if (dd.style.display === 'block' && dd.innerHTML) return;
-  // Очищаем поле чтобы пользователь мог сразу набирать фильтр
-  searchEl.value = '';
+  // Не очищаем поле на фокусе — иначе ввод "прыгает" и неудобно редактировать.
+  const currentFilter = (searchEl.value || '').trim();
   searchEl.placeholder = GOODS_CATALOG[curVal]?.name || 'Начните вводить...';
-  dd.innerHTML = buildRowDropdownHTML(id, '', curVal);
+  dd.innerHTML = buildRowDropdownHTML(id, currentFilter, curVal);
   dd.style.display = 'block';
   searchEl.style.borderColor = '#0f6c8a';
   // Прокручиваем к активному элементу
   setTimeout(() => {
-    const active = dd.querySelector('[data-value="' + curVal + '"]');
+    const active = currentFilter
+      ? dd.querySelector('.combo-item')
+      : dd.querySelector('[data-value="' + curVal + '"]');
     if (active) active.scrollIntoView({ block: 'nearest' });
   }, 0);
 }
@@ -2250,6 +2253,123 @@ async function fetchInternetHints(query) {
   return INTERNET_LOOKUP_CACHE[key];
 }
 
+function hideRowSuggestions(rowId) {
+  const box = document.getElementById('goods-suggestions-' + rowId);
+  if (!box) return;
+  box.style.display = 'none';
+  box.innerHTML = '';
+}
+
+function applyInternetSuggestion(rowId, idx) {
+  const bucket = window.__internetCandidatesByRow || {};
+  const list = bucket[rowId] || [];
+  const c = list[idx];
+  if (!c) return;
+  if (c.type) applyDetectedGoodsType(rowId, c.type, 'rules');
+  const modelEl = document.getElementById('goods-model-' + rowId);
+  if (modelEl && c.model && c.model.trim()) modelEl.value = c.model.trim();
+  const statusEl = document.getElementById('goods-status-' + rowId);
+  if (statusEl) statusEl.innerHTML = '<span style="font-size:12px;color:#059669;">✅ Выбрано</span>';
+  hideRowSuggestions(rowId);
+}
+
+function showRowSuggestions(rowId, candidates) {
+  const box = document.getElementById('goods-suggestions-' + rowId);
+  if (!box || !Array.isArray(candidates) || candidates.length === 0) return;
+  window.__internetCandidatesByRow = window.__internetCandidatesByRow || {};
+  window.__internetCandidatesByRow[rowId] = candidates;
+  const items = candidates.slice(0, 6).map((c, i) => {
+    const t = GOODS_CATALOG[c.type]?.name || c.type || 'Неизвестный тип';
+    const m = escHtml(c.model || '');
+    const reason = c.reason ? `<div style="font-size:11px;color:#6b7280;margin-top:2px;">${escHtml(c.reason)}</div>` : '';
+    return `
+      <button type="button" onclick="applyInternetSuggestion(${rowId}, ${i})"
+        style="width:100%;text-align:left;padding:7px 9px;border:1px solid #d7e3ef;background:#fff;border-radius:7px;cursor:pointer;margin-top:5px;">
+        <div style="font-size:12px;font-weight:700;color:#0f4e79;">${escHtml(t)}</div>
+        <div style="font-size:12px;color:#111;">${m || 'Без уточнения модели'}</div>
+        ${reason}
+      </button>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div style="padding:7px 9px;border:1px solid #cddfed;border-radius:8px;background:#f7fbff;">
+      <div style="font-size:11px;font-weight:700;color:#0f4e79;text-transform:uppercase;letter-spacing:.3px;">Найдено несколько вариантов — выберите</div>
+      ${items}
+      <button type="button" onclick="hideRowSuggestions(${rowId})"
+        style="margin-top:6px;font-size:11px;background:none;border:none;color:#6b7280;cursor:pointer;padding:0;">Скрыть</button>
+    </div>`;
+  box.style.display = 'block';
+}
+
+function buildHeuristicCandidates(query, hints) {
+  const combined = normalizeDetectText(`${query || ''} ${hints || ''}`);
+  if (!combined) return [];
+  const scores = Object.create(null);
+
+  for (const [key, type] of MODEL_TO_TYPE_NORMALIZED) {
+    if (hasDetectMatch(combined, key)) {
+      scores[type] = (scores[type] || 0) + (key.length >= 6 ? 3 : 1);
+    }
+  }
+
+  // Для неоднозначных брендов расширяем список вариантов.
+  if (/(^|\s)(гравитон|graviton)(\s|$)/i.test(combined)) {
+    scores.laptop = (scores.laptop || 0) + 3;
+    scores.pc = (scores.pc || 0) + 2;
+    scores.server = (scores.server || 0) + 2;
+  }
+  if (/(^|\s)(depo|депо)(\s|$)/i.test(combined)) {
+    scores.server = (scores.server || 0) + 3;
+    scores.pc = (scores.pc || 0) + 2;
+    scores.laptop = (scores.laptop || 0) + 1;
+    scores.printer = (scores.printer || 0) + 1;
+  }
+
+  return Object.entries(scores)
+    .filter(([type]) => GOODS_CATALOG[type])
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([type]) => ({ type, model: query, reason: 'Автоподбор по названию/поиску' }));
+}
+
+async function buildAICandidates(query, hints) {
+  const apiKey = document.getElementById('apiKey')?.value?.trim();
+  const provider = document.getElementById('apiProvider')?.value;
+  const aiModel = document.getElementById('modelSelect')?.value;
+  if (!apiKey || !provider || !aiModel) return [];
+
+  const catalogHint = Object.entries(GOODS_CATALOG)
+    .map(([k, v]) => `${k}: ${v.name}`)
+    .join('; ');
+
+  const prompt = `Ты классификатор товаров для закупок.
+Запрос пользователя: "${query}".
+Интернет-подсказки: "${cutText(hints, 1500)}".
+Каталог типов: ${catalogHint}
+Верни только JSON-массив (без markdown) из 1..6 объектов вида:
+{"type":"<ключ_каталога>","model":"<уточненная модель>","reason":"<кратко>"}.
+Если тип неясен, верни несколько вероятных вариантов.`;
+
+  try {
+    const text = await callAI(prompt, apiKey, provider, aiModel);
+    const jsonStart = text.indexOf('[');
+    const jsonEnd = text.lastIndexOf(']');
+    if (jsonStart === -1 || jsonEnd === -1 || jsonEnd <= jsonStart) return [];
+    const arr = JSON.parse(text.slice(jsonStart, jsonEnd + 1));
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter(x => x && GOODS_CATALOG[x.type])
+      .slice(0, 6)
+      .map(x => ({
+        type: x.type,
+        model: String(x.model || query || '').trim(),
+        reason: String(x.reason || 'Подбор через ИИ').trim()
+      }));
+  } catch (_) {
+    return [];
+  }
+}
+
 async function enrichRowsFromInternet() {
   const rows = Array.from(document.querySelectorAll('#goods-rows tr'));
   if (!rows.length) {
@@ -2269,6 +2389,7 @@ async function enrichRowsFromInternet() {
     if (!modelEl || !typeSearchEl || !statusEl) continue;
 
     const query = modelEl.value.trim() || typeSearchEl.value.trim();
+    hideRowSuggestions(id);
     if (!query) {
       statusEl.innerHTML = '<span style="font-size:12px;color:#9ca3af;">—</span>';
       continue;
@@ -2277,7 +2398,27 @@ async function enrichRowsFromInternet() {
     statusEl.innerHTML = '<span style="font-size:12px;color:#0f6c8a;">🌐 Поиск...</span>';
     const hints = await fetchInternetHints(query);
 
-    if (hints) {
+    const heuristic = buildHeuristicCandidates(query, hints);
+    const aiCandidates = await buildAICandidates(query, hints);
+    const merged = [];
+    const seen = new Set();
+    for (const c of [...aiCandidates, ...heuristic]) {
+      const key = `${c.type}|${normalizeDetectText(c.model || query)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(c);
+    }
+
+    if (merged.length > 1) {
+      showRowSuggestions(id, merged);
+      statusEl.innerHTML = '<span style="font-size:12px;color:#0f6c8a;">🔎 Выбор</span>';
+      okCount += 1;
+    } else if (merged.length === 1) {
+      window.__internetCandidatesByRow = window.__internetCandidatesByRow || {};
+      window.__internetCandidatesByRow[id] = merged;
+      applyInternetSuggestion(id, 0);
+      okCount += 1;
+    } else if (hints) {
       // Подмешиваем подсказки в автодетект и при пустой модели обновляем модельный текст
       autoDetectGoodsType(id, query + ' ' + hints);
       if (!modelEl.value.trim()) modelEl.value = cutText(query + ' ' + hints, 220);

@@ -838,6 +838,9 @@
         <button class="btn btn-secondary" onclick="addGoodsRow()" style="padding:7px 14px;font-size:13px;">
           ➕ Добавить товар
         </button>
+        <button class="btn btn-info" onclick="enrichRowsFromInternet()" style="padding:7px 14px;font-size:13px;">
+          🌐 Подтянуть из интернета
+        </button>
         <span style="font-size:12px;color:#9ca3af;">Можно добавить несколько позиций — они войдут в один документ ТЗ</span>
       </div>
     </div>
@@ -1609,6 +1612,69 @@ const GOODS_CATALOG = {
     ktruFixed: '26.20.40.190-00000001',
     placeholder: 'Описание комплектующей...'
   },
+  toolSet: {
+    name: 'Набор инструментов',
+    okpd2: '25.73.30.000',
+    okpd2name: 'Инструмент ручной прочий',
+    ktruFixed: '25.73.30.000-00000001',
+    placeholder: 'Например: Набор инструментов 108 предметов...'
+  },
+  crimper: {
+    name: 'Кримпер / инструмент обжимной',
+    okpd2: '25.73.30.000',
+    okpd2name: 'Инструмент ручной для монтажных работ',
+    ktruFixed: '25.73.30.000-00000002',
+    placeholder: 'Например: Обжимной инструмент RJ-45/RJ-11...'
+  },
+  cableTester: {
+    name: 'Тестер кабеля / LAN-тестер',
+    okpd2: '26.51.43.000',
+    okpd2name: 'Приборы и аппаратура для измерения электрических величин',
+    ktruFixed: '26.51.43.000-00000001',
+    placeholder: 'Например: Тестер витой пары RJ45, PoE-тестер...'
+  },
+  soldering: {
+    name: 'Паяльник / паяльная станция',
+    okpd2: '27.90.31.000',
+    okpd2name: 'Инструменты электрические ручные прочие',
+    ktruFixed: '27.90.31.000-00000001',
+    placeholder: 'Например: Паяльная станция 60 Вт...'
+  },
+  multimeter: {
+    name: 'Мультиметр / измерительный прибор',
+    okpd2: '26.51.43.000',
+    okpd2name: 'Приборы для измерения электрических величин',
+    ktruFixed: '26.51.43.000-00000002',
+    placeholder: 'Например: Цифровой мультиметр True RMS...'
+  },
+  battery: {
+    name: 'Батарейки / аккумуляторы',
+    okpd2: '27.20.23.000',
+    okpd2name: 'Элементы и батареи первичные',
+    ktruFixed: '27.20.23.000-00000001',
+    placeholder: 'Например: Батарейки AA/LR6, AAA/LR03...'
+  },
+  labelTape: {
+    name: 'Лента для маркировки / этикетки',
+    okpd2: '17.29.11.000',
+    okpd2name: 'Этикетки и ярлыки бумажные',
+    ktruFixed: '17.29.11.000-00000001',
+    placeholder: 'Например: Лента для принтера этикеток 12 мм...'
+  },
+  cleaner: {
+    name: 'Чистящие средства для оргтехники',
+    okpd2: '20.41.44.190',
+    okpd2name: 'Средства моющие и чистящие прочие',
+    ktruFixed: '20.41.44.190-00000001',
+    placeholder: 'Например: Салфетки для экранов, сжатый воздух...'
+  },
+  thermalPaste: {
+    name: 'Термопаста / теплопроводный состав',
+    okpd2: '20.59.59.000',
+    okpd2name: 'Продукты химические прочие',
+    ktruFixed: '20.59.59.000-00000001',
+    placeholder: 'Например: Термопаста 4–12 Вт/мК...'
+  },
 };
 
 // (onGoodsTypeChange удалена — интерфейс перешёл на мульти-строчный список)
@@ -1921,6 +1987,17 @@ const MODEL_TO_TYPE = {
   'yadro': 'pc', 'ядро': 'pc',
   'poweredge': 'server', 'proliant': 'server', 'thinksystem': 'server',
   'primergy': 'server', 'fusionserver': 'server', 'inspur': 'server', 'supermicro': 'server',
+  'nvidia dgx': 'server', 'huawei rh': 'server', 'lenovo sr': 'server',
+  // Инструменты и расходники
+  'кримпер': 'crimper', 'обжимка': 'crimper', 'обжимной инструмент': 'crimper',
+  'lan tester': 'cableTester', 'тестер кабеля': 'cableTester', 'тестер витой пары': 'cableTester',
+  'мультиметр': 'multimeter', 'multimeter': 'multimeter',
+  'паяльник': 'soldering', 'паяльная станция': 'soldering', 'soldering station': 'soldering',
+  'набор инструментов': 'toolSet', 'tool kit': 'toolSet',
+  'батарейки': 'battery', 'аккумуляторы': 'battery', 'aa battery': 'battery', 'aaa battery': 'battery',
+  'этикетки': 'labelTape', 'лента для маркировки': 'labelTape', 'label tape': 'labelTape',
+  'чистящее средство': 'cleaner', 'салфетки для монитора': 'cleaner', 'compressed air': 'cleaner',
+  'термопаста': 'thermalPaste', 'thermal paste': 'thermalPaste',
   // Оптические носители
   'dvd': 'dvd', 'dvd-r': 'dvd', 'dvd+r': 'dvd', 'dvd-rw': 'dvd', 'dvd+rw': 'dvd',
   'cd-r': 'dvd', 'cd-rw': 'dvd', 'blu-ray': 'dvd', 'bluray': 'dvd',
@@ -1944,6 +2021,7 @@ const MODEL_TO_TYPE_NORMALIZED = Object.entries(MODEL_TO_TYPE)
 // Fallback-автоклассификация через ИИ для неизвестных терминов (с дебаунсом/кэшем)
 const AI_TYPE_DETECT_CACHE = Object.create(null);
 const AI_TYPE_DETECT_TIMERS = Object.create(null);
+const INTERNET_LOOKUP_CACHE = Object.create(null);
 let AI_TYPE_DETECT_SEQ = 0;
 
 function applyDetectedGoodsType(rowId, detectedType, source) {
@@ -2114,6 +2192,110 @@ function autoDetectGoodsType(rowId, modelValue) {
   }
 }
 
+function looksLikeUrl(value) {
+  return /^https?:\/\/\S+/i.test(String(value || '').trim());
+}
+
+function stripHtmlTags(text) {
+  return String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function cutText(text, maxLen) {
+  const s = String(text || '').trim();
+  if (s.length <= maxLen) return s;
+  return s.slice(0, maxLen) + '...';
+}
+
+async function fetchInternetHints(query) {
+  const q = String(query || '').trim();
+  if (!q) return '';
+  const key = normalizeDetectText(q);
+  if (INTERNET_LOOKUP_CACHE[key]) return INTERNET_LOOKUP_CACHE[key];
+
+  let text = '';
+
+  // 1) URL режим: пытаемся получить текст страницы через r.jina.ai (обход большинства CORS-ограничений)
+  if (looksLikeUrl(q)) {
+    try {
+      const target = q.replace(/^https?:\/\//i, '');
+      const resp = await fetch('https://r.jina.ai/http://' + target, { method: 'GET' });
+      if (resp.ok) {
+        const raw = await resp.text();
+        text = cutText(stripHtmlTags(raw), 5000);
+      }
+    } catch (_) {}
+  }
+
+  // 2) Поисковый режим: краткая подсказка по запросу через DuckDuckGo
+  if (!text) {
+    try {
+      const ddg = 'https://api.duckduckgo.com/?q=' + encodeURIComponent(q) + '&format=json&no_redirect=1&no_html=1';
+      const resp = await fetch(ddg, { method: 'GET' });
+      if (resp.ok) {
+        const data = await resp.json();
+        const parts = [];
+        if (data?.Heading) parts.push(data.Heading);
+        if (data?.AbstractText) parts.push(data.AbstractText);
+        if (Array.isArray(data?.RelatedTopics)) {
+          for (const t of data.RelatedTopics.slice(0, 3)) {
+            if (t?.Text) parts.push(t.Text);
+          }
+        }
+        text = cutText(parts.join(' ; '), 2500);
+      }
+    } catch (_) {}
+  }
+
+  INTERNET_LOOKUP_CACHE[key] = text || '';
+  return INTERNET_LOOKUP_CACHE[key];
+}
+
+async function enrichRowsFromInternet() {
+  const rows = Array.from(document.querySelectorAll('#goods-rows tr'));
+  if (!rows.length) {
+    showError('Добавьте хотя бы одну позицию для интернет-поиска');
+    return;
+  }
+
+  hideError();
+  setLoading(true, 'Подтягиваю данные из интернета по позициям...');
+
+  let okCount = 0;
+  for (const tr of rows) {
+    const id = tr.dataset.rowId;
+    const modelEl = document.getElementById('goods-model-' + id);
+    const typeSearchEl = document.getElementById('goods-search-' + id);
+    const statusEl = document.getElementById('goods-status-' + id);
+    if (!modelEl || !typeSearchEl || !statusEl) continue;
+
+    const query = modelEl.value.trim() || typeSearchEl.value.trim();
+    if (!query) {
+      statusEl.innerHTML = '<span style="font-size:12px;color:#9ca3af;">—</span>';
+      continue;
+    }
+
+    statusEl.innerHTML = '<span style="font-size:12px;color:#0f6c8a;">🌐 Поиск...</span>';
+    const hints = await fetchInternetHints(query);
+
+    if (hints) {
+      // Подмешиваем подсказки в автодетект и при пустой модели обновляем модельный текст
+      autoDetectGoodsType(id, query + ' ' + hints);
+      if (!modelEl.value.trim()) modelEl.value = cutText(query + ' ' + hints, 220);
+      statusEl.innerHTML = '<span style="font-size:12px;color:#059669;">✅ Интернет</span>';
+      okCount += 1;
+    } else {
+      // Если сеть недоступна/нет подсказок — хотя бы локальный детект по запросу
+      autoDetectGoodsType(id, query);
+      statusEl.innerHTML = '<span style="font-size:12px;color:#f59e0b;">⚠️ Нет данных</span>';
+    }
+  }
+
+  setLoading(false);
+  if (okCount === 0) {
+    showError('Не удалось получить интернет-подсказки. Проверьте интернет/URL или API-ключ для ИИ-фоллбэка.');
+  }
+}
+
 // HTML дропдауна для строки
 function buildRowDropdownHTML(rowId, filter, activeVal) {
   filter = (filter || '').toLowerCase().trim();
@@ -2249,6 +2431,7 @@ const GOODS_GROUPS = [
   { label: '🔌 Кабели и коммутация', items: ['patchCord','fiberCable','hdmiCable','powerCable','rackCabinet'] },
   { label: '🖥️ Серверное оборудование', items: ['serverRack','serverBlade','san','pdu','kvm_server'] },
   { label: '🖨️ Расходные материалы', items: ['cartridge','paper','toner','drum'] },
+  { label: '🧰 Инструменты и хозтовары', items: ['toolSet','crimper','cableTester','soldering','multimeter','battery','labelTape','cleaner','thermalPaste'] },
   { label: '💿 Системное и офисное ПО', items: ['os','office','virt','vdi','dbms','erp','cad','license'] },
   { label: '🔒 Средства защиты информации', items: ['antivirus','edr','firewall_sw','vpn','dlp','siem','crypto','waf','pam','iam','pki'] },
   { label: '📧 Коммуникации и совместная работа', items: ['email','vks','ecm','portal','project_sw','bpm','reporting'] },

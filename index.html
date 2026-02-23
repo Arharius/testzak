@@ -448,6 +448,7 @@
       backdrop-filter: blur(14px);
       position: relative;
       overflow: hidden;
+      background: rgba(255, 255, 255, 0.96);
     }
     body.theme-aurelia .card::after {
       content: '';
@@ -460,6 +461,7 @@
       transform: rotate(16deg);
       animation: aureliaGloss 9s ease-in-out infinite;
       pointer-events: none;
+      display: none;
     }
     body.theme-aurelia h1 {
       font-family: 'Cinzel', serif;
@@ -470,11 +472,11 @@
     body.theme-aurelia .subtitle { color: #9fb0c6; }
     body.theme-aurelia input,
     body.theme-aurelia select {
-      background: rgba(5, 12, 24, 0.95);
-      border-color: #22314a;
-      color: #f8fafc;
+      background: #ffffff;
+      border-color: #b8c7d9;
+      color: #111111;
     }
-    body.theme-aurelia input::placeholder { color: #6d8097; }
+    body.theme-aurelia input::placeholder { color: #5b6470; }
     body.theme-aurelia .btn-secondary {
       background: #0f1a30;
       color: #dbeafe;
@@ -487,12 +489,12 @@
       box-shadow: 0 0 30px rgba(255, 176, 0, 0.2);
     }
     body.theme-aurelia .panel-step { box-shadow: inset 0 1px 0 rgba(255,255,255,0.05); }
-    body.theme-aurelia .panel-api { background: rgba(10, 24, 40, 0.76) !important; border-color: rgba(59, 130, 246, 0.35) !important; }
-    body.theme-aurelia .panel-goods { background: rgba(7, 22, 22, 0.8) !important; border-color: rgba(16, 185, 129, 0.35) !important; }
-    body.theme-aurelia .law-extra-panel { background: rgba(15, 28, 40, 0.75) !important; border-color: rgba(148, 163, 184, 0.4) !important; color: #d8e5f4; }
-    body.theme-aurelia .warning-block { color: #f4dca6 !important; }
-    body.theme-aurelia .warning-44 { background: rgba(60, 38, 8, 0.55) !important; border-color: rgba(245, 158, 11, 0.55) !important; }
-    body.theme-aurelia .warning-223 { background: rgba(9, 27, 43, 0.75) !important; border-color: rgba(56, 189, 248, 0.45) !important; color: #cde8fb !important; }
+    body.theme-aurelia .panel-api { background: #f3f8ff !important; border-color: #a8c7e6 !important; }
+    body.theme-aurelia .panel-goods { background: #f5fff8 !important; border-color: #a7e1bd !important; }
+    body.theme-aurelia .law-extra-panel { background: #eef6ff !important; border-color: #b7d0e8 !important; color: #111111; }
+    body.theme-aurelia .warning-block { color: #111111 !important; }
+    body.theme-aurelia .warning-44 { background: #fff6df !important; border-color: #e8c466 !important; }
+    body.theme-aurelia .warning-223 { background: #ecf6ff !important; border-color: #9bc6e7 !important; color: #111111 !important; }
     body.theme-aurelia #inputCard,
     body.theme-aurelia #result,
     body.theme-aurelia #inputCard label,
@@ -504,34 +506,34 @@
     body.theme-aurelia #result th,
     body.theme-aurelia #goodsListTable th,
     body.theme-aurelia #goodsListTable td {
-      color: #d6e3f5 !important;
+      color: #111111 !important;
     }
     body.theme-aurelia #inputCard h1,
     body.theme-aurelia #result h2,
     body.theme-aurelia #result h3 {
-      color: #f8fafc !important;
+      color: #111111 !important;
     }
     body.theme-aurelia #goodsListTable input,
     body.theme-aurelia #goodsListTable select {
-      background: rgba(5, 12, 24, 0.92) !important;
-      color: #f8fafc !important;
-      border-color: #314664 !important;
+      background: #ffffff !important;
+      color: #111111 !important;
+      border-color: #b8c7d9 !important;
     }
     body.theme-aurelia #goodsListTable input::placeholder {
-      color: #8ca1be !important;
+      color: #5b6470 !important;
     }
     body.theme-aurelia .combo-item {
-      color: #e5eefb !important;
-      background: rgba(10, 23, 39, 0.98) !important;
-      border-bottom-color: #2a3f5e !important;
+      color: #111111 !important;
+      background: #ffffff !important;
+      border-bottom-color: #d9e3ee !important;
     }
     body.theme-aurelia .combo-item:hover {
-      background: rgba(22, 44, 68, 0.98) !important;
+      background: #f1f7ff !important;
     }
     body.theme-aurelia [id^="goods-dropdown-"] > div[style*="position:sticky"] {
-      background: #13263f !important;
-      color: #f8fafc !important;
-      border-bottom-color: #2a3f5e !important;
+      background: #eaf3ff !important;
+      color: #111111 !important;
+      border-bottom-color: #d1deec !important;
     }
 
     body.theme-gala {
@@ -565,6 +567,7 @@
       border: 1px solid rgba(255,255,255,0.2);
       box-shadow: 0 28px 72px -40px rgba(0,0,0,0.95), inset 0 1px 0 rgba(255,255,255,0.11);
       backdrop-filter: blur(18px);
+      background: rgba(255, 255, 255, 0.95);
     }
     body.theme-gala h1 {
       font-weight: 900;
@@ -573,11 +576,11 @@
     }
     body.theme-gala input,
     body.theme-gala select {
-      background: rgba(9, 11, 34, 0.7);
-      border-color: rgba(255,255,255,0.26);
-      color: #fff;
+      background: #ffffff;
+      border-color: #c7c7d9;
+      color: #111111;
     }
-    body.theme-gala input::placeholder { color: rgba(255,255,255,0.55); }
+    body.theme-gala input::placeholder { color: #5a5a68; }
     body.theme-gala .btn-primary {
       background: linear-gradient(90deg, #00f2ff, #ff007f, #ffcc00, #00f2ff);
       background-size: 300% 100%;
@@ -585,15 +588,15 @@
       box-shadow: 0 0 32px rgba(255, 0, 127, 0.38);
     }
     body.theme-gala .btn-secondary {
-      background: rgba(255, 255, 255, 0.08);
-      color: #fff;
-      border-color: rgba(255, 255, 255, 0.24);
+      background: #f1f1ff;
+      color: #111111;
+      border-color: #c7c7d9;
     }
-    body.theme-gala .panel-api { background: rgba(9, 8, 41, 0.55) !important; border-color: rgba(110, 231, 255, 0.45) !important; }
-    body.theme-gala .panel-goods { background: rgba(17, 11, 45, 0.58) !important; border-color: rgba(255, 143, 184, 0.45) !important; }
-    body.theme-gala .law-extra-panel { background: rgba(17, 11, 45, 0.6) !important; border-color: rgba(255, 255, 255, 0.34) !important; color: #ffffff; }
+    body.theme-gala .panel-api { background: #f3f6ff !important; border-color: #bac7f5 !important; }
+    body.theme-gala .panel-goods { background: #fff2fb !important; border-color: #f0b9df !important; }
+    body.theme-gala .law-extra-panel { background: #f4f6ff !important; border-color: #c7c7d9 !important; color: #111111; }
     body.theme-gala .warning-44,
-    body.theme-gala .warning-223 { background: rgba(255,255,255,0.09) !important; border-color: rgba(255,255,255,0.35) !important; color: #fff !important; }
+    body.theme-gala .warning-223 { background: #f5f5ff !important; border-color: #c7c7d9 !important; color: #111111 !important; }
     body.theme-gala .theme-switcher {
       border-color: rgba(255,255,255,0.3);
       background: rgba(6, 7, 24, 0.75);
@@ -615,29 +618,29 @@
     body.theme-gala #result th,
     body.theme-gala #goodsListTable th,
     body.theme-gala #goodsListTable td {
-      color: #f5f7ff !important;
+      color: #111111 !important;
     }
     body.theme-gala #goodsListTable input,
     body.theme-gala #goodsListTable select {
-      background: rgba(12, 10, 42, 0.85) !important;
-      color: #ffffff !important;
-      border-color: rgba(255,255,255,0.33) !important;
+      background: #ffffff !important;
+      color: #111111 !important;
+      border-color: #c7c7d9 !important;
     }
     body.theme-gala #goodsListTable input::placeholder {
-      color: rgba(255,255,255,0.65) !important;
+      color: #5a5a68 !important;
     }
     body.theme-gala .combo-item {
-      color: #ffffff !important;
-      background: rgba(18, 12, 51, 0.95) !important;
-      border-bottom-color: rgba(255,255,255,0.18) !important;
+      color: #111111 !important;
+      background: #ffffff !important;
+      border-bottom-color: #dcdcec !important;
     }
     body.theme-gala .combo-item:hover {
-      background: rgba(40, 15, 85, 0.95) !important;
+      background: #f6f2ff !important;
     }
     body.theme-gala [id^="goods-dropdown-"] > div[style*="position:sticky"] {
-      background: rgba(50, 16, 92, 0.96) !important;
-      color: #ffffff !important;
-      border-bottom-color: rgba(255,255,255,0.2) !important;
+      background: #f0ecff !important;
+      color: #111111 !important;
+      border-bottom-color: #dcdcec !important;
     }
 
     @keyframes galaFlow {
@@ -1910,9 +1913,14 @@ const MODEL_TO_TYPE = {
   // Российские бренды оборудования
   'graviton n': 'laptop', 'гравитон н': 'laptop',
   'graviton': 'pc', 'гравитон': 'pc',
+  'depo': 'pc', 'депо': 'pc',
+  'depo race': 'pc', 'depo neos': 'pc', 'depo ego': 'pc',
+  'depo server': 'server', 'depo storm': 'server', 'depo rack': 'server', 'depo rs': 'server',
   'aquarius': 'pc', 'аквариус': 'pc',
   'iru': 'pc', 'i ru': 'pc', 'иру': 'pc',
   'yadro': 'pc', 'ядро': 'pc',
+  'poweredge': 'server', 'proliant': 'server', 'thinksystem': 'server',
+  'primergy': 'server', 'fusionserver': 'server', 'inspur': 'server', 'supermicro': 'server',
   // Оптические носители
   'dvd': 'dvd', 'dvd-r': 'dvd', 'dvd+r': 'dvd', 'dvd-rw': 'dvd', 'dvd+rw': 'dvd',
   'cd-r': 'dvd', 'cd-rw': 'dvd', 'blu-ray': 'dvd', 'bluray': 'dvd',
@@ -2019,6 +2027,44 @@ function looksLikeTwistedPairCable(value) {
   return hasCableClass && hasCoilOrLength;
 }
 
+function inferTypeByStrongKeywords(value) {
+  const v = normalizeDetectText(value);
+  if (!v) return '';
+
+  // Приоритет для СУБД, чтобы "sql server" не улетел в hardware server.
+  if (/(sql server|postgres(?:ql)?|mysql|mariadb|oracle|mongodb|clickhouse|greenplum|db2|tantor|jatoba|субд)/i.test(v)) {
+    return 'dbms';
+  }
+
+  // Ноутбуки
+  if (/(ноутбук|laptop|notebook|ultrabook|macbook|vivobook|zenbook|expertbook|matebook|thinkpad|ideapad|probook|elitebook|inspiron|latitude|xps|aspire|swift|travelmate)/i.test(v)) {
+    return 'laptop';
+  }
+
+  // Серверы и серверные линейки
+  if (/(сервер|server|rack server|стоечн|blade|tower server|poweredge|proliant|thinksystem|primergy|fusionserver|inspur|supermicro|xeon|epyc)/i.test(v)) {
+    return 'server';
+  }
+
+  // Отдельное правило для DEPO
+  if (/(^|\\s)(depo|депо)(\\s|$)/i.test(v)) {
+    if (/(server|сервер|storm|rack|стоечн|rs\\b|r\\d{3,4})/i.test(v)) return 'server';
+    if (/(laptop|notebook|ноутбук|book)/i.test(v)) return 'laptop';
+    return 'pc';
+  }
+
+  if (/(моноблок|all in one|\\baio\\b)/i.test(v)) return 'monoblock';
+  if (/(монитор|monitor)/i.test(v)) return 'monitor';
+  if (/(принтер|printer)/i.test(v)) return 'printer';
+  if (/(\\bмфу\\b|\\bmfp\\b)/i.test(v)) return 'mfu';
+  if (/(коммутатор|\\bswitch\\b|poe switch)/i.test(v)) return 'switch';
+  if (/(маршрутизатор|\\brouter\\b|gateway)/i.test(v)) return 'router';
+  if (/(точка доступа|access point|wifi ap)/i.test(v)) return 'accessPoint';
+  if (/(nas|сетевое хранилище)/i.test(v)) return 'nas';
+
+  return '';
+}
+
 function autoDetectGoodsType(rowId, modelValue) {
   if (!modelValue) return;
   const rawVal = modelValue.toLowerCase().trim();
@@ -2043,6 +2089,11 @@ function autoDetectGoodsType(rowId, modelValue) {
         break;
       }
     }
+  }
+  // Последний fallback до AI: эвристика по сильным ключевым словам
+  if (!detectedType) {
+    const strongKeywordType = inferTypeByStrongKeywords(val);
+    if (strongKeywordType) detectedType = strongKeywordType;
   }
   if (detectedType && GOODS_CATALOG[detectedType]) {
     if (typeof clearTimeout === 'function' && AI_TYPE_DETECT_TIMERS[rowId]) {

@@ -2301,6 +2301,11 @@ function showRowSuggestions(rowId, candidates) {
   box.style.display = 'block';
 }
 
+function isSoftwareType(type) {
+  const t = GOODS_CATALOG[type];
+  return !!(t && t.isSoftware);
+}
+
 function buildHeuristicCandidates(query, hints) {
   const combined = normalizeDetectText(`${query || ''} ${hints || ''}`);
   if (!combined) return [];
@@ -2370,6 +2375,40 @@ async function buildAICandidates(query, hints) {
   }
 }
 
+function prioritizeCandidates(rowId, query, candidates) {
+  const q = normalizeDetectText(query);
+  const out = [];
+  const seen = new Set();
+  const push = (c) => {
+    if (!c || !c.type || !GOODS_CATALOG[c.type]) return;
+    const key = `${c.type}|${normalizeDetectText(c.model || query)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(c);
+  };
+
+  // 1) Всегда даем вариант "оставить текущий тип", чтобы не ломать ручной выбор.
+  const currentType = document.getElementById('goods-type-' + rowId)?.value;
+  if (currentType && GOODS_CATALOG[currentType]) {
+    push({ type: currentType, model: query, reason: 'Текущий выбранный тип' });
+  }
+
+  // 2) Основные кандидаты (AI + эвристика).
+  for (const c of candidates) push(c);
+
+  // 3) Для коротких/неоднозначных аббревиатур добавляем железо в список выбора.
+  const isShortAmbiguous = q.length <= 4 || /^[a-zа-я]{2,5}\d{0,2}$/i.test(q);
+  const onlySoftwareNow = out.length > 0 && out.every(c => isSoftwareType(c.type));
+  if (isShortAmbiguous || onlySoftwareNow) {
+    const hardwareFallback = ['pc', 'monitor', 'printer', 'laptop', 'server'];
+    for (const type of hardwareFallback) {
+      push({ type, model: query, reason: 'Вариант для неоднозначной аббревиатуры' });
+    }
+  }
+
+  return out.slice(0, 8);
+}
+
 async function enrichRowsFromInternet() {
   const rows = Array.from(document.querySelectorAll('#goods-rows tr'));
   if (!rows.length) {
@@ -2400,14 +2439,7 @@ async function enrichRowsFromInternet() {
 
     const heuristic = buildHeuristicCandidates(query, hints);
     const aiCandidates = await buildAICandidates(query, hints);
-    const merged = [];
-    const seen = new Set();
-    for (const c of [...aiCandidates, ...heuristic]) {
-      const key = `${c.type}|${normalizeDetectText(c.model || query)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(c);
-    }
+    const merged = prioritizeCandidates(id, query, [...aiCandidates, ...heuristic]);
 
     if (merged.length > 1) {
       showRowSuggestions(id, merged);

@@ -493,6 +493,46 @@
     body.theme-aurelia .warning-block { color: #f4dca6 !important; }
     body.theme-aurelia .warning-44 { background: rgba(60, 38, 8, 0.55) !important; border-color: rgba(245, 158, 11, 0.55) !important; }
     body.theme-aurelia .warning-223 { background: rgba(9, 27, 43, 0.75) !important; border-color: rgba(56, 189, 248, 0.45) !important; color: #cde8fb !important; }
+    body.theme-aurelia #inputCard,
+    body.theme-aurelia #result,
+    body.theme-aurelia #inputCard label,
+    body.theme-aurelia #inputCard p,
+    body.theme-aurelia #inputCard div,
+    body.theme-aurelia #result p,
+    body.theme-aurelia #result div,
+    body.theme-aurelia #result td,
+    body.theme-aurelia #result th,
+    body.theme-aurelia #goodsListTable th,
+    body.theme-aurelia #goodsListTable td {
+      color: #d6e3f5 !important;
+    }
+    body.theme-aurelia #inputCard h1,
+    body.theme-aurelia #result h2,
+    body.theme-aurelia #result h3 {
+      color: #f8fafc !important;
+    }
+    body.theme-aurelia #goodsListTable input,
+    body.theme-aurelia #goodsListTable select {
+      background: rgba(5, 12, 24, 0.92) !important;
+      color: #f8fafc !important;
+      border-color: #314664 !important;
+    }
+    body.theme-aurelia #goodsListTable input::placeholder {
+      color: #8ca1be !important;
+    }
+    body.theme-aurelia .combo-item {
+      color: #e5eefb !important;
+      background: rgba(10, 23, 39, 0.98) !important;
+      border-bottom-color: #2a3f5e !important;
+    }
+    body.theme-aurelia .combo-item:hover {
+      background: rgba(22, 44, 68, 0.98) !important;
+    }
+    body.theme-aurelia [id^="goods-dropdown-"] > div[style*="position:sticky"] {
+      background: #13263f !important;
+      color: #f8fafc !important;
+      border-bottom-color: #2a3f5e !important;
+    }
 
     body.theme-gala {
       --bg: #090818;
@@ -563,6 +603,41 @@
       background: linear-gradient(90deg, #00f2ff, #ff007f, #ffcc00);
       color: #111827;
       box-shadow: 0 0 26px rgba(255, 0, 127, 0.55);
+    }
+    body.theme-gala #inputCard,
+    body.theme-gala #result,
+    body.theme-gala #inputCard label,
+    body.theme-gala #inputCard p,
+    body.theme-gala #inputCard div,
+    body.theme-gala #result p,
+    body.theme-gala #result div,
+    body.theme-gala #result td,
+    body.theme-gala #result th,
+    body.theme-gala #goodsListTable th,
+    body.theme-gala #goodsListTable td {
+      color: #f5f7ff !important;
+    }
+    body.theme-gala #goodsListTable input,
+    body.theme-gala #goodsListTable select {
+      background: rgba(12, 10, 42, 0.85) !important;
+      color: #ffffff !important;
+      border-color: rgba(255,255,255,0.33) !important;
+    }
+    body.theme-gala #goodsListTable input::placeholder {
+      color: rgba(255,255,255,0.65) !important;
+    }
+    body.theme-gala .combo-item {
+      color: #ffffff !important;
+      background: rgba(18, 12, 51, 0.95) !important;
+      border-bottom-color: rgba(255,255,255,0.18) !important;
+    }
+    body.theme-gala .combo-item:hover {
+      background: rgba(40, 15, 85, 0.95) !important;
+    }
+    body.theme-gala [id^="goods-dropdown-"] > div[style*="position:sticky"] {
+      background: rgba(50, 16, 92, 0.96) !important;
+      color: #ffffff !important;
+      border-bottom-color: rgba(255,255,255,0.2) !important;
     }
 
     @keyframes galaFlow {
@@ -1658,6 +1733,11 @@ function filterRowGoods(id, val) {
   searchEl.style.borderColor = '#0f6c8a';
   dd.style.display = 'block';
   dd.innerHTML = buildRowDropdownHTML(id, val, curVal);
+  // Пользователь часто вводит модель/бренд в поле "Тип товара":
+  // пытаемся сразу автоклассифицировать и подставить корректный тип.
+  if ((val || '').trim().length >= 3) {
+    autoDetectGoodsType(id, val);
+  }
 }
 
 // Автоопределение типа товара по введённому названию продукта

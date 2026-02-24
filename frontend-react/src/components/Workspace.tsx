@@ -199,6 +199,27 @@ function parseResultObject(text?: string): ParsedResult | null {
   }
 }
 
+function buildReadableResultBlock(jsonText: string): string {
+  try {
+    const obj = JSON.parse(jsonText) as ParsedResult;
+    const specs = Array.isArray(obj?.specs) ? obj.specs : [];
+    const meta = obj?.meta || {};
+    const lines: string[] = [];
+    lines.push(`ОКПД2: ${meta.okpd2_code || 'не указано'}`);
+    lines.push(`КТРУ: ${meta.ktru_code || 'не указано'}`);
+    lines.push(`ПП 1875: ${meta.law175_status || 'не указано'}${meta.law175_basis ? ` (${meta.law175_basis})` : ''}`);
+    if (specs.length) {
+      lines.push('Характеристики:');
+      for (const s of specs.slice(0, 40)) {
+        lines.push(`- ${s.group} / ${s.name}: ${s.value}${s.unit ? ` ${s.unit}` : ''}`);
+      }
+    }
+    return lines.join('\n');
+  } catch {
+    return jsonText;
+  }
+}
+
 function buildNormativeBlock(lawMode: LawMode): string {
   if (lawMode === '223') {
     return [
@@ -374,7 +395,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
           const raw = await generateItemSpecs(provider, apiKey, model, prompt);
           const parsed = parseMaybeJson(raw);
           next[i] = { ...next[i], status: 'done', result: parsed.pretty, okpd2: parsed.okpd2, ktru: parsed.ktru };
-          pieces.push(`### ${GOODS_LABELS[next[i].type]} / ${next[i].model}\n\n${parsed.pretty}`);
+          pieces.push(`### ${GOODS_LABELS[next[i].type]} / ${next[i].model}\n${buildReadableResultBlock(parsed.pretty)}`);
         } catch (e) {
           const msg = e instanceof Error ? e.message : 'generation_error';
           next[i] = { ...next[i], status: 'error', error: msg };

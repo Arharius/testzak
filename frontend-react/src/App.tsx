@@ -18,6 +18,8 @@ import {
 } from './lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from './types/schemas';
 
+type ThemeMode = 'legacy' | 'aurelia' | 'gala';
+
 function download(name: string, content: string, type: string): void {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -29,6 +31,11 @@ function download(name: string, content: string, type: string): void {
 }
 
 export function App() {
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem('tz_react_theme');
+    if (saved === 'legacy' || saved === 'aurelia' || saved === 'gala') return saved;
+    return 'legacy';
+  });
   const [automationSettings, setAutomationState] = useState<AutomationSettings>(getAutomationSettings());
   const [platformSettings, setPlatformState] = useState<PlatformIntegrationSettings>(getPlatformSettings());
   const [refreshTick, setRefreshTick] = useState(0);
@@ -80,10 +87,46 @@ export function App() {
   };
 
   return (
-    <main className="layout">
-      <header>
-        <h1>TZ Generator React Migration</h1>
-        <p>Phase 1: modular frontend with strict validation and integration controls.</p>
+    <main className={`layout theme-${theme}`}>
+      <header className="hero">
+        <div className="title-row">
+          <div>
+            <h1>TZ Generator</h1>
+            <p>React-версия: автоматизация закупок, ТЗ, комплаенс 44/223-ФЗ.</p>
+          </div>
+          <div className="theme-switch" role="group" aria-label="Theme switch">
+            <button
+              type="button"
+              className={theme === 'legacy' ? 'active' : ''}
+              onClick={() => {
+                setTheme('legacy');
+                localStorage.setItem('tz_react_theme', 'legacy');
+              }}
+            >
+              Legacy
+            </button>
+            <button
+              type="button"
+              className={theme === 'aurelia' ? 'active' : ''}
+              onClick={() => {
+                setTheme('aurelia');
+                localStorage.setItem('tz_react_theme', 'aurelia');
+              }}
+            >
+              Aurelia
+            </button>
+            <button
+              type="button"
+              className={theme === 'gala' ? 'active' : ''}
+              onClick={() => {
+                setTheme('gala');
+                localStorage.setItem('tz_react_theme', 'gala');
+              }}
+            >
+              Gala
+            </button>
+          </div>
+        </div>
       </header>
 
       <AutomationPanel

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { AlignmentType, Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } from 'docx';
 import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
 import {
@@ -313,6 +313,16 @@ function buildNormativeBlock(lawMode: LawMode): string {
     'Нацрежим: ПП РФ № 1875 (актуальная редакция на дату публикации).',
     'КТРУ/ОКПД2 подлежат проверке перед размещением в ЕИС.'
   ].join('\n');
+}
+
+function makeCell(text: string, bold = false): TableCell {
+  return new TableCell({
+    children: [
+      new Paragraph({
+        children: [new TextRun({ text: text || '', bold })]
+      })
+    ]
+  });
 }
 
 type Props = {
@@ -694,17 +704,93 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   };
 
   const exportDocx = async () => {
-    const lines = tzText.trim().split('\n');
+    const sections: Array<Paragraph | Table> = [];
+    sections.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: `ТЕХНИЧЕСКОЕ ЗАДАНИЕ (${lawMode === '223' ? '223-ФЗ' : '44-ФЗ'})`, bold: true })]
+      }),
+      new Paragraph({ text: '' }),
+      ...buildNormativeBlock(lawMode).split('\n').map((line) => new Paragraph({ text: line })),
+      new Paragraph({ text: '' })
+    );
+
+    structuredRows.forEach(({ row, parsed, specs }, idx) => {
+      const meta = parsed?.meta || {};
+      sections.push(
+        new Paragraph({
+          children: [new TextRun({ text: `${idx + 1}. ${GOODS_LABELS[row.type]} (${row.model})`, bold: true })]
+        }),
+        new Paragraph({ text: '' })
+      );
+
+      const metaTable = new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({ children: [makeCell('Наименование объекта поставки', true), makeCell(GOODS_LABELS[row.type])] }),
+          new TableRow({ children: [makeCell('Код ОКПД2', true), makeCell(meta.okpd2_code || 'не указано')] }),
+          new TableRow({ children: [makeCell('Код КТРУ', true), makeCell(meta.ktru_code || 'не указано')] }),
+          new TableRow({ children: [makeCell('Нацрежим (ПП 1875)', true), makeCell(meta.law175_status || 'не указано')] }),
+          new TableRow({ children: [makeCell('Обоснование', true), makeCell(meta.law175_basis || 'не указано')] })
+        ]
+      });
+      sections.push(metaTable, new Paragraph({ text: '' }));
+
+      const specRows: TableRow[] = [
+        new TableRow({
+          children: [
+            makeCell('№', true),
+            makeCell('Наименование характеристики', true),
+            makeCell('Значение / требование', true),
+            makeCell('Ед. изм.', true)
+          ]
+        })
+      ];
+
+      if (specs.length > 0) {
+        specs.forEach((spec, sIdx) => {
+          const name = spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name;
+          specRows.push(
+            new TableRow({
+              children: [makeCell(String(sIdx + 1)), makeCell(name), makeCell(spec.value || ''), makeCell(spec.unit || '')]
+            })
+          );
+        });
+      } else {
+        specRows.push(
+          new TableRow({
+            children: [makeCell('1'), makeCell('Данные модели'), makeCell('Нет структурированных характеристик'), makeCell('')]
+          })
+        );
+      }
+
+      sections.push(
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: specRows
+        }),
+        new Paragraph({ text: '' })
+      );
+    });
+
+    sections.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: [
+          new TableRow({
+            children: [
+              makeCell('Заказчик:\n\n_________________________ / _________________________\n        (подпись)                 (ФИО)', false),
+              makeCell('Дата:\n\n«____» ________________ 2026 г.', false)
+            ]
+          })
+        ]
+      })
+    );
+
     const doc = new Document({
       sections: [
         {
-          children: lines.map((line) =>
-            new Paragraph({
-              children: [
-                new TextRun({ text: line || ' ', bold: line.startsWith('###') || line.startsWith('ТЕХНИЧЕСКОЕ ЗАДАНИЕ') })
-              ]
-            })
-          )
+          children: sections
         }
       ]
     });
@@ -750,11 +836,13 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         }
         const rowsHtml = specs
           .map(
-            (spec) =>
-              `<tr><td>${escapeHtml(spec.group)}</td><td>${escapeHtml(spec.name)}</td><td>${escapeHtml(spec.value)}</td><td>${escapeHtml(spec.unit || '')}</td></tr>`
+            (spec, idx) => {
+              const param = spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name;
+              return `<tr><td>${idx + 1}</td><td>${escapeHtml(param)}</td><td>${escapeHtml(spec.value)}</td><td>${escapeHtml(spec.unit || '')}</td></tr>`;
+            }
           )
           .join('');
-        return `${head}${metaHtml}<table><thead><tr><th>Группа</th><th>Параметр</th><th>Значение</th><th>Ед.</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+        return `${head}${metaHtml}<table><thead><tr><th>№</th><th>Наименование характеристики</th><th>Значение / требование</th><th>Ед. изм.</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
       })
       .join('');
 
@@ -1079,17 +1167,17 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                   <table className="rows-table">
                     <thead>
                       <tr>
-                        <th>Группа</th>
-                        <th>Параметр</th>
-                        <th>Значение</th>
-                        <th>Ед.</th>
+                        <th>№</th>
+                        <th>Наименование характеристики</th>
+                        <th>Значение / требование</th>
+                        <th>Ед. изм.</th>
                       </tr>
                     </thead>
                     <tbody>
                       {specs.map((spec, idx) => (
                         <tr key={`${row.id}-${idx}-${spec.group}-${spec.name}`}>
-                          <td>{spec.group}</td>
-                          <td>{spec.name}</td>
+                          <td>{idx + 1}</td>
+                          <td>{spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name}</td>
                           <td>{spec.value}</td>
                           <td>{spec.unit || ''}</td>
                         </tr>

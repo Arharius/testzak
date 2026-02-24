@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
 import {
+  createYooKassaCheckout,
   fetchTenantAlerts,
   fetchTenantBillingSummary,
   fetchTenantKpi,
+  fetchTenantPlanLimits,
   type TenantAlert,
   type TenantBillingSummary,
-  type TenantKpi
+  type TenantKpi,
+  type TenantPlanLimits
 } from '../lib/api';
 import { getAutomationLog } from '../lib/storage';
 import type { AutomationSettings } from '../types/schemas';
@@ -21,8 +24,11 @@ function money(cents: number, currency: string): string {
 export function CommercialKpiPanel({ automationSettings }: Props) {
   const [remoteKpi, setRemoteKpi] = useState<TenantKpi | null>(null);
   const [billing, setBilling] = useState<TenantBillingSummary | null>(null);
+  const [planLimits, setPlanLimits] = useState<TenantPlanLimits | null>(null);
   const [alerts, setAlerts] = useState<TenantAlert[]>([]);
   const [loading, setLoading] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState<'starter' | 'pro' | 'enterprise' | ''>('');
+  const [checkoutError, setCheckoutError] = useState('');
 
   const local = useMemo(() => {
     const events = getAutomationLog();
@@ -41,11 +47,30 @@ export function CommercialKpiPanel({ automationSettings }: Props) {
         fetchTenantBillingSummary(automationSettings),
         fetchTenantAlerts(automationSettings)
       ]);
+      const limits = await fetchTenantPlanLimits(automationSettings);
       setRemoteKpi(kpi);
       setBilling(bill);
+      setPlanLimits(limits);
       setAlerts(alertList);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const startCheckout = async (planCode: 'starter' | 'pro' | 'enterprise') => {
+    setCheckoutError('');
+    setCheckoutLoading(planCode);
+    try {
+      const returnUrl = window.location.origin;
+      const out = await createYooKassaCheckout(automationSettings, planCode, returnUrl);
+      if (!out?.confirmation_url) {
+        throw new Error('confirmation_url_empty');
+      }
+      window.location.href = out.confirmation_url;
+    } catch (e) {
+      setCheckoutError(e instanceof Error ? e.message : 'checkout_failed');
+    } finally {
+      setCheckoutLoading('');
     }
   };
 
@@ -95,6 +120,32 @@ export function CommercialKpiPanel({ automationSettings }: Props) {
           </table>
         </div>
       )}
+      {planLimits && (
+        <div className="rows-table-wrap">
+          <table className="rows-table">
+            <tbody>
+              <tr><th>План (лимиты)</th><td>{planLimits.plan_code}</td></tr>
+              <tr><th>Лимит пользователей</th><td>{planLimits.limits.users_limit}</td></tr>
+              <tr><th>Лимит документов/мес</th><td>{planLimits.limits.docs_month_limit}</td></tr>
+              <tr><th>Использовано пользователей</th><td>{planLimits.usage.users_total}</td></tr>
+              <tr><th>Использовано документов/мес</th><td>{planLimits.usage.docs_month_total}</td></tr>
+              <tr><th>Superadmin unlimited</th><td>{planLimits.unlimited ? 'Да' : 'Нет'}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="actions">
+        <button type="button" onClick={() => void startCheckout('starter')} disabled={!!checkoutLoading}>
+          {checkoutLoading === 'starter' ? 'Переход...' : 'Оплатить Starter'}
+        </button>
+        <button type="button" onClick={() => void startCheckout('pro')} disabled={!!checkoutLoading}>
+          {checkoutLoading === 'pro' ? 'Переход...' : 'Оплатить Pro'}
+        </button>
+        <button type="button" onClick={() => void startCheckout('enterprise')} disabled={!!checkoutLoading}>
+          {checkoutLoading === 'enterprise' ? 'Переход...' : 'Оплатить Enterprise'}
+        </button>
+      </div>
+      {checkoutError && <div className="warn">Checkout: {checkoutError}</div>}
       {alerts.length > 0 && (
         <div className="rows-table-wrap">
           <table className="rows-table">

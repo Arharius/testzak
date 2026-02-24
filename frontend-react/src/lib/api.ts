@@ -42,6 +42,30 @@ export type TenantAlert = {
   message: string;
 };
 
+export type TenantPlanLimits = {
+  ok: boolean;
+  tenant_id: string;
+  plan_code: string;
+  limits: {
+    price_cents: number;
+    users_limit: number;
+    docs_month_limit: number;
+  };
+  usage: {
+    users_total: number;
+    docs_month_total: number;
+  };
+  unlimited: boolean;
+};
+
+export type YooKassaCheckoutResponse = {
+  ok: boolean;
+  plan_code: string;
+  payment_id: string;
+  status: string;
+  confirmation_url: string;
+};
+
 export type BillingReadiness = {
   ok: boolean;
   provider: string;
@@ -462,6 +486,37 @@ export async function fetchTenantAlerts(settings: AutomationSettings): Promise<T
   } catch {
     return [];
   }
+}
+
+export async function fetchTenantPlanLimits(settings: AutomationSettings): Promise<TenantPlanLimits | null> {
+  if (!settings.backendApiBase) return null;
+  const url = `${settings.backendApiBase.replace(/\/+$/, '')}/api/tenant/plan/limits`;
+  try {
+    const headers: Record<string, string> = {};
+    if (settings.backendApiToken) headers.Authorization = settings.backendApiToken;
+    const resp = await axios.get(url, { headers, timeout: 15000 });
+    return resp.data as TenantPlanLimits;
+  } catch {
+    return null;
+  }
+}
+
+export async function createYooKassaCheckout(
+  settings: AutomationSettings,
+  planCode: 'starter' | 'pro' | 'enterprise',
+  returnUrl?: string
+): Promise<YooKassaCheckoutResponse> {
+  if (!settings.backendApiBase) {
+    throw new Error('backend_api_base_not_set');
+  }
+  const url = `${settings.backendApiBase.replace(/\/+$/, '')}/api/tenant/payments/yookassa/checkout`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (settings.backendApiToken) headers.Authorization = settings.backendApiToken;
+  const payload: Record<string, string> = { plan_code: planCode };
+  if (returnUrl && returnUrl.trim()) payload.return_url = returnUrl.trim();
+
+  const resp = await axios.post(url, payload, { headers, timeout: 20000 });
+  return resp.data as YooKassaCheckoutResponse;
 }
 
 export async function fetchPublicBillingReadiness(

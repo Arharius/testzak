@@ -24,6 +24,7 @@ type Row = {
   candidates?: Array<{ type: GoodsType; score: number; reason: string }>;
   lookupState?: 'idle' | 'loading' | 'done' | 'error' | 'choose';
   lookupNote?: string;
+  internetHints?: string;
 };
 
 const GOODS_LABELS: Record<GoodsType, string> = {
@@ -122,11 +123,16 @@ async function fetchInternetHints(query: string): Promise<string> {
 function buildPrompt(row: Row, lawMode: LawMode): string {
   const goodsName = GOODS_LABELS[row.type];
   const law = lawMode === '223' ? '223-ФЗ' : '44-ФЗ';
+  const hints = cutText(row.internetHints || '', 2500);
   return `Ты эксперт по госзакупкам РФ (${law}).\n` +
     `Сформируй технические характеристики для товара.\n` +
     `Тип: ${goodsName}\n` +
     `Модель/описание: ${row.model}\n` +
-    `Количество: ${row.qty}\n\n` +
+    `Количество: ${row.qty}\n` +
+    (hints ? `Интернет-подсказки по КОНКРЕТНОЙ модели: ${hints}\n` : '') +
+    `\n` +
+    `Критично: не давай обобщенные характеристики категории. Используй именно данные этой модели.` +
+    ` Если точного параметра нет, не выдумывай, укажи "не указано в источнике".\n\n` +
     `Ответ строго JSON:\n` +
     `{\n` +
     `  "meta": {\n` +
@@ -199,6 +205,15 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       for (let i = 0; i < next.length; i += 1) {
         next[i] = { ...next[i], status: 'loading', error: '' };
         setRows([...next]);
+        if (!String(next[i].internetHints || '').trim() && String(next[i].model || '').trim().length >= 3) {
+          try {
+            // Before generation, pull model-specific hints so AI does not fallback to generic specs.
+            const hints = await fetchInternetHints(next[i].model);
+            if (hints) next[i] = { ...next[i], internetHints: hints, lookupState: 'done', lookupNote: 'Интернет-данные применены' };
+          } catch {
+            // keep generation flow even if web hints fail
+          }
+        }
         const prompt = buildPrompt(next[i], lawMode);
         try {
           const raw = await generateItemSpecs(provider, apiKey, model, prompt);
@@ -328,6 +343,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                 ...x,
                 type: top.type,
                 candidates: [],
+                internetHints: hints || x.internetHints,
                 lookupState: 'done',
                 lookupNote: hints ? 'Интернет + автоподбор' : 'Автоподбор'
               }
@@ -340,9 +356,10 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     setRows((prev) =>
       prev.map((x) =>
         x.id === rowId
-          ? {
+            ? {
               ...x,
               candidates,
+              internetHints: hints || x.internetHints,
               lookupState: 'choose',
               lookupNote: 'Найдено несколько вариантов'
             }
@@ -507,6 +524,11 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                           <span>{candidate.reason}</span>
                         </button>
                       ))}
+                    </div>
+                  )}
+                  {row.internetHints && (
+                    <div className="muted" style={{ marginTop: 6 }}>
+                      🌐 Данные модели загружены ({Math.min(row.internetHints.length, 9999)} симв.)
                     </div>
                   )}
                 </td>

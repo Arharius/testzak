@@ -32,8 +32,26 @@ function assertRequiredForProfile(settings: PlatformIntegrationSettings): string
   return errors;
 }
 
-export function validatePlatformSettings(settings: PlatformIntegrationSettings): { ok: boolean; errors: string[] } {
+function isHttpsOrLocalhost(url: string): boolean {
+  try {
+    const parsed = new URL(String(url || '').trim());
+    if (parsed.protocol === 'https:') return true;
+    if (parsed.protocol !== 'http:') return false;
+    const host = parsed.hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  } catch {
+    return false;
+  }
+}
+
+export function validatePlatformSettings(
+  settings: PlatformIntegrationSettings,
+  options?: { requireHttps?: boolean }
+): { ok: boolean; errors: string[] } {
   const errors = assertRequiredForProfile(settings);
+  if ((options?.requireHttps ?? true) && settings.endpoint && !isHttpsOrLocalhost(settings.endpoint)) {
+    errors.push('Endpoint должен использовать HTTPS (исключение: localhost).');
+  }
   return { ok: errors.length === 0, errors };
 }
 
@@ -76,4 +94,3 @@ export function buildPlatformDraftRequest(ctx: AdapterContext): AdapterResult {
 
   return { endpoint, headers, body };
 }
-

@@ -48,12 +48,21 @@ export function AutomationPanel({
           Токен Backend API
           <input {...form.register('backendApiToken')} placeholder="Bearer token" />
         </label>
+        <label>
+          Ретраи доставки
+          <input type="number" min={0} max={8} {...form.register('deliveryRetries', { valueAsNumber: true })} />
+        </label>
+        <label>
+          Базовая пауза (мс)
+          <input type="number" min={200} max={10000} step={100} {...form.register('deliveryBackoffMs', { valueAsNumber: true })} />
+        </label>
       </div>
       <div className="checks">
         <label><input type="checkbox" {...form.register('autoSend')} /> Автоотправка webhook после генерации</label>
         <label><input type="checkbox" {...form.register('autopilot')} /> Режим автопилота</label>
         <label><input type="checkbox" {...form.register('autoPickTopCandidate')} /> Автовыбор лучшего кандидата</label>
         <label><input type="checkbox" {...form.register('useBackendQueueApi')} /> Отправка событий через очередь Backend API</label>
+        <label><input type="checkbox" {...form.register('requireHttpsForIntegrations')} /> Требовать HTTPS для внешних интеграций (кроме localhost)</label>
       </div>
       <div className="actions">
         <button onClick={form.handleSubmit(onSave)} type="button">Сохранить настройки</button>

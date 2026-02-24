@@ -59,6 +59,17 @@ function looksLikeUrl(value: string): boolean {
   return /^https?:\/\/\S+/i.test(String(value || '').trim());
 }
 
+function isInsecureExternalHttp(url: string): boolean {
+  try {
+    const parsed = new URL(String(url || '').trim());
+    if (parsed.protocol !== 'http:') return false;
+    const host = parsed.hostname.toLowerCase();
+    return !(host === 'localhost' || host === '127.0.0.1' || host === '::1');
+  } catch {
+    return false;
+  }
+}
+
 function parseJsonArrayFromText(text: string): Array<{ type: GoodsType; model?: string; reason?: string }> {
   const raw = String(text || '').trim();
   if (!raw) return [];
@@ -221,11 +232,14 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     if (!platformSettings.endpoint.trim()) {
       issues.push({ level: 'warn', message: 'Не задан endpoint коннектора ЕИС/ЭТП.' });
     }
+    if (automationSettings.requireHttpsForIntegrations && isInsecureExternalHttp(platformSettings.endpoint)) {
+      issues.push({ level: 'critical', message: 'Endpoint коннектора должен быть HTTPS (кроме localhost).' });
+    }
     const critical = issues.filter((x) => x.level === 'critical').length;
     const warn = issues.filter((x) => x.level === 'warn').length;
     const score = Math.max(0, 100 - critical * 25 - warn * 8);
     return { issues, critical, warn, score };
-  }, [apiKey, rows, lawMode, platformSettings.orgName, platformSettings.endpoint]);
+  }, [apiKey, rows, lawMode, platformSettings.orgName, platformSettings.endpoint, automationSettings.requireHttpsForIntegrations]);
 
   const canGenerate = preflight.critical === 0;
 
@@ -288,7 +302,11 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         await sendEventThroughBestChannel(automationSettings, 'tz.generated.react', payload);
       }
       if (platformSettings.autoSendDraft) {
-        await postPlatformDraft(platformSettings, payload);
+        await postPlatformDraft(platformSettings, payload, undefined, {
+          retries: automationSettings.deliveryRetries,
+          baseBackoffMs: automationSettings.deliveryBackoffMs,
+          requireHttps: automationSettings.requireHttpsForIntegrations
+        });
       }
 
       appendAutomationLog({ at: new Date().toISOString(), event: 'react.generate', ok: true, note: `rows=${next.length}` });

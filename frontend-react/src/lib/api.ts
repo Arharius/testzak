@@ -4,24 +4,101 @@ import type { AutomationSettings } from '../types/schemas';
 import { buildPlatformDraftRequest, validatePlatformSettings } from './platformAdapters';
 import type { PlatformIntegrationSettings } from '../types/schemas';
 
-export async function postWebhook(url: string, secret: string, payload: unknown): Promise<boolean> {
-  if (!url) return false;
+type DeliveryPolicy = {
+  retries: number;
+  baseBackoffMs: number;
+  requireHttps: boolean;
+};
+
+function normalizePolicy(policy?: Partial<DeliveryPolicy>): DeliveryPolicy {
+  const retries = Number.isFinite(policy?.retries) ? Number(policy?.retries) : 2;
+  const baseBackoffMs = Number.isFinite(policy?.baseBackoffMs) ? Number(policy?.baseBackoffMs) : 800;
+  return {
+    retries: Math.max(0, Math.min(8, Math.trunc(retries))),
+    baseBackoffMs: Math.max(200, Math.min(10000, Math.trunc(baseBackoffMs))),
+    requireHttps: policy?.requireHttps !== false
+  };
+}
+
+function isHttpsOrLocalhost(url: string): boolean {
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (secret) headers['X-TZ-Secret'] = secret;
-    await axios.post(url, payload, { headers, timeout: 10000 });
-    appendAutomationLog({ at: new Date().toISOString(), event: 'webhook.sent', ok: true });
-    return true;
+    const parsed = new URL(url);
+    if (parsed.protocol === 'https:') return true;
+    if (parsed.protocol !== 'http:') return false;
+    const host = parsed.hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
   } catch {
-    appendAutomationLog({ at: new Date().toISOString(), event: 'webhook.failed', ok: false });
     return false;
   }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function postJsonWithRetry(
+  url: string,
+  payload: unknown,
+  headers: Record<string, string>,
+  policyInput?: Partial<DeliveryPolicy>
+): Promise<{ ok: boolean; attempts: number; note: string }> {
+  const policy = normalizePolicy(policyInput);
+  if (policy.requireHttps && !isHttpsOrLocalhost(url)) {
+    return { ok: false, attempts: 0, note: 'endpoint must be https (or localhost)' };
+  }
+
+  let lastError = 'delivery_failed';
+  const maxAttempts = policy.retries + 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await axios.post(url, payload, { headers, timeout: 10000 });
+      return { ok: true, attempts: attempt, note: 'ok' };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'delivery_failed';
+      if (attempt < maxAttempts) {
+        const jitter = Math.floor(Math.random() * 250);
+        const delayMs = policy.baseBackoffMs * Math.pow(2, attempt - 1) + jitter;
+        await sleep(delayMs);
+      }
+    }
+  }
+  return { ok: false, attempts: maxAttempts, note: lastError.slice(0, 180) };
+}
+
+export async function postWebhook(
+  url: string,
+  secret: string,
+  payload: unknown,
+  policy?: Partial<DeliveryPolicy>
+): Promise<boolean> {
+  if (!url) return false;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (secret) headers['X-TZ-Secret'] = secret;
+  const result = await postJsonWithRetry(url, payload, headers, policy);
+  if (result.ok) {
+    appendAutomationLog({ at: new Date().toISOString(), event: 'webhook.sent', ok: true });
+    if (result.attempts > 1) {
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event: 'webhook.retry',
+        ok: true,
+        note: `attempts=${result.attempts}`
+      });
+    }
+    return true;
+  }
+  appendAutomationLog({
+    at: new Date().toISOString(),
+    event: 'webhook.failed',
+    ok: false,
+    note: `attempts=${result.attempts}; ${result.note}`.slice(0, 180)
+  });
+  return false;
 }
 
 export async function postPlatformDraft(
   settingsOrEndpoint: PlatformIntegrationSettings | string,
   tokenOrPayload: string | unknown,
-  maybePayload?: unknown
+  maybePayload?: unknown,
+  policy?: Partial<DeliveryPolicy>
 ): Promise<boolean> {
   try {
     const settings: PlatformIntegrationSettings =
@@ -38,7 +115,7 @@ export async function postPlatformDraft(
         : settingsOrEndpoint;
 
     const payload = typeof settingsOrEndpoint === 'string' ? maybePayload : tokenOrPayload;
-    const check = validatePlatformSettings(settings);
+    const check = validatePlatformSettings(settings, { requireHttps: normalizePolicy(policy).requireHttps });
     if (!check.ok) {
       appendAutomationLog({
         at: new Date().toISOString(),
@@ -50,11 +127,33 @@ export async function postPlatformDraft(
     }
 
     const req = buildPlatformDraftRequest({ settings, payload: (payload || {}) as Record<string, unknown> });
-    await axios.post(req.endpoint, req.body, { headers: req.headers, timeout: 10000 });
+    const result = await postJsonWithRetry(req.endpoint, req.body, req.headers, policy);
+    if (!result.ok) {
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event: 'platform.failed',
+        ok: false,
+        note: `attempts=${result.attempts}; ${result.note}`.slice(0, 180)
+      });
+      return false;
+    }
     appendAutomationLog({ at: new Date().toISOString(), event: 'platform.sent', ok: true });
+    if (result.attempts > 1) {
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event: 'platform.retry',
+        ok: true,
+        note: `attempts=${result.attempts}`
+      });
+    }
     return true;
-  } catch {
-    appendAutomationLog({ at: new Date().toISOString(), event: 'platform.failed', ok: false });
+  } catch (error) {
+    appendAutomationLog({
+      at: new Date().toISOString(),
+      event: 'platform.failed',
+      ok: false,
+      note: (error instanceof Error ? error.message : 'unknown_error').slice(0, 180)
+    });
     return false;
   }
 }
@@ -100,12 +199,17 @@ export async function sendEventThroughBestChannel(
   eventName: string,
   payload: unknown
 ): Promise<boolean> {
+  const deliveryPolicy: Partial<DeliveryPolicy> = {
+    retries: settings.deliveryRetries,
+    baseBackoffMs: settings.deliveryBackoffMs,
+    requireHttps: settings.requireHttpsForIntegrations
+  };
   if (settings.useBackendQueueApi && settings.backendApiBase) {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (settings.backendApiToken) headers.Authorization = `Bearer ${settings.backendApiToken}`;
       const idempotencyKey = `${eventName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      await axios.post(
+      const result = await postJsonWithRetry(
         `${settings.backendApiBase.replace(/\/+$/, '')}/api/v1/integration/event`,
         {
           kind: eventName,
@@ -113,12 +217,35 @@ export async function sendEventThroughBestChannel(
           idempotency_key: idempotencyKey,
           payload
         },
-        { headers, timeout: 15000 }
+        headers,
+        deliveryPolicy
       );
+      if (!result.ok) {
+        appendAutomationLog({
+          at: new Date().toISOString(),
+          event: `${eventName}.backend`,
+          ok: false,
+          note: `attempts=${result.attempts}; ${result.note}`.slice(0, 180)
+        });
+        return false;
+      }
       appendAutomationLog({ at: new Date().toISOString(), event: `${eventName}.backend`, ok: true });
+      if (result.attempts > 1) {
+        appendAutomationLog({
+          at: new Date().toISOString(),
+          event: `${eventName}.backend.retry`,
+          ok: true,
+          note: `attempts=${result.attempts}`
+        });
+      }
       return true;
-    } catch {
-      appendAutomationLog({ at: new Date().toISOString(), event: `${eventName}.backend`, ok: false });
+    } catch (error) {
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event: `${eventName}.backend`,
+        ok: false,
+        note: (error instanceof Error ? error.message : 'unknown_error').slice(0, 180)
+      });
       return false;
     }
   }
@@ -127,5 +254,5 @@ export async function sendEventThroughBestChannel(
     event: eventName,
     at: new Date().toISOString(),
     payload
-  });
+  }, deliveryPolicy);
 }

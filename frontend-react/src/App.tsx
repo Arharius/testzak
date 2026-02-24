@@ -57,7 +57,11 @@ export function App() {
         at: new Date().toISOString(),
         payload: { source: 'react_migration' }
       };
-      return postWebhook(automationSettings.webhookUrl, automationSettings.webhookSecret, payload);
+      return postWebhook(automationSettings.webhookUrl, automationSettings.webhookSecret, payload, {
+        retries: automationSettings.deliveryRetries,
+        baseBackoffMs: automationSettings.deliveryBackoffMs,
+        requireHttps: automationSettings.requireHttpsForIntegrations
+      });
     },
     onSuccess: () => setRefreshTick((x) => x + 1)
   });
@@ -74,7 +78,11 @@ export function App() {
         customerInn: platformSettings.customerInn,
         items: []
       };
-      return postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload);
+      return postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload, {
+        retries: automationSettings.deliveryRetries,
+        baseBackoffMs: automationSettings.deliveryBackoffMs,
+        requireHttps: automationSettings.requireHttpsForIntegrations
+      });
     },
     onSuccess: () => setRefreshTick((x) => x + 1)
   });

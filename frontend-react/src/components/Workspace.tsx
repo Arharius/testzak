@@ -230,6 +230,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('deepseek-chat');
   const [openRouterModels, setOpenRouterModels] = useState<Array<{ id: string; name?: string; context_length?: number }>>([]);
+  const [openRouterLoadedForKey, setOpenRouterLoadedForKey] = useState('');
   const [openRouterLoading, setOpenRouterLoading] = useState(false);
   const [openRouterError, setOpenRouterError] = useState('');
   const [billingReadiness, setBillingReadiness] = useState<BillingReadiness | null>(null);
@@ -287,9 +288,15 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   ]);
 
   const canGenerate = preflight.critical === 0;
+  const openRouterKeySig = useMemo(() => {
+    const clean = String(apiKey || '').trim().replace(/^Bearer\s+/i, '');
+    if (!clean) return '';
+    return `${clean.length}:${clean.slice(0, 4)}:${clean.slice(-4)}`;
+  }, [apiKey]);
 
   const loadOpenRouterModels = async (): Promise<void> => {
     if (openRouterLoading) return;
+    if (provider !== 'openrouter') return;
     setOpenRouterLoading(true);
     setOpenRouterError('');
     try {
@@ -299,7 +306,8 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         items = await fetchOpenRouterModelsViaBackend(backendBase, apiKey);
       }
       setOpenRouterModels(items);
-      if (items.length > 0 && (!model.trim() || model === 'deepseek-chat')) {
+      setOpenRouterLoadedForKey(openRouterKeySig);
+      if (items.length > 0 && (!model.trim() || !items.some((x) => x.id === model))) {
         setModel(items[0].id);
       }
     } catch (firstErr) {
@@ -307,7 +315,8 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         const backendBase = automationSettings.backendApiBase.trim() || 'https://tz-generator-backend.onrender.com';
         const items = await fetchOpenRouterModelsViaBackend(backendBase, apiKey);
         setOpenRouterModels(items);
-        if (items.length > 0 && (!model.trim() || model === 'deepseek-chat')) {
+        setOpenRouterLoadedForKey(openRouterKeySig);
+        if (items.length > 0 && (!model.trim() || !items.some((x) => x.id === model))) {
           setModel(items[0].id);
         }
       } catch (secondErr) {
@@ -322,10 +331,10 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
 
   useEffect(() => {
     if (provider !== 'openrouter') return;
-    if (openRouterModels.length > 0) return;
     if (apiKey.trim().length < 6) return;
+    if (openRouterLoadedForKey === openRouterKeySig && openRouterModels.length > 0) return;
     void loadOpenRouterModels();
-  }, [provider, apiKey, openRouterModels.length]);
+  }, [provider, apiKey, openRouterModels.length, openRouterLoadedForKey, openRouterKeySig]);
 
   const loadBillingReadiness = async (): Promise<void> => {
     setBillingReadinessLoading(true);
@@ -666,7 +675,21 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         </label>
         <label>
           API-ключ
-          <input type="password" autoComplete="new-password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-... (не сохраняется в браузере)" />
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={apiKey}
+            onChange={(e) => {
+              const next = e.target.value;
+              setApiKey(next);
+              if (provider === 'openrouter') {
+                setOpenRouterLoadedForKey('');
+                setOpenRouterModels([]);
+                setOpenRouterError('');
+              }
+            }}
+            placeholder="sk-... (не сохраняется в браузере)"
+          />
         </label>
       </div>
 

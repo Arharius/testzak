@@ -823,6 +823,21 @@
             </div>
           </div>
           <div class="form-row" style="margin-bottom:8px;">
+            <div class="form-group">
+              <label for="automationPreset">Быстрый пресет</label>
+              <select id="automationPreset">
+                <option value="">Выберите интегратор</option>
+                <option value="n8n">n8n</option>
+                <option value="make">Make</option>
+                <option value="zapier">Zapier</option>
+                <option value="bitrix24">Bitrix24 (вебхук)</option>
+              </select>
+            </div>
+            <div class="form-group" style="display:flex;align-items:flex-end;">
+              <button class="btn btn-secondary" type="button" onclick="applyAutomationPreset()" style="padding:7px 14px;font-size:13px;">⚡ Применить пресет</button>
+            </div>
+          </div>
+          <div class="form-row" style="margin-bottom:8px;">
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
               <input id="automationAutoSend" type="checkbox" style="width:auto;" /> Автоотправка webhook после генерации ТЗ
             </label>
@@ -839,9 +854,27 @@
             <button class="btn btn-secondary" type="button" onclick="trainFromCurrentRows()" style="padding:7px 14px;font-size:13px;">🧠 Дообучить на текущих строках</button>
             <button class="btn btn-secondary" type="button" onclick="sendTestWebhook()" style="padding:7px 14px;font-size:13px;">🛰 Тест webhook</button>
             <button class="btn btn-secondary" type="button" onclick="flushAutomationQueue(true)" style="padding:7px 14px;font-size:13px;">🔄 Повторить очередь webhook</button>
+            <button class="btn btn-secondary" type="button" onclick="exportLearningMap()" style="padding:7px 14px;font-size:13px;">📤 Экспорт обучения</button>
+            <button class="btn btn-secondary" type="button" onclick="importLearningMapPrompt()" style="padding:7px 14px;font-size:13px;">📥 Импорт обучения</button>
+            <button class="btn btn-secondary" type="button" onclick="resetLearningMap()" style="padding:7px 14px;font-size:13px;">🧹 Сброс обучения</button>
           </div>
           <div id="learningStatus" style="font-size:11px;color:#6b7280;margin-top:8px;">Локальное обучение: 0 шаблонов</div>
           <div id="automationQueueStatus" style="font-size:11px;color:#6b7280;margin-top:4px;">Очередь webhook: 0</div>
+          <div id="automationLogStatus" style="font-size:11px;color:#6b7280;margin-top:4px;">Журнал: 0 событий</div>
+          <div style="margin-top:8px;border:1px solid #d6e1ea;border-radius:8px;background:#fff;max-height:130px;overflow:auto;padding:8px;" id="automationLogBox"></div>
+          <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-secondary" type="button" onclick="clearAutomationLog()" style="padding:6px 12px;font-size:12px;">Очистить журнал</button>
+          </div>
+          <details style="margin-top:8px;">
+            <summary style="font-size:12px;font-weight:700;color:#0f4e79;">Как пользоваться автоматизацией и обучением</summary>
+            <div style="font-size:11px;color:#4b5563;margin-top:6px;line-height:1.45;">
+              1) Вставьте webhook URL и нажмите «Сохранить настройки».<br/>
+              2) Включите «Автопилот», если хотите режим без ручных шагов.<br/>
+              3) После ручного выбора типов жмите «Дообучить на текущих строках».<br/>
+              4) Если внешний сервис недоступен, события уйдут в очередь — потом жмите «Повторить очередь webhook».<br/>
+              5) Делайте «Экспорт обучения» для бэкапа и «Импорт обучения» на другом устройстве.
+            </div>
+          </details>
         </div>
       </details>
       <details class="api-section" style="margin-top:8px;">
@@ -2210,6 +2243,104 @@ function enqueueAutomationEvent(eventName, payload) {
   saveAutomationQueue();
 }
 
+function loadAutomationLog() {
+  try {
+    const raw = localStorage.getItem(AUTOMATION_LOG_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    automationLog = Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    automationLog = [];
+  }
+}
+
+function saveAutomationLog() {
+  try { localStorage.setItem(AUTOMATION_LOG_KEY, JSON.stringify(automationLog)); } catch (_) {}
+  const statusEl = document.getElementById('automationLogStatus');
+  if (statusEl) statusEl.textContent = `Журнал: ${automationLog.length} событий`;
+  const box = document.getElementById('automationLogBox');
+  if (!box) return;
+  if (!automationLog.length) {
+    box.innerHTML = '<div style="font-size:11px;color:#9ca3af;">Событий пока нет</div>';
+    return;
+  }
+  const lines = automationLog.slice(-40).reverse().map(it =>
+    `<div style="font-size:11px;color:#334155;border-bottom:1px dashed #e2e8f0;padding:3px 0;">` +
+    `<span style="color:#64748b;">${escHtml(it.at || '')}</span> — <b>${escHtml(it.event || 'event')}</b> ` +
+    `<span style="color:${it.ok ? '#059669' : '#b45309'};">${it.ok ? 'OK' : 'WARN'}</span>` +
+    `${it.note ? ` <span style="color:#64748b;">(${escHtml(it.note)})</span>` : ''}` +
+    `</div>`
+  ).join('');
+  box.innerHTML = lines;
+}
+
+function logAutomationAction(event, ok = true, note = '') {
+  automationLog.push({
+    at: new Date().toISOString(),
+    event,
+    ok: !!ok,
+    note: note ? String(note).slice(0, 200) : ''
+  });
+  if (automationLog.length > 500) automationLog = automationLog.slice(-500);
+  saveAutomationLog();
+}
+
+function clearAutomationLog() {
+  automationLog = [];
+  saveAutomationLog();
+  hideError();
+}
+
+function applyAutomationPreset() {
+  const preset = document.getElementById('automationPreset')?.value || '';
+  const urlEl = document.getElementById('automationWebhook');
+  const secretEl = document.getElementById('automationSecret');
+  if (!preset || !urlEl) return;
+  const placeholders = {
+    n8n: 'https://n8n.example/webhook/tz-generator',
+    make: 'https://hook.eu1.make.com/xxxxxxxxxxxxxxxx',
+    zapier: 'https://hooks.zapier.com/hooks/catch/xxxx/yyyy',
+    bitrix24: 'https://yourportal.bitrix24.ru/rest/1/token/event.register.json'
+  };
+  urlEl.placeholder = placeholders[preset] || 'https://hooks.example.com/...';
+  if (!secretEl?.value?.trim()) secretEl.value = 'tz-secret';
+  logAutomationAction('automation.preset.applied', true, preset);
+}
+
+function exportLearningMap() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    total: Object.keys(learnedTypeMap || {}).length,
+    map: learnedTypeMap || {}
+  };
+  downloadTextFile(`learning_map_${stamp}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+  logAutomationAction('learning.export', true, 'json');
+}
+
+function importLearningMapPrompt() {
+  const raw = prompt('Вставьте JSON learning_map для импорта:');
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    const map = parsed?.map && typeof parsed.map === 'object' ? parsed.map : parsed;
+    if (!map || typeof map !== 'object') throw new Error('invalid map');
+    learnedTypeMap = map;
+    saveLearnedTypeMap();
+    logAutomationAction('learning.import', true, String(Object.keys(learnedTypeMap).length));
+    hideError();
+  } catch (e) {
+    logAutomationAction('learning.import', false, 'parse_error');
+    showError('Ошибка импорта обучения: неверный JSON.');
+  }
+}
+
+function resetLearningMap() {
+  learnedTypeMap = Object.create(null);
+  saveLearnedTypeMap();
+  logAutomationAction('learning.reset', true);
+  hideError();
+}
+
 function saveAutomationSettings() {
   const urlEl = document.getElementById('automationWebhook');
   const secEl = document.getElementById('automationSecret');
@@ -2223,6 +2354,7 @@ function saveAutomationSettings() {
   automationSettings.autoPickTopCandidate = !!pickEl?.checked;
   try { localStorage.setItem(AUTOMATION_SETTINGS_KEY, JSON.stringify(automationSettings)); } catch (_) {}
   hideError();
+  logAutomationAction('automation.settings.saved', true, automationSettings.autopilot ? 'autopilot_on' : 'autopilot_off');
   flushAutomationQueue(false);
 }
 
@@ -2247,9 +2379,11 @@ async function sendAutomationEvent(eventName, payload) {
     });
     if (timeout) clearTimeout(timeout);
     if (!response.ok) throw new Error('Webhook HTTP ' + response.status);
+    logAutomationAction(eventName, true, 'webhook_sent');
     return true;
   } catch (_) {
     enqueueAutomationEvent(eventName, payload);
+    logAutomationAction(eventName, false, 'queued');
     return false;
   }
 }
@@ -2273,8 +2407,11 @@ async function flushAutomationQueue(manual = false) {
   }
   if (manual && !automationQueue.length) hideError();
   if (manual && automationQueue.length) {
+    logAutomationAction('automation.queue.flush', false, String(automationQueue.length));
     showError(`Часть webhook-событий осталась в очереди: ${automationQueue.length}`);
+    return;
   }
+  logAutomationAction('automation.queue.flush', true, 'done');
 }
 
 function platformProfileLabel(profile) {
@@ -2343,6 +2480,7 @@ function savePlatformIntegrationSettings() {
   platformIntegrationSettings.autoSendDraft = !!autoSendEl?.checked;
   try { localStorage.setItem(PLATFORM_INTEGRATION_SETTINGS_KEY, JSON.stringify(platformIntegrationSettings)); } catch (_) {}
   updatePlatformStatus();
+  logAutomationAction('platform.settings.saved', true, platformIntegrationSettings.profile || 'eis');
   flushPlatformQueue(false);
 }
 
@@ -2481,9 +2619,11 @@ async function sendPlatformDraft(payload = null) {
       body: JSON.stringify(draft)
     });
     if (!response.ok) throw new Error('connector http ' + response.status);
+    logAutomationAction('platform.draft.send', true, platformIntegrationSettings.profile || 'profile');
     return true;
   } catch (_) {
     queuePlatformDraft(draft);
+    logAutomationAction('platform.draft.send', false, 'queued');
     return false;
   }
 }
@@ -2507,9 +2647,11 @@ async function flushPlatformQueue(manual = false) {
     if (!ok && platformQueue.length > 100) break;
   }
   if (manual && platformQueue.length) {
+    logAutomationAction('platform.queue.flush', false, String(platformQueue.length));
     showError(`Часть черновиков ЕИС/ЭТП осталась в очереди: ${platformQueue.length}`);
     return;
   }
+  logAutomationAction('platform.queue.flush', true, 'done');
   if (manual) hideError();
 }
 
@@ -2523,7 +2665,9 @@ async function sendPlatformDraftNow() {
   if (ok) {
     hideError();
     await flushPlatformQueue(false);
+    logAutomationAction('platform.draft.manual', true);
   } else {
+    logAutomationAction('platform.draft.manual', false, 'queued');
     showError('Черновик отправить не удалось. Добавлен в очередь коннектора.');
   }
 }
@@ -2534,6 +2678,7 @@ async function runEliteProcurementAutomation() {
   hideError();
   setLoading(true, 'Экстра-автоматизация: интернет → классификация → ТЗ → пакет → коннектор...');
   try {
+    logAutomationAction('elite.automation.start', true);
     await enrichRowsFromInternet();
     autoResolveTopSuggestions();
     const hasApiKey = !!document.getElementById('apiKey')?.value?.trim();
@@ -2557,8 +2702,10 @@ async function runEliteProcurementAutomation() {
       profile: platformIntegrationSettings.profile,
       items: draft.items?.length || 0
     });
+    logAutomationAction('elite.automation.completed', true, String(draft.items?.length || 0));
   } catch (e) {
     setLoading(false);
+    logAutomationAction('elite.automation.failed', false, e?.message || 'unknown');
     showError('Экстра-автоматизация завершилась с ошибкой: ' + (e?.message || 'неизвестно'));
   }
 }
@@ -3052,16 +3199,23 @@ function trainFromCurrentRows() {
     learned += 1;
   }
   hideError();
-  if (!learned) showError('Нет данных для обучения: заполните модель и выберите тип.');
+  if (!learned) {
+    logAutomationAction('learning.train.rows', false, 'no_data');
+    showError('Нет данных для обучения: заполните модель и выберите тип.');
+    return;
+  }
+  logAutomationAction('learning.train.rows', true, String(learned));
 }
 
 async function sendTestWebhook() {
   saveAutomationSettings();
   if (!automationSettings.webhookUrl) {
+    logAutomationAction('automation.webhook.test', false, 'url_missing');
     showError('Укажите Webhook URL в блоке автоматизации.');
     return;
   }
-  await sendAutomationEvent('webhook.test', { ok: true, source: 'manual_test' });
+  const ok = await sendAutomationEvent('webhook.test', { ok: true, source: 'manual_test' });
+  logAutomationAction('automation.webhook.test', ok, ok ? 'sent' : 'queued');
   hideError();
 }
 
@@ -3070,6 +3224,7 @@ async function runFullAutopilot() {
   hideError();
   setLoading(true, 'Автопилот: интернет-поиск и автоклассификация...');
   try {
+    logAutomationAction('autopilot.start', true);
     await enrichRowsFromInternet();
     const autoPicked = autoResolveTopSuggestions();
     const rows = Array.from(document.querySelectorAll('#goods-rows tr'));
@@ -3084,6 +3239,7 @@ async function runFullAutopilot() {
       await generateTZ();
     } else {
       setLoading(false);
+      logAutomationAction('autopilot.partial', false, `missing=${missingModel}`);
       showError(`Автопилот завершён частично. Автовыборов: ${autoPicked}. Проверьте строки без модели/API-ключ.`);
     }
     await sendAutomationEvent('autopilot.completed', {
@@ -3092,6 +3248,7 @@ async function runFullAutopilot() {
     });
   } catch (e) {
     setLoading(false);
+    logAutomationAction('autopilot.failed', false, e?.message || 'unknown');
     showError('Ошибка автопилота: ' + (e?.message || 'неизвестно'));
   }
 }
@@ -3248,10 +3405,12 @@ let goodsRowCounter = 0;  // для уникальных ID строк
 const LEARNED_TYPE_MAP_KEY = 'tz_learned_type_map_v1';
 const AUTOMATION_SETTINGS_KEY = 'tz_automation_settings_v1';
 const AUTOMATION_QUEUE_KEY = 'tz_automation_queue_v1';
+const AUTOMATION_LOG_KEY = 'tz_automation_log_v1';
 const PLATFORM_INTEGRATION_SETTINGS_KEY = 'tz_platform_integration_settings_v1';
 const PLATFORM_QUEUE_KEY = 'tz_platform_queue_v1';
 let learnedTypeMap = Object.create(null);
 let automationQueue = [];
+let automationLog = [];
 let platformQueue = [];
 let automationSettings = {
   webhookUrl: '',
@@ -3281,6 +3440,8 @@ document.addEventListener('DOMContentLoaded', function() {
   saveLearnedTypeMap();
   loadAutomationQueue();
   saveAutomationQueue();
+  loadAutomationLog();
+  saveAutomationLog();
   loadAutomationSettings();
   loadPlatformQueue();
   savePlatformQueue();
@@ -5767,6 +5928,25 @@ document.getElementById('apiKey').addEventListener('input', function() {
   }
   status.style.color = '#059669';
 });
+
+// Быстрая синхронизация профиля ЕИС/ЭТП с текущим режимом закона
+const platformProfileEl = document.getElementById('platformProfile');
+if (platformProfileEl) {
+  platformProfileEl.addEventListener('change', function() {
+    const profile = this.value || 'eis';
+    if (profile === 'eis') switchLaw('44');
+    if (profile === 'eis_223') switchLaw('223');
+    const endpointEl = document.getElementById('platformEndpoint');
+    if (endpointEl && !endpointEl.value.trim()) {
+      endpointEl.placeholder = profile === 'eis_223'
+        ? 'https://connector.example/api/eis223/drafts'
+        : profile === 'eis'
+          ? 'https://connector.example/api/eis44/drafts'
+          : 'https://connector.example/api/etp/drafts';
+    }
+    savePlatformIntegrationSettings();
+  });
+}
 
 // Загружаем сохранённый ключ из localStorage
 (function() {

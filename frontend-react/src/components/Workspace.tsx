@@ -108,6 +108,34 @@ function parseJsonArrayFromText(text: string): Array<{ type: GoodsType; model?: 
   }
 }
 
+function extractJsonObject(text: string): unknown | null {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // continue
+  }
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenceMatch?.[1]) {
+    try {
+      return JSON.parse(fenceMatch[1].trim());
+    } catch {
+      // continue
+    }
+  }
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    try {
+      return JSON.parse(raw.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 function modelTokensForExactMatch(query: string): string[] {
   const parts = normalizeText(query)
     .split(' ')
@@ -217,23 +245,23 @@ function buildPrompt(row: Row, lawMode: LawMode): string {
 }
 
 function parseMaybeJson(text: string): { pretty: string; okpd2: string; ktru: string } {
-  try {
-    const obj = JSON.parse(text);
+  const obj = extractJsonObject(text) as Record<string, any> | null;
+  if (obj && typeof obj === 'object') {
     const pretty = JSON.stringify(obj, null, 2);
     return {
       pretty,
       okpd2: obj?.meta?.okpd2_code || '',
       ktru: obj?.meta?.ktru_code || ''
     };
-  } catch {
-    return { pretty: text, okpd2: '', ktru: '' };
   }
+  return { pretty: text, okpd2: '', ktru: '' };
 }
 
 function parseResultObject(text?: string): ParsedResult | null {
   if (!text) return null;
   try {
-    const obj = JSON.parse(text) as ParsedResult;
+    const parsed = extractJsonObject(text);
+    const obj = parsed as ParsedResult | null;
     return obj && typeof obj === 'object' ? obj : null;
   } catch {
     return null;
@@ -242,7 +270,9 @@ function parseResultObject(text?: string): ParsedResult | null {
 
 function buildReadableResultBlock(jsonText: string): string {
   try {
-    const obj = JSON.parse(jsonText) as ParsedResult;
+    const parsed = extractJsonObject(jsonText);
+    if (!parsed || typeof parsed !== 'object') return jsonText;
+    const obj = parsed as ParsedResult;
     const specs = Array.isArray(obj?.specs) ? obj.specs : [];
     const meta = obj?.meta || {};
     const lines: string[] = [];

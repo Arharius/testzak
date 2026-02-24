@@ -733,23 +733,22 @@ textarea[readonly] {
 
 .layout.theme-aurelia .bg-layer::before {
   background:
-    radial-gradient(700px 420px at 12% 2%, rgba(255, 187, 86, 0.3), transparent 62%),
-    radial-gradient(900px 520px at 88% 6%, rgba(122, 171, 255, 0.22), transparent 65%),
-    radial-gradient(1100px 680px at 52% 120%, rgba(255, 157, 72, 0.16), transparent 60%),
-    linear-gradient(158deg, #060b16 0%, #0c1428 42%, #131f35 100%);
+    linear-gradient(145deg, rgba(4, 8, 16, 0.8) 0%, rgba(8, 14, 28, 0.72) 35%, rgba(20, 13, 8, 0.62) 100%),
+    radial-gradient(650px 380px at 10% 12%, rgba(255, 194, 104, 0.34), transparent 62%),
+    radial-gradient(900px 520px at 86% 10%, rgba(126, 171, 255, 0.2), transparent 66%),
+    url('https://images.unsplash.com/photo-1543201237-97ce16863f7c?auto=format&fit=crop&w=2200&q=80');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 .layout.theme-aurelia .bg-layer::after {
   background:
-    radial-gradient(circle at 6% 14%, rgba(255, 228, 172, 0.24) 0 2px, transparent 2.8px),
-    radial-gradient(circle at 17% 24%, rgba(255, 197, 112, 0.22) 0 3px, transparent 3.8px),
-    radial-gradient(circle at 27% 18%, rgba(255, 244, 212, 0.2) 0 1.8px, transparent 2.4px),
-    radial-gradient(circle at 44% 12%, rgba(255, 176, 93, 0.18) 0 2.4px, transparent 3px),
-    radial-gradient(circle at 59% 20%, rgba(255, 236, 188, 0.22) 0 2.2px, transparent 2.9px),
-    radial-gradient(circle at 73% 14%, rgba(255, 168, 82, 0.2) 0 2.7px, transparent 3.3px),
-    radial-gradient(circle at 88% 22%, rgba(255, 244, 220, 0.18) 0 2px, transparent 2.6px),
-    linear-gradient(100deg, transparent 0%, rgba(255, 203, 127, 0.08) 42%, transparent 78%);
-  opacity: 0.55;
+    radial-gradient(circle at 10% 13%, rgba(255, 212, 140, 0.2) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 22% 20%, rgba(255, 188, 108, 0.16) 0 2.6px, transparent 3.2px),
+    radial-gradient(circle at 66% 14%, rgba(255, 218, 164, 0.16) 0 2.2px, transparent 2.9px),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.15), transparent 35%, rgba(255, 209, 136, 0.05), transparent 80%);
+  opacity: 0.4;
   animation: lampGlow 10s ease-in-out infinite;
 }
 
@@ -764,9 +763,10 @@ textarea[readonly] {
     radial-gradient(900px 260px at 85% -40%, rgba(214, 170, 87, 0.28), transparent 65%),
     linear-gradient(145deg, rgba(12, 20, 39, 0.95) 0%, rgba(9, 18, 36, 0.96) 45%, rgba(24, 33, 52, 0.96) 100%);
   box-shadow:
-    0 26px 64px rgba(2, 6, 15, 0.75),
-    inset 0 1px 0 rgba(255, 255, 255, 0.16),
-    inset 0 0 60px rgba(201, 152, 71, 0.07);
+    0 26px 64px rgba(2, 6, 15, 0.78),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 60px rgba(201, 152, 71, 0.08);
+  backdrop-filter: blur(2px);
 }
 
 .layout.theme-aurelia .hero::after {
@@ -788,10 +788,37 @@ textarea[readonly] {
     0 20px 46px rgba(2, 6, 15, 0.66),
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     inset 0 -1px 0 rgba(156, 118, 47, 0.18);
+  backdrop-filter: blur(2px);
 }
 
 .layout.theme-aurelia .panel h2 {
   color: #f8efe0;
+}
+
+.layout.theme-aurelia,
+.layout.theme-aurelia p,
+.layout.theme-aurelia label,
+.layout.theme-aurelia .muted {
+  color: #eaf1ff;
+  text-shadow: none;
+}
+
+.layout.theme-aurelia .rows-table thead th {
+  color: #ebf3ff;
+  background: linear-gradient(90deg, rgba(56, 97, 178, 0.44) 0%, rgba(33, 64, 118, 0.42) 100%);
+}
+
+.layout.theme-aurelia input,
+.layout.theme-aurelia select,
+.layout.theme-aurelia textarea {
+  color: #f0f5ff;
+  background: rgba(7, 13, 26, 0.9);
+  border-color: rgba(162, 186, 233, 0.38);
+}
+
+.layout.theme-aurelia textarea[readonly] {
+  background: rgba(4, 10, 20, 0.94);
+  color: #e8f0ff;
 }
 
 .layout.theme-aurelia .theme-switch {

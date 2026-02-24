@@ -572,27 +572,14 @@ textarea[readonly] {
 
 .layout.theme-legacy .bg-layer::before {
   background:
-    radial-gradient(1200px 700px at 72% -10%, rgba(255, 255, 255, 0.24), transparent 64%),
-    radial-gradient(900px 560px at 8% 120%, rgba(196, 206, 218, 0.24), transparent 60%),
-    linear-gradient(160deg, #06090d 0%, #0b1017 42%, #121922 100%),
-    repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.04) 0px,
-      rgba(255, 255, 255, 0.04) 1px,
-      transparent 1px,
-      transparent 56px
-    ),
-    repeating-linear-gradient(
-      0deg,
-      rgba(255, 255, 255, 0.025) 0px,
-      rgba(255, 255, 255, 0.025) 1px,
-      transparent 1px,
-      transparent 42px
-    );
-  background-size: 120% 120%, 120% 120%, 100% 100%, 100% 100%, 100% 100%;
-  background-position: center;
+    radial-gradient(1200px 700px at 72% -10%, rgba(255, 255, 255, 0.18), transparent 64%),
+    radial-gradient(900px 560px at 8% 120%, rgba(196, 206, 218, 0.16), transparent 60%),
+    linear-gradient(160deg, rgba(6, 9, 13, 0.78) 0%, rgba(11, 16, 23, 0.72) 42%, rgba(18, 25, 34, 0.78) 100%),
+    url('./assets/bg-classic.png');
+  background-size: 120% 120%, 120% 120%, 100% 100%, cover;
+  background-position: center, center, center, center;
   background-repeat: no-repeat;
-  filter: grayscale(1) contrast(1.1);
+  filter: grayscale(1) contrast(1.08) brightness(0.9);
   animation: legacyPan 26s ease-in-out infinite alternate;
 }
 

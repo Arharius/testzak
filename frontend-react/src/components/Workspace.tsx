@@ -27,6 +27,12 @@ type Row = {
   internetHints?: string;
 };
 
+type ParsedSpec = { group: string; name: string; value: string; unit?: string };
+type ParsedResult = {
+  meta?: { okpd2_code?: string; ktru_code?: string; law175_status?: string; law175_basis?: string };
+  specs?: ParsedSpec[];
+};
+
 const GOODS_LABELS: Record<GoodsType, string> = {
   pc: 'Системный блок',
   laptop: 'Ноутбук',
@@ -170,6 +176,16 @@ function parseMaybeJson(text: string): { pretty: string; okpd2: string; ktru: st
     };
   } catch {
     return { pretty: text, okpd2: '', ktru: '' };
+  }
+}
+
+function parseResultObject(text?: string): ParsedResult | null {
+  if (!text) return null;
+  try {
+    const obj = JSON.parse(text) as ParsedResult;
+    return obj && typeof obj === 'object' ? obj : null;
+  } catch {
+    return null;
   }
 }
 
@@ -717,6 +733,35 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       </div>
 
       <textarea value={tzText} readOnly rows={18} style={{ width: '100%', fontFamily: 'monospace' }} />
+      {rows.some((r) => r.status === 'done' && r.result) && (
+        <div className="rows-table-wrap" style={{ marginTop: 14 }}>
+          <table className="rows-table">
+            <thead>
+              <tr>
+                <th>Позиция</th>
+                <th>Параметр</th>
+                <th>Значение</th>
+                <th>Ед.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.flatMap((row) => {
+                const parsed = parseResultObject(row.result);
+                const specs = Array.isArray(parsed?.specs) ? parsed!.specs! : [];
+                if (!specs.length) return [];
+                return specs.map((spec, idx) => (
+                  <tr key={`${row.id}-${idx}-${spec.group}-${spec.name}`}>
+                    <td>{idx === 0 ? `${GOODS_LABELS[row.type]} / ${row.model}` : ''}</td>
+                    <td>{spec.group} → {spec.name}</td>
+                    <td>{spec.value}</td>
+                    <td>{spec.unit || ''}</td>
+                  </tr>
+                ));
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }

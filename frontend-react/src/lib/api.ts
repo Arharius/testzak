@@ -213,6 +213,20 @@ const API_ENDPOINTS: Record<Provider, string> = {
   deepseek: 'https://api.deepseek.com/chat/completions'
 };
 
+function normalizeModelForProvider(provider: Provider, model: string): string {
+  const raw = String(model || '').trim();
+  if (!raw) return raw;
+  if (provider === 'openrouter') {
+    if (raw === 'deepseek-chat') return 'deepseek/deepseek-chat';
+    if (raw === 'deepseek-reasoner') return 'deepseek/deepseek-reasoner';
+  }
+  if (provider === 'deepseek' && raw.includes('/')) {
+    const tail = raw.split('/').pop();
+    return tail || raw;
+  }
+  return raw;
+}
+
 export async function generateItemSpecs(
   provider: Provider,
   apiKey: string,
@@ -220,6 +234,7 @@ export async function generateItemSpecs(
   prompt: string
 ): Promise<string> {
   const endpoint = API_ENDPOINTS[provider];
+  const modelName = normalizeModelForProvider(provider, model);
   const cleanKey = sanitizeHeaderValue(apiKey).replace(/^Bearer\s+/i, '');
   if (!cleanKey) {
     throw new Error('api_key_invalid_after_sanitize');
@@ -232,17 +247,29 @@ export async function generateItemSpecs(
     headers['HTTP-Referer'] = sanitizeHeaderValue('https://openrouter.ai');
     headers['X-Title'] = sanitizeHeaderValue('TZ Generator React');
   }
-  const response = await axios.post(
-    endpoint,
-    {
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.1,
-      max_tokens: 1800
-    },
-    { headers, timeout: 60000 }
-  );
-  return response.data?.choices?.[0]?.message?.content || '';
+  try {
+    const response = await axios.post(
+      endpoint,
+      {
+        model: modelName,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: 1800
+      },
+      { headers, timeout: 60000 }
+    );
+    return response.data?.choices?.[0]?.message?.content || '';
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const msg =
+        (error.response?.data as { error?: { message?: string }; message?: string } | undefined)?.error?.message ||
+        (error.response?.data as { message?: string } | undefined)?.message ||
+        error.message;
+      throw new Error(`provider ${provider} status ${status || 'n/a'}: ${String(msg).slice(0, 180)}`);
+    }
+    throw error;
+  }
 }
 
 export async function sendEventThroughBestChannel(

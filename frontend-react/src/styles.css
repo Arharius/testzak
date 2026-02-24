@@ -754,7 +754,7 @@ textarea[readonly] {
     linear-gradient(145deg, rgba(4, 8, 16, 0.8) 0%, rgba(8, 14, 28, 0.72) 35%, rgba(20, 13, 8, 0.62) 100%),
     radial-gradient(650px 380px at 10% 12%, rgba(255, 194, 104, 0.34), transparent 62%),
     radial-gradient(900px 520px at 86% 10%, rgba(126, 171, 255, 0.2), transparent 66%),
-    url('./assets/bg-aurelia.jpg');
+    url('https://images.unsplash.com/photo-1543201237-97ce16863f7c?auto=format&fit=crop&w=2400&q=80');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

@@ -450,6 +450,59 @@ button:disabled {
   gap: 3px;
 }
 
+.tz-output {
+  display: grid;
+  gap: 12px;
+}
+
+.tz-item {
+  border: 1px solid rgba(131, 166, 236, 0.36);
+  border-radius: 10px;
+  background: rgba(8, 15, 32, 0.76);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.tz-item h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #e8f1ff;
+}
+
+.tz-meta {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: #c6d8ff;
+}
+
+.tz-item pre {
+  margin: 0;
+  border: 1px solid rgba(126, 165, 245, 0.45);
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(5, 10, 21, 0.96);
+  color: #e2ebff;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.raw-result-box {
+  border: 1px solid rgba(131, 166, 236, 0.36);
+  border-radius: 10px;
+  background: rgba(9, 17, 36, 0.72);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.raw-result-box summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: #d6e7ff;
+}
+
 .critical {
   color: #ff9ca8;
   font-weight: 700;

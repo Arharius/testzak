@@ -72,6 +72,15 @@ function cutText(text: string, maxLen: number): string {
   return s.length <= maxLen ? s : `${s.slice(0, maxLen)}...`;
 }
 
+function escapeHtml(value: string): string {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function looksLikeUrl(value: string): boolean {
   return /^https?:\/\/\S+/i.test(String(value || '').trim());
 }
@@ -333,6 +342,17 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [tzText, setTzText] = useState('');
   const [bulkLookup, setBulkLookup] = useState(false);
   const [autopilotRunning, setAutopilotRunning] = useState(false);
+  const structuredRows = useMemo(
+    () =>
+      rows
+        .filter((row) => row.status === 'done' && String(row.result || '').trim().length > 0)
+        .map((row) => {
+          const parsed = parseResultObject(row.result);
+          const specs = Array.isArray(parsed?.specs) ? parsed!.specs! : [];
+          return { row, parsed, specs };
+        }),
+    [rows]
+  );
 
   const preflight = useMemo(() => {
     const issues: PreflightIssue[] = [];
@@ -732,6 +752,63 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     doc.save(`TZ_react_${Date.now()}.pdf`);
   };
 
+  const printTz = () => {
+    if (!tzText.trim()) return;
+    const popup = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=900');
+    if (!popup) return;
+
+    const sectionsHtml = structuredRows
+      .map(({ row, parsed, specs }) => {
+        const meta = parsed?.meta || {};
+        const head = `<h3>${escapeHtml(GOODS_LABELS[row.type])} / ${escapeHtml(row.model)}</h3>`;
+        const metaHtml = `
+          <div class="meta">
+            <span><strong>ОКПД2:</strong> ${escapeHtml(meta.okpd2_code || 'не указано')}</span>
+            <span><strong>КТРУ:</strong> ${escapeHtml(meta.ktru_code || 'не указано')}</span>
+            <span><strong>ПП 1875:</strong> ${escapeHtml(meta.law175_status || 'не указано')}${meta.law175_basis ? ` (${escapeHtml(meta.law175_basis)})` : ''}</span>
+          </div>
+        `;
+        if (!specs.length) {
+          return `${head}${metaHtml}<pre>${escapeHtml(String(row.result || ''))}</pre>`;
+        }
+        const rowsHtml = specs
+          .map(
+            (spec) =>
+              `<tr><td>${escapeHtml(spec.group)}</td><td>${escapeHtml(spec.name)}</td><td>${escapeHtml(spec.value)}</td><td>${escapeHtml(spec.unit || '')}</td></tr>`
+          )
+          .join('');
+        return `${head}${metaHtml}<table><thead><tr><th>Группа</th><th>Параметр</th><th>Значение</th><th>Ед.</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+      })
+      .join('');
+
+    popup.document.write(`<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Печать ТЗ</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    h3 { margin: 20px 0 10px; font-size: 16px; }
+    .muted { color: #444; white-space: pre-wrap; margin-bottom: 14px; }
+    .meta { display: grid; gap: 4px; margin-bottom: 8px; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+    th, td { border: 1px solid #bfc9d8; padding: 6px 8px; vertical-align: top; font-size: 12px; }
+    th { background: #eef2f8; text-align: left; }
+    pre { white-space: pre-wrap; border: 1px solid #bfc9d8; padding: 10px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>ТЕХНИЧЕСКОЕ ЗАДАНИЕ (${lawMode === '223' ? '223-ФЗ' : '44-ФЗ'})</h1>
+  <div class="muted">${escapeHtml(buildNormativeBlock(lawMode))}</div>
+  ${sectionsHtml || `<pre>${escapeHtml(tzText)}</pre>`}
+</body>
+</html>`);
+    popup.document.close();
+    popup.focus();
+    popup.print();
+  };
+
   return (
     <section className="panel">
       <h2>Рабочая область ТЗ</h2>
@@ -1044,38 +1121,57 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         <button type="button" onClick={exportPackage}>Экспорт пакета</button>
         <button type="button" onClick={() => void exportDocx()} disabled={!tzText.trim()}>Скачать DOCX</button>
         <button type="button" onClick={exportPdf} disabled={!tzText.trim()}>Скачать PDF</button>
+        <button type="button" onClick={printTz} disabled={!tzText.trim()}>Печать</button>
       </div>
 
-      <textarea value={tzText} readOnly rows={18} style={{ width: '100%', fontFamily: 'monospace' }} />
-      {rows.some((r) => r.status === 'done' && r.result) && (
-        <div className="rows-table-wrap" style={{ marginTop: 14 }}>
-          <table className="rows-table">
-            <thead>
-              <tr>
-                <th>Позиция</th>
-                <th>Параметр</th>
-                <th>Значение</th>
-                <th>Ед.</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.flatMap((row) => {
-                const parsed = parseResultObject(row.result);
-                const specs = Array.isArray(parsed?.specs) ? parsed!.specs! : [];
-                if (!specs.length) return [];
-                return specs.map((spec, idx) => (
-                  <tr key={`${row.id}-${idx}-${spec.group}-${spec.name}`}>
-                    <td>{idx === 0 ? `${GOODS_LABELS[row.type]} / ${row.model}` : ''}</td>
-                    <td>{spec.group} → {spec.name}</td>
-                    <td>{spec.value}</td>
-                    <td>{spec.unit || ''}</td>
-                  </tr>
-                ));
-              })}
-            </tbody>
-          </table>
+      {structuredRows.length > 0 && (
+        <div id="tz-print-root" className="tz-output">
+          {structuredRows.map(({ row, parsed, specs }) => (
+            <article key={row.id} className="tz-item">
+              <h3>{GOODS_LABELS[row.type]} / {row.model}</h3>
+              <div className="tz-meta">
+                <span><strong>ОКПД2:</strong> {parsed?.meta?.okpd2_code || 'не указано'}</span>
+                <span><strong>КТРУ:</strong> {parsed?.meta?.ktru_code || 'не указано'}</span>
+                <span>
+                  <strong>ПП 1875:</strong> {parsed?.meta?.law175_status || 'не указано'}
+                  {parsed?.meta?.law175_basis ? ` (${parsed.meta.law175_basis})` : ''}
+                </span>
+              </div>
+              {specs.length > 0 ? (
+                <div className="rows-table-wrap">
+                  <table className="rows-table">
+                    <thead>
+                      <tr>
+                        <th>Группа</th>
+                        <th>Параметр</th>
+                        <th>Значение</th>
+                        <th>Ед.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {specs.map((spec, idx) => (
+                        <tr key={`${row.id}-${idx}-${spec.group}-${spec.name}`}>
+                          <td>{spec.group}</td>
+                          <td>{spec.name}</td>
+                          <td>{spec.value}</td>
+                          <td>{spec.unit || ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <pre>{String(row.result || '')}</pre>
+              )}
+            </article>
+          ))}
         </div>
       )}
+
+      <details className="raw-result-box">
+        <summary>Сырой текст ТЗ</summary>
+        <textarea value={tzText} readOnly rows={18} style={{ width: '100%', fontFamily: 'monospace' }} />
+      </details>
     </section>
   );
 }

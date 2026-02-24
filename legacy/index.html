@@ -2978,8 +2978,24 @@ function autoDetectGoodsType(rowId, modelValue) {
     if (typeof clearTimeout === 'function' && AI_TYPE_DETECT_TIMERS[rowId]) {
       clearTimeout(AI_TYPE_DETECT_TIMERS[rowId]);
     }
+    hideRowSuggestions(rowId);
     applyDetectedGoodsType(rowId, detectedType, 'rules');
     return;
+  }
+
+  // Для коротких/неоднозначных запросов (например, "rdw") показываем локальные
+  // варианты сразу, без нажатия "подтянуть из интернета".
+  const shouldOfferLocalChoices = val.length >= 3 && (val.length <= 5 || /^[a-zа-я]{2,6}\d{0,2}$/i.test(val));
+  if (shouldOfferLocalChoices) {
+    const localCandidates = prioritizeCandidates(rowId, rawVal, buildHeuristicCandidates(rawVal, ''));
+    if (Array.isArray(localCandidates) && localCandidates.length > 1) {
+      showRowSuggestions(rowId, localCandidates);
+      const statusEl = document.getElementById('goods-status-' + rowId);
+      if (statusEl) statusEl.innerHTML = '<span style="font-size:12px;color:#0f6c8a;">🔎 Выбор</span>';
+      return;
+    }
+  } else {
+    hideRowSuggestions(rowId);
   }
 
   // Fallback: неизвестный термин пробуем классифицировать через ИИ с дебаунсом

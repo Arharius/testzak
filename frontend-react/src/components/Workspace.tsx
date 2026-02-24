@@ -192,6 +192,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [rows, setRows] = useState<Row[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
   const [tzText, setTzText] = useState('');
   const [bulkLookup, setBulkLookup] = useState(false);
+  const [autopilotRunning, setAutopilotRunning] = useState(false);
 
   const canGenerate = useMemo(
     () => apiKey.trim().length > 6 && rows.every((r) => r.model.trim().length > 0),
@@ -377,6 +378,31 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       }
     } finally {
       setBulkLookup(false);
+    }
+  };
+
+  const runAutopilotFlow = async (): Promise<void> => {
+    if (autopilotRunning || mutation.isPending) return;
+    setAutopilotRunning(true);
+    try {
+      await enrichAllRowsFromInternet();
+      await mutation.mutateAsync();
+      exportPackage();
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event: 'react.autopilot.full',
+        ok: true,
+        note: `rows=${rows.length}`
+      });
+    } catch (e) {
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event: 'react.autopilot.full',
+        ok: false,
+        note: e instanceof Error ? e.message.slice(0, 120) : 'unknown_error'
+      });
+    } finally {
+      setAutopilotRunning(false);
     }
   };
 
@@ -583,6 +609,13 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         <button type="button" onClick={addRow}>Добавить строку</button>
         <button type="button" onClick={() => void enrichAllRowsFromInternet()} disabled={bulkLookup || rows.length === 0}>
           {bulkLookup ? '🌐 Поиск...' : '🌐 Подтянуть из интернета'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void runAutopilotFlow()}
+          disabled={autopilotRunning || mutation.isPending || rows.length === 0}
+        >
+          {autopilotRunning ? '⚙️ Автопилот...' : '⚙️ Автопилот: интернет → ТЗ → пакет'}
         </button>
         <button type="button" disabled={!canGenerate || mutation.isPending} onClick={() => mutation.mutate()}>
           {mutation.isPending ? 'Генерация...' : 'Сгенерировать ТЗ'}

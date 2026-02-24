@@ -9,6 +9,8 @@ import { postPlatformDraft, postWebhook } from './lib/api';
 import {
   appendAutomationLog,
   clearAutomationLog,
+  exportAutomationLogCsv,
+  exportAutomationLogJson,
   exportLearningMap,
   getAutomationLog,
   getAutomationSettings,
@@ -252,6 +254,12 @@ export function App() {
             onClear={() => {
               clearAutomationLog();
               setRefreshTick((x) => x + 1);
+            }}
+            onExportCsv={() => {
+              download(`automation_log_${Date.now()}.csv`, exportAutomationLogCsv(), 'text/csv;charset=utf-8');
+            }}
+            onExportJson={() => {
+              download(`automation_log_${Date.now()}.json`, exportAutomationLogJson(), 'application/json;charset=utf-8');
             }}
           />
         )}

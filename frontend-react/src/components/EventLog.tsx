@@ -3,14 +3,20 @@ import type { AutomationEvent } from '../types/schemas';
 type Props = {
   events: AutomationEvent[];
   onClear: () => void;
+  onExportCsv: () => void;
+  onExportJson: () => void;
 };
 
-export function EventLog({ events, onClear }: Props) {
+export function EventLog({ events, onClear, onExportCsv, onExportJson }: Props) {
   return (
     <section className="panel">
       <div className="title-row">
         <h2>Журнал автоматизации</h2>
-        <button onClick={onClear} type="button">Очистить</button>
+        <div className="actions">
+          <button onClick={onExportCsv} type="button">Экспорт CSV</button>
+          <button onClick={onExportJson} type="button">Экспорт JSON</button>
+          <button onClick={onClear} type="button">Очистить</button>
+        </div>
       </div>
       <div className="log-box">
         {events.length === 0 && <div className="muted">Пока нет событий</div>}

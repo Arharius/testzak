@@ -56,6 +56,18 @@ export function AutomationPanel({
           Базовая пауза (мс)
           <input type="number" min={200} max={10000} step={100} {...form.register('deliveryBackoffMs', { valueAsNumber: true })} />
         </label>
+        <label>
+          Tenant ID
+          <input {...form.register('tenantId')} placeholder="tenant-acme-001" />
+        </label>
+        <label>
+          Валюта биллинга
+          <input {...form.register('billingCurrency')} placeholder="RUB" />
+        </label>
+        <label>
+          Цена за документ (копейки)
+          <input type="number" min={0} max={500000} {...form.register('billingPricePerDocCents', { valueAsNumber: true })} />
+        </label>
       </div>
       <div className="checks">
         <label><input type="checkbox" {...form.register('autoSend')} /> Автоотправка webhook после генерации</label>
@@ -63,6 +75,7 @@ export function AutomationPanel({
         <label><input type="checkbox" {...form.register('autoPickTopCandidate')} /> Автовыбор лучшего кандидата</label>
         <label><input type="checkbox" {...form.register('useBackendQueueApi')} /> Отправка событий через очередь Backend API</label>
         <label><input type="checkbox" {...form.register('requireHttpsForIntegrations')} /> Требовать HTTPS для внешних интеграций (кроме localhost)</label>
+        <label><input type="checkbox" {...form.register('billingEnabled')} /> Включить billing telemetry (usage события)</label>
       </div>
       <div className="actions">
         <button onClick={form.handleSubmit(onSave)} type="button">Сохранить настройки</button>

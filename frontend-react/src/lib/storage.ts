@@ -67,6 +67,30 @@ export function clearAutomationLog(): void {
   writeJson(KEYS.automationLog, []);
 }
 
+function csvEscape(value: string): string {
+  const s = String(value ?? '');
+  if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+export function exportAutomationLogCsv(): string {
+  const rows = getAutomationLog();
+  const header = 'at,event,ok,note';
+  const body = rows.map((row) => [
+    csvEscape(row.at),
+    csvEscape(row.event),
+    csvEscape(row.ok ? 'true' : 'false'),
+    csvEscape(row.note || '')
+  ].join(','));
+  return [header, ...body].join('\n');
+}
+
+export function exportAutomationLogJson(): string {
+  return JSON.stringify(getAutomationLog(), null, 2);
+}
+
 export function exportLearningMap(): string {
   const map = readJson<Record<string, unknown>>(KEYS.learnedTypeMap, {});
   return JSON.stringify({ exportedAt: new Date().toISOString(), map }, null, 2);

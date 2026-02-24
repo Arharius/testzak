@@ -229,6 +229,9 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     if (lawMode === '223' && !platformSettings.orgName.trim()) {
       issues.push({ level: 'warn', message: '223-ФЗ: заполните организацию заказчика.' });
     }
+    if (automationSettings.billingEnabled && !automationSettings.tenantId.trim()) {
+      issues.push({ level: 'warn', message: 'Billing telemetry: заполните Tenant ID.' });
+    }
     if (!platformSettings.endpoint.trim()) {
       issues.push({ level: 'warn', message: 'Не задан endpoint коннектора ЕИС/ЭТП.' });
     }
@@ -239,7 +242,16 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     const warn = issues.filter((x) => x.level === 'warn').length;
     const score = Math.max(0, 100 - critical * 25 - warn * 8);
     return { issues, critical, warn, score };
-  }, [apiKey, rows, lawMode, platformSettings.orgName, platformSettings.endpoint, automationSettings.requireHttpsForIntegrations]);
+  }, [
+    apiKey,
+    rows,
+    lawMode,
+    platformSettings.orgName,
+    platformSettings.endpoint,
+    automationSettings.requireHttpsForIntegrations,
+    automationSettings.billingEnabled,
+    automationSettings.tenantId
+  ]);
 
   const canGenerate = preflight.critical === 0;
 
@@ -307,6 +319,17 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
           baseBackoffMs: automationSettings.deliveryBackoffMs,
           requireHttps: automationSettings.requireHttpsForIntegrations
         });
+      }
+      if (automationSettings.billingEnabled) {
+        const billPayload = {
+          tenantId: automationSettings.tenantId || 'default',
+          currency: automationSettings.billingCurrency,
+          documents: 1,
+          rows: next.length,
+          amountCents: automationSettings.billingPricePerDocCents,
+          generatedAt: new Date().toISOString()
+        };
+        await sendEventThroughBestChannel(automationSettings, 'billing.usage', billPayload);
       }
 
       appendAutomationLog({ at: new Date().toISOString(), event: 'react.generate', ok: true, note: `rows=${next.length}` });

@@ -1,12 +1,27 @@
 import { useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { Document, Packer, Paragraph, TextRun } from 'docx';
+import { saveAs } from 'file-saver';
+import { jsPDF } from 'jspdf';
 import { generateItemSpecs, postPlatformDraft, sendEventThroughBestChannel } from '../lib/api';
 import { appendAutomationLog } from '../lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from '../types/schemas';
 
 type Provider = 'openrouter' | 'groq' | 'deepseek';
+type LawMode = '44' | '223';
 
-type GoodsType = 'pc' | 'laptop' | 'monitor' | 'printer' | 'mfu' | 'server' | 'switch' | 'router' | 'cable' | 'dvd' | 'software';
+type GoodsType =
+  | 'pc'
+  | 'laptop'
+  | 'monitor'
+  | 'printer'
+  | 'mfu'
+  | 'server'
+  | 'switch'
+  | 'router'
+  | 'cable'
+  | 'dvd'
+  | 'software';
 
 type Row = {
   id: number;
@@ -16,6 +31,8 @@ type Row = {
   status: 'idle' | 'loading' | 'done' | 'error';
   error?: string;
   result?: string;
+  okpd2?: string;
+  ktru?: string;
 };
 
 const GOODS_LABELS: Record<GoodsType, string> = {
@@ -62,9 +79,9 @@ function detectType(model: string, fallback: GoodsType): GoodsType {
   return found?.type || fallback;
 }
 
-function buildPrompt(row: Row): string {
+function buildPrompt(row: Row, lawMode: LawMode): string {
   const goodsName = GOODS_LABELS[row.type];
-  const law = '44-ФЗ';
+  const law = lawMode === '223' ? '223-ФЗ' : '44-ФЗ';
   return `Ты эксперт по госзакупкам РФ (${law}).\n` +
     `Сформируй технические характеристики для товара.\n` +
     `Тип: ${goodsName}\n` +
@@ -77,7 +94,7 @@ function buildPrompt(row: Row): string {
     `    "okpd2_name": "...",\n` +
     `    "ktru_code": "...",\n` +
     `    "law175_status": "forbidden|exempt|allowed",\n` +
-    `    "law175_basis": "..."\n` +
+    `    "law175_basis": "ПП РФ № 1875 ..."\n` +
     `  },\n` +
     `  "specs": [\n` +
     `    {"group":"...","name":"...","value":"...","unit":"..."}\n` +
@@ -99,12 +116,30 @@ function parseMaybeJson(text: string): { pretty: string; okpd2: string; ktru: st
   }
 }
 
+function buildNormativeBlock(lawMode: LawMode): string {
+  if (lawMode === '223') {
+    return [
+      'Закупка по 223-ФЗ.',
+      'Проверка соответствия Положению о закупке заказчика обязательна.',
+      'Нацрежим: ПП РФ № 1875 (актуальная редакция на дату публикации).',
+      'Для ПО: учитывать правила реестров Минцифры/ЕАЭС.'
+    ].join('\n');
+  }
+  return [
+    'Закупка по 44-ФЗ.',
+    'Ст. 33 44-ФЗ: при указании ТМ использовать формулировку «или эквивалент».',
+    'Нацрежим: ПП РФ № 1875 (актуальная редакция на дату публикации).',
+    'КТРУ/ОКПД2 подлежат проверке перед размещением в ЕИС.'
+  ].join('\n');
+}
+
 type Props = {
   automationSettings: AutomationSettings;
   platformSettings: PlatformIntegrationSettings;
 };
 
 export function Workspace({ automationSettings, platformSettings }: Props) {
+  const [lawMode, setLawMode] = useState<LawMode>('44');
   const [provider, setProvider] = useState<Provider>('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('deepseek-chat');
@@ -123,13 +158,12 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       for (let i = 0; i < next.length; i += 1) {
         next[i] = { ...next[i], status: 'loading', error: '' };
         setRows([...next]);
-        const prompt = buildPrompt(next[i]);
+        const prompt = buildPrompt(next[i], lawMode);
         try {
           const raw = await generateItemSpecs(provider, apiKey, model, prompt);
           const parsed = parseMaybeJson(raw);
-          next[i] = { ...next[i], status: 'done', result: parsed.pretty };
-          pieces.push(`### ${GOODS_LABELS[next[i].type]} / ${next[i].model}\n\n\
-${parsed.pretty}`);
+          next[i] = { ...next[i], status: 'done', result: parsed.pretty, okpd2: parsed.okpd2, ktru: parsed.ktru };
+          pieces.push(`### ${GOODS_LABELS[next[i].type]} / ${next[i].model}\n\n${parsed.pretty}`);
         } catch (e) {
           const msg = e instanceof Error ? e.message : 'generation_error';
           next[i] = { ...next[i], status: 'error', error: msg };
@@ -138,15 +172,29 @@ ${parsed.pretty}`);
         setRows([...next]);
       }
 
-      const full = pieces.join('\n\n');
+      const full = [
+        `ТЕХНИЧЕСКОЕ ЗАДАНИЕ (${lawMode === '223' ? '223-ФЗ' : '44-ФЗ'})`,
+        '',
+        buildNormativeBlock(lawMode),
+        '',
+        pieces.join('\n\n')
+      ].join('\n');
+
       setTzText(full);
 
       const payload = {
-        law: platformSettings.profile === 'eis_223' ? '223-FZ' : '44-FZ',
+        law: lawMode === '223' ? '223-FZ' : '44-FZ',
         profile: platformSettings.profile,
         organization: platformSettings.orgName,
         customerInn: platformSettings.customerInn,
-        items: next.map((r) => ({ type: r.type, model: r.model, qty: r.qty, status: r.status }))
+        items: next.map((r) => ({
+          type: r.type,
+          model: r.model,
+          qty: r.qty,
+          status: r.status,
+          okpd2: r.okpd2 || '',
+          ktru: r.ktru || ''
+        }))
       };
 
       if (automationSettings.autoSend) {
@@ -165,9 +213,67 @@ ${parsed.pretty}`);
     setRows((prev) => [...prev, { id: Date.now(), type: 'pc', model: '', qty: 1, status: 'idle' }]);
   };
 
+  const exportPackage = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      law: lawMode === '223' ? '223-FZ' : '44-FZ',
+      profile: platformSettings.profile,
+      items: rows.map((r) => ({ type: r.type, model: r.model, qty: r.qty, okpd2: r.okpd2 || '', ktru: r.ktru || '' }))
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `procurement_pack_react_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportDocx = async () => {
+    const lines = tzText.trim().split('\n');
+    const doc = new Document({
+      sections: [
+        {
+          children: lines.map((line) =>
+            new Paragraph({
+              children: [
+                new TextRun({ text: line || ' ', bold: line.startsWith('###') || line.startsWith('ТЕХНИЧЕСКОЕ ЗАДАНИЕ') })
+              ]
+            })
+          )
+        }
+      ]
+    });
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `TZ_react_${Date.now()}.docx`);
+  };
+
+  const exportPdf = () => {
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const margin = 36;
+    const maxWidth = 540;
+    const lines = doc.splitTextToSize(tzText || 'Пустой документ', maxWidth);
+    let y = margin;
+    lines.forEach((line: string) => {
+      if (y > 790) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.text(line, margin, y);
+      y += 14;
+    });
+    doc.save(`TZ_react_${Date.now()}.pdf`);
+  };
+
   return (
     <section className="panel">
       <h2>React Workspace (core flow)</h2>
+      <div className="checks">
+        <label><input type="radio" checked={lawMode === '44'} onChange={() => setLawMode('44')} /> 44-ФЗ</label>
+        <label><input type="radio" checked={lawMode === '223'} onChange={() => setLawMode('223')} /> 223-ФЗ</label>
+      </div>
+      <div className="muted" style={{ whiteSpace: 'pre-wrap' }}>{buildNormativeBlock(lawMode)}</div>
+
       <div className="grid two">
         <label>
           Provider
@@ -236,29 +342,12 @@ ${parsed.pretty}`);
         <button type="button" disabled={!canGenerate || mutation.isPending} onClick={() => mutation.mutate()}>
           {mutation.isPending ? 'generating...' : 'generate TZ'}
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            const payload = {
-              exportedAt: new Date().toISOString(),
-              law: platformSettings.profile === 'eis_223' ? '223-FZ' : '44-FZ',
-              profile: platformSettings.profile,
-              items: rows.map((r) => ({ type: r.type, model: r.model, qty: r.qty }))
-            };
-            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `procurement_pack_react_${Date.now()}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-          }}
-        >
-          export package
-        </button>
+        <button type="button" onClick={exportPackage}>export package</button>
+        <button type="button" onClick={() => void exportDocx()} disabled={!tzText.trim()}>export DOCX</button>
+        <button type="button" onClick={exportPdf} disabled={!tzText.trim()}>export PDF</button>
       </div>
 
-      <textarea value={tzText} readOnly rows={14} style={{ width: '100%', fontFamily: 'monospace' }} />
+      <textarea value={tzText} readOnly rows={18} style={{ width: '100%', fontFamily: 'monospace' }} />
     </section>
   );
 }

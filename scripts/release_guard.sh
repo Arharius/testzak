@@ -15,10 +15,13 @@ make test
 echo "[3/5] python syntax check"
 python3 -m py_compile backend/app.py
 
-echo "[4/5] backend smoke"
+echo "[4/6] backend unit tests"
+python3 -m pytest -q backend/tests
+
+echo "[5/6] backend smoke"
 bash scripts/backend_smoke.sh
 
-echo "[5/5] react build"
+echo "[6/6] react build"
 if [[ -d "frontend-react" && -f "frontend-react/package.json" ]]; then
   (cd frontend-react && npm run build)
 else

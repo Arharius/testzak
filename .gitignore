@@ -16,3 +16,4 @@ backend/tz_generator.db
 frontend/frontend.log
 backend/backend.log
 test_*.py
+!backend/tests/test_*.py

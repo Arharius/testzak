@@ -35,6 +35,9 @@ jobs:
       - name: JS tests
         run: make test
 
+      - name: Backend unit tests
+        run: python -m pytest -q backend/tests
+
       - name: Backend smoke
         run: make backend-smoke
 

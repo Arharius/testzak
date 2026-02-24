@@ -532,14 +532,72 @@ textarea[readonly] {
 }
 
 .layout.theme-aurelia button {
-  background: linear-gradient(120deg, #1f365b 0%, #2d4f87 55%, #b68845 100%);
-  border-color: rgba(197, 171, 116, 0.58);
+  background: linear-gradient(125deg, #172a49 0%, #2f558f 48%, #c5974f 100%);
+  border-color: rgba(219, 189, 132, 0.68);
   color: #f5f2ea;
+  box-shadow:
+    0 10px 24px rgba(6, 12, 26, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(95, 63, 20, 0.35);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 
 .layout.theme-aurelia .lookup-btn {
   background: linear-gradient(120deg, #2e4f7f 0%, #3c6ab0 60%, #4aa2c7 100%);
   border-color: rgba(155, 204, 235, 0.75);
+}
+
+.layout.theme-aurelia .hero {
+  border-color: rgba(216, 188, 136, 0.46);
+  background:
+    radial-gradient(900px 260px at 85% -40%, rgba(214, 170, 87, 0.28), transparent 65%),
+    linear-gradient(145deg, rgba(12, 20, 39, 0.95) 0%, rgba(9, 18, 36, 0.96) 45%, rgba(24, 33, 52, 0.96) 100%);
+  box-shadow:
+    0 26px 64px rgba(2, 6, 15, 0.75),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 0 60px rgba(201, 152, 71, 0.07);
+}
+
+.layout.theme-aurelia .hero::after {
+  background: linear-gradient(to right, transparent, rgba(255, 242, 211, 0.24), transparent);
+}
+
+.layout.theme-aurelia .hero-chip {
+  color: #1a2132;
+  background: linear-gradient(90deg, #fff5dc 0%, #f4d59a 45%, #d3a75b 100%);
+  box-shadow: 0 6px 16px rgba(177, 129, 54, 0.25);
+}
+
+.layout.theme-aurelia .panel {
+  border-color: rgba(188, 161, 113, 0.3);
+  background:
+    radial-gradient(600px 220px at 100% 0%, rgba(194, 148, 71, 0.12), transparent 62%),
+    linear-gradient(145deg, rgba(12, 20, 39, 0.94) 0%, rgba(8, 15, 30, 0.96) 100%);
+  box-shadow:
+    0 20px 46px rgba(2, 6, 15, 0.66),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(156, 118, 47, 0.18);
+}
+
+.layout.theme-aurelia .panel h2 {
+  color: #f8efe0;
+}
+
+.layout.theme-aurelia .theme-switch {
+  border-color: rgba(214, 183, 124, 0.52);
+  background: rgba(13, 20, 36, 0.68);
+}
+
+.layout.theme-aurelia .theme-switch button {
+  border-color: rgba(179, 159, 120, 0.42);
+  background: rgba(19, 29, 52, 0.86);
+  color: #e8ddc8;
+}
+
+.layout.theme-aurelia .theme-switch button.active {
+  border-color: rgba(238, 214, 171, 0.84);
+  background: linear-gradient(120deg, #fef1d0 0%, #e4c387 50%, #c08d41 100%);
+  color: #252f46;
 }
 
 @keyframes pageFade {

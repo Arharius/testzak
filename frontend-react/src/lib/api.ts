@@ -16,6 +16,14 @@ export type IntegrationMetrics = {
   integration_max_attempts: number;
 };
 
+export type TenantKpi = {
+  tenant_id: string;
+  users_total: number;
+  docs_total: number;
+  docs_last_30d: number;
+  estimated_revenue_cents: number;
+};
+
 type DeliveryPolicy = {
   retries: number;
   baseBackoffMs: number;
@@ -301,6 +309,28 @@ export async function fetchBackendMetrics(settings: AutomationSettings): Promise
       event: 'metrics.fetch',
       ok: false,
       note: (error instanceof Error ? error.message : 'unknown_error').slice(0, 140)
+    });
+    return null;
+  }
+}
+
+export async function fetchTenantKpi(settings: AutomationSettings): Promise<TenantKpi | null> {
+  if (!settings.backendApiBase) return null;
+  const url =
+    `${settings.backendApiBase.replace(/\/+$/, '')}/api/tenant/kpi` +
+    `?billing_price_per_doc_cents=${encodeURIComponent(String(settings.billingPricePerDocCents || 0))}`;
+  try {
+    const headers: Record<string, string> = {};
+    if (settings.backendApiToken) headers.Authorization = `Bearer ${settings.backendApiToken}`;
+    const resp = await axios.get(url, { headers, timeout: 15000 });
+    appendAutomationLog({ at: new Date().toISOString(), event: 'tenant.kpi.fetch', ok: true });
+    return resp.data as TenantKpi;
+  } catch (error) {
+    appendAutomationLog({
+      at: new Date().toISOString(),
+      event: 'tenant.kpi.fetch',
+      ok: false,
+      note: (error instanceof Error ? error.message : 'unknown_error').slice(0, 120)
     });
     return null;
   }

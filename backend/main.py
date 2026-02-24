@@ -4,9 +4,11 @@ from typing import Optional, Dict, List, Any
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 import logging
 import json
 import os
+from datetime import datetime, timedelta, timezone
 
 from scraper_poc import scrape_dns
 from doc_generator import generate_tz_document
@@ -22,6 +24,38 @@ logger = logging.getLogger(__name__)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
+
+
+def _has_column(db: Session, table_name: str, column_name: str) -> bool:
+    url = str(engine.url)
+    if "sqlite" in url:
+        rows = db.execute(text(f"PRAGMA table_info({table_name})")).fetchall()
+        return any(str(r[1]) == column_name for r in rows)
+    rows = db.execute(
+        text(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = :table AND column_name = :col"
+        ),
+        {"table": table_name, "col": column_name},
+    ).fetchall()
+    return len(rows) > 0
+
+
+def ensure_rbac_schema() -> None:
+    with Session(bind=engine) as db:
+        if not _has_column(db, "users", "tenant_id"):
+            db.execute(text("ALTER TABLE users ADD COLUMN tenant_id VARCHAR DEFAULT 'default'"))
+        if not _has_column(db, "users", "role"):
+            db.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR DEFAULT 'manager'"))
+        if not _has_column(db, "tz_documents", "tenant_id"):
+            db.execute(text("ALTER TABLE tz_documents ADD COLUMN tenant_id VARCHAR DEFAULT 'default'"))
+        db.execute(text("UPDATE users SET tenant_id = COALESCE(tenant_id, 'default')"))
+        db.execute(text("UPDATE users SET role = COALESCE(role, 'manager')"))
+        db.execute(text("UPDATE tz_documents SET tenant_id = COALESCE(tenant_id, 'default')"))
+        db.commit()
+
+
+ensure_rbac_schema()
 
 app = FastAPI()
 os.makedirs("temp", exist_ok=True)
@@ -59,6 +93,7 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     name: str
+    tenant_id: Optional[str] = ""
 
 class LoginRequest(BaseModel):
     email: str
@@ -67,6 +102,11 @@ class LoginRequest(BaseModel):
 class AuthResponse(BaseModel):
     token: str
     user: dict
+
+
+class TenantUserUpdateRequest(BaseModel):
+    user_id: int
+    role: str
 
 class SaveDocumentRequest(BaseModel):
     title: str
@@ -80,6 +120,26 @@ class DocumentOut(BaseModel):
     products: list
     created_at: str
     updated_at: str
+
+
+class TenantKpiOut(BaseModel):
+    tenant_id: str
+    users_total: int
+    docs_total: int
+    docs_last_30d: int
+    estimated_revenue_cents: int
+
+
+def _can_access_doc(user: User, doc: TZDocument) -> bool:
+    if doc.tenant_id != user.tenant_id:
+        return False
+    if user.role in ("admin", "manager"):
+        return True
+    return doc.user_id == user.id
+
+
+def _can_manage_tenant(user: User) -> bool:
+    return user.role in ("admin", "manager")
 
 
 # ── Core Endpoints ──
@@ -136,9 +196,14 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == req.email).first():
         raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
 
+    users_count = db.query(User).count()
+    tenant_id = (req.tenant_id or "").strip() or "default"
+    role = "admin" if users_count == 0 else "manager"
     user = User(
         email=req.email,
         name=req.name,
+        tenant_id=tenant_id,
+        role=role,
         hashed_password=hash_password(req.password)
     )
     db.add(user)
@@ -148,7 +213,7 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     token = create_access_token({"sub": str(user.id)})
     return AuthResponse(
         token=token,
-        user={"id": user.id, "email": user.email, "name": user.name}
+        user={"id": user.id, "email": user.email, "name": user.name, "tenant_id": user.tenant_id, "role": user.role}
     )
 
 
@@ -161,13 +226,13 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     token = create_access_token({"sub": str(user.id)})
     return AuthResponse(
         token=token,
-        user={"id": user.id, "email": user.email, "name": user.name}
+        user={"id": user.id, "email": user.email, "name": user.name, "tenant_id": user.tenant_id, "role": user.role}
     )
 
 
 @app.get("/api/auth/me")
 def get_me(user: User = Depends(get_current_user)):
-    return {"id": user.id, "email": user.email, "name": user.name}
+    return {"id": user.id, "email": user.email, "name": user.name, "tenant_id": user.tenant_id, "role": user.role}
 
 
 # ── Document CRUD ──
@@ -176,6 +241,7 @@ def get_me(user: User = Depends(get_current_user)):
 def save_document(req: SaveDocumentRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     doc = TZDocument(
         user_id=user.id,
+        tenant_id=user.tenant_id,
         title=req.title,
         metadata_json=json.dumps(req.metadata.dict(), ensure_ascii=False),
         products_json=json.dumps([p.dict() for p in req.products], ensure_ascii=False),
@@ -188,26 +254,105 @@ def save_document(req: SaveDocumentRequest, user: User = Depends(get_current_use
 
 @app.get("/api/documents", response_model=List[DocumentOut])
 def list_documents(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    docs = db.query(TZDocument).filter(TZDocument.user_id == user.id).order_by(TZDocument.updated_at.desc()).all()
+    if user.role in ("admin", "manager"):
+        docs = (
+            db.query(TZDocument)
+            .filter(TZDocument.tenant_id == user.tenant_id)
+            .order_by(TZDocument.updated_at.desc())
+            .all()
+        )
+    else:
+        docs = (
+            db.query(TZDocument)
+            .filter(TZDocument.tenant_id == user.tenant_id, TZDocument.user_id == user.id)
+            .order_by(TZDocument.updated_at.desc())
+            .all()
+        )
     return [_doc_to_out(d) for d in docs]
 
 
 @app.get("/api/documents/{doc_id}", response_model=DocumentOut)
 def get_document(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    doc = db.query(TZDocument).filter(TZDocument.id == doc_id, TZDocument.user_id == user.id).first()
-    if not doc:
+    doc = db.query(TZDocument).filter(TZDocument.id == doc_id).first()
+    if not doc or not _can_access_doc(user, doc):
         raise HTTPException(status_code=404, detail="Документ не найден")
     return _doc_to_out(doc)
 
 
 @app.delete("/api/documents/{doc_id}")
 def delete_document(doc_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    doc = db.query(TZDocument).filter(TZDocument.id == doc_id, TZDocument.user_id == user.id).first()
-    if not doc:
+    doc = db.query(TZDocument).filter(TZDocument.id == doc_id).first()
+    if not doc or not _can_access_doc(user, doc):
         raise HTTPException(status_code=404, detail="Документ не найден")
+    if user.role == "viewer" and doc.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
     db.delete(doc)
     db.commit()
     return {"ok": True}
+
+
+@app.get("/api/tenant/users")
+def list_tenant_users(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not _can_manage_tenant(user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    users = (
+        db.query(User)
+        .filter(User.tenant_id == user.tenant_id)
+        .order_by(User.created_at.asc())
+        .all()
+    )
+    return {
+        "ok": True,
+        "items": [
+            {"id": u.id, "email": u.email, "name": u.name, "role": u.role, "tenant_id": u.tenant_id}
+            for u in users
+        ],
+    }
+
+
+@app.post("/api/tenant/users/role")
+def update_tenant_user_role(
+    req: TenantUserUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Только admin может менять роли")
+    role = (req.role or "").strip().lower()
+    if role not in ("admin", "manager", "viewer"):
+        raise HTTPException(status_code=400, detail="Неверная роль")
+    target = db.query(User).filter(User.id == req.user_id, User.tenant_id == user.tenant_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    target.role = role
+    db.commit()
+    return {"ok": True, "user_id": target.id, "role": target.role}
+
+
+@app.get("/api/tenant/kpi", response_model=TenantKpiOut)
+def tenant_kpi(
+    billing_price_per_doc_cents: int = 9900,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not _can_manage_tenant(user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    now = datetime.now(timezone.utc)
+    dt_30 = now - timedelta(days=30)
+    users_total = db.query(User).filter(User.tenant_id == user.tenant_id).count()
+    docs_total = db.query(TZDocument).filter(TZDocument.tenant_id == user.tenant_id).count()
+    docs_last_30d = (
+        db.query(TZDocument)
+        .filter(TZDocument.tenant_id == user.tenant_id, TZDocument.created_at >= dt_30)
+        .count()
+    )
+    return TenantKpiOut(
+        tenant_id=user.tenant_id,
+        users_total=users_total,
+        docs_total=docs_total,
+        docs_last_30d=docs_last_30d,
+        estimated_revenue_cents=max(0, int(billing_price_per_doc_cents)) * docs_last_30d,
+    )
 
 
 def _doc_to_out(doc: TZDocument) -> DocumentOut:

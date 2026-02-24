@@ -10,6 +10,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
     name = Column(String, nullable=False)
+    tenant_id = Column(String, index=True, nullable=False, default="default")
+    role = Column(String, nullable=False, default="manager")
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -21,6 +23,7 @@ class TZDocument(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    tenant_id = Column(String, index=True, nullable=False, default="default")
     title = Column(String, nullable=False)
     metadata_json = Column(Text, default="{}")
     products_json = Column(Text, default="[]")

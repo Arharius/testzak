@@ -5,6 +5,7 @@ import { PlatformPanel } from './components/PlatformPanel';
 import { EventLog } from './components/EventLog';
 import { Workspace } from './components/Workspace';
 import { MonitoringPanel } from './components/MonitoringPanel';
+import { CommercialKpiPanel } from './components/CommercialKpiPanel';
 import { postPlatformDraft, postWebhook } from './lib/api';
 import {
   appendAutomationLog,
@@ -22,7 +23,7 @@ import {
 import type { AutomationSettings, PlatformIntegrationSettings } from './types/schemas';
 
 type ThemeMode = 'aurelia' | 'legacy' | 'gala';
-type SectionKey = 'workspace' | 'platform' | 'automation' | 'monitoring' | 'eventlog';
+type SectionKey = 'workspace' | 'platform' | 'automation' | 'monitoring' | 'commercial' | 'eventlog';
 
 function download(name: string, content: string, type: string): void {
   const blob = new Blob([content], { type });
@@ -48,6 +49,7 @@ export function App() {
     platform: false,
     automation: false,
     monitoring: false,
+    commercial: false,
     eventlog: false
   });
 
@@ -241,6 +243,14 @@ export function App() {
           <span className="fold-state">{sectionOpen.monitoring ? 'Свернуть' : 'Развернуть'}</span>
         </button>
         {sectionOpen.monitoring && <MonitoringPanel automationSettings={automationSettings} />}
+      </section>
+
+      <section className="fold">
+        <button type="button" className="fold-head" onClick={() => toggleSection('commercial')}>
+          <span>Коммерческий KPI</span>
+          <span className="fold-state">{sectionOpen.commercial ? 'Свернуть' : 'Развернуть'}</span>
+        </button>
+        {sectionOpen.commercial && <CommercialKpiPanel automationSettings={automationSettings} />}
       </section>
 
       <section className="fold">

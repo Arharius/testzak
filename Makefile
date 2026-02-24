@@ -1,4 +1,4 @@
-.PHONY: test autodetect-matrix deep-checks e2e deploy-pythonanywhere backup backend-smoke release-guard react-build
+.PHONY: test autodetect-matrix deep-checks e2e deploy-pythonanywhere backup backend-smoke release-guard react-build integration-worker
 
 test: autodetect-matrix deep-checks
 
@@ -25,3 +25,6 @@ react-build:
 
 release-guard:
 	bash scripts/release_guard.sh
+
+integration-worker:
+	bash scripts/integration_worker.sh

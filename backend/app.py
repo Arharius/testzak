@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,7 @@ def utc_now() -> str:
 
 
 STORE_FILE = Path(os.getenv("INTEGRATION_STORE_FILE", "/tmp/tz_integration_store.json"))
+AUDIT_DB_FILE = Path(os.getenv("INTEGRATION_AUDIT_DB", "/tmp/tz_integration_audit.db"))
 TARGET_WEBHOOK_URL = os.getenv("INTEGRATION_TARGET_WEBHOOK_URL", "").strip()
 TARGET_WEBHOOK_TIMEOUT = float(os.getenv("INTEGRATION_TARGET_TIMEOUT", "12"))
 
@@ -44,6 +46,80 @@ def save_store(data: dict[str, Any]) -> None:
     STORE_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def init_audit_db() -> None:
+    AUDIT_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(AUDIT_DB_FILE) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_log (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              at TEXT NOT NULL,
+              action TEXT NOT NULL,
+              status TEXT NOT NULL,
+              record_id TEXT,
+              note TEXT,
+              payload_json TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS idempotency_keys (
+              idem_key TEXT PRIMARY KEY,
+              created_at TEXT NOT NULL,
+              response_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+
+
+def log_audit(action: str, status: str, record_id: str = "", note: str = "", payload: dict[str, Any] | None = None) -> None:
+    try:
+        with sqlite3.connect(AUDIT_DB_FILE) as conn:
+            conn.execute(
+                "INSERT INTO audit_log (at, action, status, record_id, note, payload_json) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    utc_now(),
+                    action,
+                    status,
+                    record_id,
+                    note[:400],
+                    json.dumps(payload or {}, ensure_ascii=False),
+                ),
+            )
+            conn.commit()
+    except Exception:
+        # аудит не должен ронять сервис
+        pass
+
+
+def get_idempotency_response(idem_key: str) -> dict[str, Any] | None:
+    try:
+        with sqlite3.connect(AUDIT_DB_FILE) as conn:
+            row = conn.execute(
+                "SELECT response_json FROM idempotency_keys WHERE idem_key = ?",
+                (idem_key,),
+            ).fetchone()
+            if not row:
+                return None
+            return json.loads(row[0])
+    except Exception:
+        return None
+
+
+def store_idempotency_response(idem_key: str, response: dict[str, Any]) -> None:
+    try:
+        with sqlite3.connect(AUDIT_DB_FILE) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO idempotency_keys (idem_key, created_at, response_json) VALUES (?, ?, ?)",
+                (idem_key, utc_now(), json.dumps(response, ensure_ascii=False)),
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
 def append_record(kind: str, payload: dict[str, Any], source: str) -> dict[str, Any]:
     store = load_store()
     record = {
@@ -59,6 +135,7 @@ def append_record(kind: str, payload: dict[str, Any], source: str) -> dict[str, 
     if len(store["queue"]) > 2000:
         store["queue"] = store["queue"][-2000:]
     save_store(store)
+    log_audit("queue.append", "ok", record_id=record["id"], note=kind, payload={"source": source})
     return record
 
 
@@ -115,11 +192,13 @@ def flush_queue(limit: int = 100) -> dict[str, Any]:
             item["sent_at"] = utc_now()
             item["last_result"] = note
             store["history"].append(item)
+            log_audit("queue.flush_item", "sent", record_id=item.get("id", ""), note=note)
         else:
             failed += 1
             item["status"] = "queued"
             item["last_result"] = note
             remained.append(item)
+            log_audit("queue.flush_item", "queued", record_id=item.get("id", ""), note=note)
 
     if len(remained) > 2000:
         remained = remained[-2000:]
@@ -140,10 +219,15 @@ class IntegrationEventIn(BaseModel):
     kind: str = Field(default="integration.event", min_length=3, max_length=120)
     source: str = Field(default="ui", min_length=1, max_length=120)
     payload: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str = Field(default="", max_length=180)
 
 
 class FlushIn(BaseModel):
     limit: int = Field(default=100, ge=1, le=500)
+
+
+class AuditQueryIn(BaseModel):
+    limit: int = Field(default=100, ge=1, le=1000)
 
 
 app = FastAPI(title="TZ Generator Backend", version="1.1.0", docs_url="/docs")
@@ -154,6 +238,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+init_audit_db()
 
 
 @app.get("/health")
@@ -174,14 +259,32 @@ def ping() -> dict[str, str]:
 
 @app.post("/api/v1/integration/event")
 def integration_event(body: IntegrationEventIn) -> dict[str, Any]:
+    idem = (body.idempotency_key or "").strip()
+    if idem:
+        prev = get_idempotency_response(idem)
+        if prev:
+            log_audit("event.idempotency_hit", "ok", note=idem)
+            return {**prev, "duplicate": True}
     record = append_record(body.kind, body.payload, body.source)
-    return {"ok": True, "record_id": record["id"], "status": record["status"]}
+    response = {"ok": True, "record_id": record["id"], "status": record["status"]}
+    if idem:
+        store_idempotency_response(idem, response)
+    return response
 
 
 @app.post("/api/v1/integration/draft")
 def integration_draft(payload: dict[str, Any]) -> dict[str, Any]:
+    idem = str(payload.get("idempotency_key", "")).strip() if isinstance(payload, dict) else ""
+    if idem:
+        prev = get_idempotency_response(idem)
+        if prev:
+            log_audit("draft.idempotency_hit", "ok", note=idem)
+            return {**prev, "duplicate": True}
     record = append_record("procurement.draft", payload, "platform_connector")
-    return {"ok": True, "record_id": record["id"], "status": record["status"]}
+    response = {"ok": True, "record_id": record["id"], "status": record["status"]}
+    if idem:
+        store_idempotency_response(idem, response)
+    return response
 
 
 @app.get("/api/v1/integration/queue")
@@ -199,9 +302,38 @@ def integration_queue() -> dict[str, Any]:
     }
 
 
+@app.post("/api/v1/integration/audit")
+def integration_audit(body: AuditQueryIn) -> dict[str, Any]:
+    limit = body.limit
+    try:
+        with sqlite3.connect(AUDIT_DB_FILE) as conn:
+            rows = conn.execute(
+                "SELECT id, at, action, status, record_id, note FROM audit_log ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return {
+            "ok": True,
+            "total": len(rows),
+            "items": [
+                {
+                    "id": row[0],
+                    "at": row[1],
+                    "action": row[2],
+                    "status": row[3],
+                    "record_id": row[4],
+                    "note": row[5],
+                }
+                for row in rows
+            ],
+        }
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"audit_read_error: {err}")
+
+
 @app.post("/api/v1/integration/flush")
 def integration_flush(body: FlushIn) -> dict[str, Any]:
     result = flush_queue(body.limit)
     if not result["target_configured"]:
         raise HTTPException(status_code=400, detail="INTEGRATION_TARGET_WEBHOOK_URL is not configured")
+    log_audit("queue.flush", "ok", note=f"processed={result['processed']} success={result['success']} failed={result['failed']}")
     return {"ok": True, **result}

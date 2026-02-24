@@ -823,6 +823,16 @@
             </div>
           </div>
           <div class="form-row" style="margin-bottom:8px;">
+            <div class="form-group" style="flex:2;min-width:240px;">
+              <label for="automationBackendApiBase">Backend Connector API (опционально)</label>
+              <input id="automationBackendApiBase" type="text" placeholder="https://api.example.com" />
+            </div>
+            <div class="form-group" style="min-width:180px;">
+              <label for="automationBackendApiToken">Backend API Token (опционально)</label>
+              <input id="automationBackendApiToken" type="text" placeholder="Bearer token" />
+            </div>
+          </div>
+          <div class="form-row" style="margin-bottom:8px;">
             <div class="form-group">
               <label for="automationPreset">Быстрый пресет</label>
               <select id="automationPreset">
@@ -846,6 +856,9 @@
             </label>
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
               <input id="automationAutoPick" type="checkbox" style="width:auto;" checked /> Автовыбор первого кандидата в списке
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
+              <input id="automationUseBackendQueueApi" type="checkbox" style="width:auto;" /> Отправлять события через Backend Connector API
             </label>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -2210,8 +2223,14 @@ function loadAutomationSettings() {
   const autoEl = document.getElementById('automationAutoSend');
   const pilotEl = document.getElementById('automationAutopilot');
   const pickEl = document.getElementById('automationAutoPick');
+  const backendBaseEl = document.getElementById('automationBackendApiBase');
+  const backendTokenEl = document.getElementById('automationBackendApiToken');
+  const useBackendEl = document.getElementById('automationUseBackendQueueApi');
   if (urlEl) urlEl.value = automationSettings.webhookUrl || '';
   if (secEl) secEl.value = automationSettings.webhookSecret || '';
+  if (backendBaseEl) backendBaseEl.value = automationSettings.backendApiBase || '';
+  if (backendTokenEl) backendTokenEl.value = automationSettings.backendApiToken || '';
+  if (useBackendEl) useBackendEl.checked = !!automationSettings.useBackendQueueApi;
   if (autoEl) autoEl.checked = !!automationSettings.autoSend;
   if (pilotEl) pilotEl.checked = !!automationSettings.autopilot;
   if (pickEl) pickEl.checked = automationSettings.autoPickTopCandidate !== false;
@@ -2347,8 +2366,14 @@ function saveAutomationSettings() {
   const autoEl = document.getElementById('automationAutoSend');
   const pilotEl = document.getElementById('automationAutopilot');
   const pickEl = document.getElementById('automationAutoPick');
+  const backendBaseEl = document.getElementById('automationBackendApiBase');
+  const backendTokenEl = document.getElementById('automationBackendApiToken');
+  const useBackendEl = document.getElementById('automationUseBackendQueueApi');
   automationSettings.webhookUrl = (urlEl?.value || '').trim();
   automationSettings.webhookSecret = (secEl?.value || '').trim();
+  automationSettings.backendApiBase = (backendBaseEl?.value || '').trim();
+  automationSettings.backendApiToken = (backendTokenEl?.value || '').trim();
+  automationSettings.useBackendQueueApi = !!useBackendEl?.checked;
   automationSettings.autoSend = !!autoEl?.checked;
   automationSettings.autopilot = !!pilotEl?.checked;
   automationSettings.autoPickTopCandidate = !!pickEl?.checked;
@@ -2359,6 +2384,32 @@ function saveAutomationSettings() {
 }
 
 async function sendAutomationEvent(eventName, payload) {
+  const backendBase = (automationSettings.backendApiBase || '').trim().replace(/\/+$/, '');
+  if (automationSettings.useBackendQueueApi && backendBase) {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (automationSettings.backendApiToken) headers['Authorization'] = `Bearer ${automationSettings.backendApiToken}`;
+      const idempotencyKey = `evt-${eventName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const response = await fetch(`${backendBase}/api/v1/integration/event`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          kind: eventName,
+          source: 'frontend',
+          idempotency_key: idempotencyKey,
+          payload
+        })
+      });
+      if (!response.ok) throw new Error('backend event http ' + response.status);
+      logAutomationAction(eventName, true, 'backend_queue');
+      return true;
+    } catch (_) {
+      enqueueAutomationEvent(eventName, payload);
+      logAutomationAction(eventName, false, 'backend_queue_failed');
+      return false;
+    }
+  }
+
   const url = (automationSettings.webhookUrl || '').trim();
   if (!url) return true;
   try {
@@ -2390,7 +2441,9 @@ async function sendAutomationEvent(eventName, payload) {
 
 async function flushAutomationQueue(manual = false) {
   const url = (automationSettings.webhookUrl || '').trim();
-  if (!url || !automationQueue.length) {
+  const backendBase = (automationSettings.backendApiBase || '').trim();
+  const hasTransport = (automationSettings.useBackendQueueApi && !!backendBase) || !!url;
+  if (!hasTransport || !automationQueue.length) {
     saveAutomationQueue();
     return;
   }
@@ -2606,9 +2659,33 @@ function exportProcurementPackage() {
 }
 
 async function sendPlatformDraft(payload = null) {
+  const draft = payload || makeProcurementDraft();
+  const backendBase = (automationSettings.backendApiBase || '').trim().replace(/\/+$/, '');
+  if (automationSettings.useBackendQueueApi && backendBase) {
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (automationSettings.backendApiToken) headers['Authorization'] = `Bearer ${automationSettings.backendApiToken}`;
+      const idempotencyKey = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const response = await fetch(`${backendBase}/api/v1/integration/draft`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          ...draft,
+          idempotency_key: idempotencyKey
+        })
+      });
+      if (!response.ok) throw new Error('backend draft http ' + response.status);
+      logAutomationAction('platform.draft.send', true, 'backend_queue');
+      return true;
+    } catch (_) {
+      queuePlatformDraft(draft);
+      logAutomationAction('platform.draft.send', false, 'backend_queue_failed');
+      return false;
+    }
+  }
+
   const endpoint = (platformIntegrationSettings.endpoint || '').trim();
   if (!endpoint) return false;
-  const draft = payload || makeProcurementDraft();
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (platformIntegrationSettings.apiToken) headers['Authorization'] = `Bearer ${platformIntegrationSettings.apiToken}`;
@@ -2630,7 +2707,9 @@ async function sendPlatformDraft(payload = null) {
 
 async function flushPlatformQueue(manual = false) {
   const endpoint = (platformIntegrationSettings.endpoint || '').trim();
-  if (!endpoint || !platformQueue.length) {
+  const backendBase = (automationSettings.backendApiBase || '').trim();
+  const hasTransport = (automationSettings.useBackendQueueApi && !!backendBase) || !!endpoint;
+  if (!hasTransport || !platformQueue.length) {
     savePlatformQueue();
     return;
   }
@@ -3209,9 +3288,10 @@ function trainFromCurrentRows() {
 
 async function sendTestWebhook() {
   saveAutomationSettings();
-  if (!automationSettings.webhookUrl) {
+  const hasBackend = automationSettings.useBackendQueueApi && !!automationSettings.backendApiBase;
+  if (!automationSettings.webhookUrl && !hasBackend) {
     logAutomationAction('automation.webhook.test', false, 'url_missing');
-    showError('Укажите Webhook URL в блоке автоматизации.');
+    showError('Укажите Webhook URL или Backend Connector API в блоке автоматизации.');
     return;
   }
   const ok = await sendAutomationEvent('webhook.test', { ok: true, source: 'manual_test' });
@@ -3415,6 +3495,9 @@ let platformQueue = [];
 let automationSettings = {
   webhookUrl: '',
   webhookSecret: '',
+  backendApiBase: '',
+  backendApiToken: '',
+  useBackendQueueApi: false,
   autoSend: false,
   autopilot: false,
   autoPickTopCandidate: true

@@ -18,6 +18,8 @@ import { buildTypeCandidates, detectTypeDetailed, type GoodsType } from '../lib/
 
 type Provider = 'openrouter' | 'groq' | 'deepseek';
 type LawMode = '44' | '223';
+const DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'] as const;
+const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'] as const;
 
 type Row = {
   id: number;
@@ -637,7 +639,19 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       <div className="grid two">
         <label>
           Провайдер
-          <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
+          <select
+            value={provider}
+            onChange={(e) => {
+              const next = e.target.value as Provider;
+              setProvider(next);
+              if (next === 'deepseek' && !DEEPSEEK_MODELS.includes(model as (typeof DEEPSEEK_MODELS)[number])) {
+                setModel('deepseek-chat');
+              }
+              if (next === 'groq' && !GROQ_MODELS.includes(model as (typeof GROQ_MODELS)[number])) {
+                setModel('llama-3.3-70b-versatile');
+              }
+            }}
+          >
             <option value="deepseek">DeepSeek</option>
             <option value="openrouter">OpenRouter</option>
             <option value="groq">Groq</option>
@@ -649,8 +663,30 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
             value={model}
             onChange={(e) => setModel(e.target.value)}
             placeholder={provider === 'openrouter' ? 'например: openai/gpt-4o-mini' : 'deepseek-chat'}
-            list={provider === 'openrouter' && openRouterModels.length > 0 ? 'openrouter-models' : undefined}
+            list={
+              provider === 'openrouter' && openRouterModels.length > 0
+                ? 'openrouter-models'
+                : provider === 'deepseek'
+                  ? 'deepseek-models'
+                  : provider === 'groq'
+                    ? 'groq-models'
+                    : undefined
+            }
           />
+          {provider === 'deepseek' && (
+            <datalist id="deepseek-models">
+              {DEEPSEEK_MODELS.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          )}
+          {provider === 'groq' && (
+            <datalist id="groq-models">
+              {GROQ_MODELS.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
+          )}
           {provider === 'openrouter' && openRouterModels.length > 0 && (
             <datalist id="openrouter-models">
               {openRouterModels.map((m) => (

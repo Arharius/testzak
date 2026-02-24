@@ -260,14 +260,24 @@ export type OpenRouterModel = {
 
 function normalizeModelForProvider(provider: Provider, model: string): string {
   const raw = String(model || '').trim();
+  const norm = raw.toLowerCase().replace(/[_\s]+/g, '-');
   if (!raw) return raw;
   if (provider === 'openrouter') {
     if (raw === 'deepseek-chat') return 'deepseek/deepseek-chat';
     if (raw === 'deepseek-reasoner') return 'deepseek/deepseek-reasoner';
   }
-  if (provider === 'deepseek' && raw.includes('/')) {
-    const tail = raw.split('/').pop();
-    return tail || raw;
+  if (provider === 'deepseek') {
+    if (raw.includes('/')) {
+      const tail = raw.split('/').pop();
+      return tail || raw;
+    }
+    if (norm === 'deepseek-v3' || norm === 'deepseek-v3.1' || norm === 'deepseek-chat' || norm === 'deepseek-v3-chat') {
+      return 'deepseek-chat';
+    }
+    if (norm === 'deepseek-r1' || norm === 'deepseek-reasoner' || norm === 'reasoner') {
+      return 'deepseek-reasoner';
+    }
+    return raw;
   }
   return raw;
 }

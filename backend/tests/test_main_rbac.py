@@ -220,3 +220,10 @@ async def test_public_billing_readiness_endpoint(rbac_db):
         backend_main.YOOKASSA_SECRET_KEY = old_key
         backend_main.YOOKASSA_RETURN_URL = old_return
         backend_main.YOOKASSA_WEBHOOK_SECRET = old_hook
+
+
+@pytest.mark.asyncio
+async def test_public_openrouter_models_requires_key(rbac_db):
+    async with AsyncClient(transport=ASGITransport(app=backend_main.app), base_url="http://test") as client:
+        resp = await client.post("/api/public/openrouter/models", json={"api_key": ""})
+        assert resp.status_code == 400

@@ -293,6 +293,27 @@ export async function fetchOpenRouterModels(apiKey: string): Promise<OpenRouterM
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
+export async function fetchOpenRouterModelsViaBackend(
+  backendApiBase: string,
+  apiKey: string
+): Promise<OpenRouterModel[]> {
+  const base = String(backendApiBase || '').trim();
+  if (!base) throw new Error('backend_api_base_not_set');
+  const cleanKey = sanitizeHeaderValue(apiKey).replace(/^Bearer\s+/i, '');
+  if (!cleanKey) throw new Error('api_key_invalid_after_sanitize');
+  const url = `${base.replace(/\/+$/, '')}/api/public/openrouter/models`;
+  const resp = await axios.post(url, { api_key: cleanKey }, { timeout: 30000 });
+  const items = Array.isArray(resp.data?.items) ? (resp.data.items as Array<Record<string, unknown>>) : [];
+  return items
+    .map((m) => ({
+      id: String(m.id || '').trim(),
+      name: typeof m.name === 'string' ? m.name : undefined,
+      context_length: Number.isFinite(m.context_length as number) ? Number(m.context_length) : undefined
+    }))
+    .filter((m) => !!m.id)
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
 export async function generateItemSpecs(
   provider: Provider,
   apiKey: string,

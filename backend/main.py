@@ -165,6 +165,9 @@ class YooKassaCheckoutIn(BaseModel):
     plan_code: str
     return_url: Optional[str] = ""
 
+class OpenRouterModelsIn(BaseModel):
+    api_key: str
+
 class BillingReadinessOut(BaseModel):
     ok: bool
     provider: str
@@ -297,6 +300,52 @@ def _create_yookassa_payment(payload: Dict[str, Any], idempotence_key: str) -> D
         raise HTTPException(status_code=502, detail=f"yookassa_url_error: {err.reason}")
     except Exception as err:
         raise HTTPException(status_code=502, detail=f"yookassa_error: {str(err)[:240]}")
+
+
+def _openrouter_models(api_key: str) -> list[dict[str, Any]]:
+    clean = str(api_key or "").strip().replace("Bearer ", "", 1).strip()
+    if len(clean) < 10:
+        raise HTTPException(status_code=400, detail="api_key_required")
+    req = Request(
+        "https://openrouter.ai/api/v1/models",
+        headers={
+            "Authorization": f"Bearer {clean}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://tz-generator-frontend.onrender.com",
+            "X-Title": "TZ Generator React",
+        },
+        method="GET",
+    )
+    try:
+        with urlopen(req, timeout=25) as resp:
+            raw = resp.read().decode("utf-8")
+            data = json.loads(raw) if raw else {}
+            items = data.get("data") if isinstance(data, dict) else []
+            if not isinstance(items, list):
+                return []
+            out: list[dict[str, Any]] = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                model_id = str(item.get("id", "")).strip()
+                if not model_id:
+                    continue
+                out.append(
+                    {
+                        "id": model_id,
+                        "name": str(item.get("name", "")).strip() or None,
+                        "context_length": int(item.get("context_length", 0) or 0) or None,
+                    }
+                )
+            out.sort(key=lambda x: x.get("id") or "")
+            return out
+    except HTTPError as err:
+        detail = err.read().decode("utf-8", errors="ignore") if hasattr(err, "read") else str(err)
+        raise HTTPException(status_code=502, detail=f"openrouter_http_{err.code}: {detail[:240]}")
+    except URLError as err:
+        raise HTTPException(status_code=502, detail=f"openrouter_url_error: {err.reason}")
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"openrouter_error: {str(err)[:240]}")
 
 
 # ── Core Endpoints ──
@@ -687,6 +736,10 @@ def tenant_plan_limits(user: User = Depends(get_current_user), db: Session = Dep
         "usage": {"users_total": users_total, "docs_month_total": docs_month},
         "unlimited": _is_superadmin(user),
     }
+
+@app.post("/api/public/openrouter/models")
+def public_openrouter_models(req: OpenRouterModelsIn):
+    return {"ok": True, "items": _openrouter_models(req.api_key)}
 
 @app.get("/api/public/billing/readiness", response_model=BillingReadinessOut)
 def public_billing_readiness():

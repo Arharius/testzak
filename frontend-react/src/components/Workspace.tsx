@@ -5,6 +5,7 @@ import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
 import {
   fetchOpenRouterModels,
+  fetchOpenRouterModelsViaBackend,
   fetchPublicBillingReadiness,
   generateItemSpecs,
   postPlatformDraft,
@@ -292,13 +293,28 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     setOpenRouterLoading(true);
     setOpenRouterError('');
     try {
-      const items = await fetchOpenRouterModels(apiKey);
+      let items = await fetchOpenRouterModels(apiKey);
+      if (!items.length) {
+        const backendBase = automationSettings.backendApiBase.trim() || 'https://tz-generator-backend.onrender.com';
+        items = await fetchOpenRouterModelsViaBackend(backendBase, apiKey);
+      }
       setOpenRouterModels(items);
       if (items.length > 0 && (!model.trim() || model === 'deepseek-chat')) {
         setModel(items[0].id);
       }
-    } catch (e) {
-      setOpenRouterError(e instanceof Error ? e.message : 'openrouter_models_load_failed');
+    } catch (firstErr) {
+      try {
+        const backendBase = automationSettings.backendApiBase.trim() || 'https://tz-generator-backend.onrender.com';
+        const items = await fetchOpenRouterModelsViaBackend(backendBase, apiKey);
+        setOpenRouterModels(items);
+        if (items.length > 0 && (!model.trim() || model === 'deepseek-chat')) {
+          setModel(items[0].id);
+        }
+      } catch (secondErr) {
+        const msg1 = firstErr instanceof Error ? firstErr.message : 'openrouter_models_load_failed';
+        const msg2 = secondErr instanceof Error ? secondErr.message : '';
+        setOpenRouterError(msg2 ? `${msg1} | backend: ${msg2}` : msg1);
+      }
     } finally {
       setOpenRouterLoading(false);
     }

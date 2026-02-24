@@ -659,20 +659,28 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         </label>
         <label>
           Модель
-          <input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            placeholder={provider === 'openrouter' ? 'например: openai/gpt-4o-mini' : 'deepseek-chat'}
-            list={
-              provider === 'openrouter' && openRouterModels.length > 0
-                ? 'openrouter-models'
-                : provider === 'deepseek'
+          {provider === 'openrouter' && openRouterModels.length > 0 ? (
+            <select value={model} onChange={(e) => setModel(e.target.value)}>
+              {openRouterModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.id}{m.name ? ` — ${m.name}` : ''}{m.context_length ? ` (${m.context_length})` : ''}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder={provider === 'openrouter' ? 'например: openai/gpt-4o-mini' : 'deepseek-chat'}
+              list={
+                provider === 'deepseek'
                   ? 'deepseek-models'
                   : provider === 'groq'
                     ? 'groq-models'
                     : undefined
-            }
-          />
+              }
+            />
+          )}
           {provider === 'deepseek' && (
             <datalist id="deepseek-models">
               {DEEPSEEK_MODELS.map((m) => (
@@ -688,13 +696,9 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
             </datalist>
           )}
           {provider === 'openrouter' && openRouterModels.length > 0 && (
-            <datalist id="openrouter-models">
-              {openRouterModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name ? `${m.name}${m.context_length ? ` (${m.context_length})` : ''}` : m.id}
-                </option>
-              ))}
-            </datalist>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Загружено моделей: {openRouterModels.length}
+            </div>
           )}
           {provider === 'openrouter' && (
             <div className="actions" style={{ marginTop: 8 }}>

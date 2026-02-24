@@ -50,10 +50,11 @@ async def test_tenant_isolation_and_role_access(rbac_db):
     u1_id, u2_id, _ = _seed_data(rbac_db)
 
     class CurrentUser:
-        def __init__(self, user_id: int, tenant_id: str, role: str):
+        def __init__(self, user_id: int, tenant_id: str, role: str, email: str = "u@test.local"):
             self.id = user_id
             self.tenant_id = tenant_id
             self.role = role
+            self.email = email
 
     # Viewer sees only own docs inside tenant
     backend_main.app.dependency_overrides[backend_main.get_current_user] = lambda: CurrentUser(u2_id, "t1", "viewer")
@@ -84,10 +85,11 @@ async def test_manager_cannot_change_roles(rbac_db):
     _, _, _ = _seed_data(rbac_db)
 
     class CurrentUser:
-        def __init__(self, user_id: int, tenant_id: str, role: str):
+        def __init__(self, user_id: int, tenant_id: str, role: str, email: str = "u@test.local"):
             self.id = user_id
             self.tenant_id = tenant_id
             self.role = role
+            self.email = email
 
     backend_main.app.dependency_overrides[backend_main.get_current_user] = lambda: CurrentUser(1, "t1", "manager")
     async with AsyncClient(transport=ASGITransport(app=backend_main.app), base_url="http://test") as client:
@@ -100,10 +102,11 @@ async def test_billing_and_alerts_endpoints(rbac_db):
     u1_id, _, _ = _seed_data(rbac_db)
 
     class CurrentUser:
-        def __init__(self, user_id: int, tenant_id: str, role: str):
+        def __init__(self, user_id: int, tenant_id: str, role: str, email: str = "u@test.local"):
             self.id = user_id
             self.tenant_id = tenant_id
             self.role = role
+            self.email = email
 
     backend_main.app.dependency_overrides[backend_main.get_current_user] = lambda: CurrentUser(u1_id, "t1", "admin")
     async with AsyncClient(transport=ASGITransport(app=backend_main.app), base_url="http://test") as client:
@@ -124,3 +127,69 @@ async def test_billing_and_alerts_endpoints(rbac_db):
         alerts = await client.get("/api/tenant/alerts")
         assert alerts.status_code == 200
         assert alerts.json()["ok"] is True
+
+
+@pytest.mark.asyncio
+async def test_superadmin_sees_all_tenants_docs(rbac_db):
+    _seed_data(rbac_db)
+
+    class CurrentUser:
+        def __init__(self, user_id: int, tenant_id: str, role: str, email: str = "root@test.local"):
+            self.id = user_id
+            self.tenant_id = tenant_id
+            self.role = role
+            self.email = email
+
+    backend_main.app.dependency_overrides[backend_main.get_current_user] = lambda: CurrentUser(999, "root", "superadmin")
+    async with AsyncClient(transport=ASGITransport(app=backend_main.app), base_url="http://test") as client:
+        resp = await client.get("/api/documents")
+        assert resp.status_code == 200
+        items = resp.json()
+        assert len(items) == 3
+
+
+@pytest.mark.asyncio
+async def test_docs_limit_enforced_for_non_superadmin(rbac_db):
+    u1_id, _, _ = _seed_data(rbac_db)
+    original = dict(backend_main.PLAN_CATALOG["starter"])
+    backend_main.PLAN_CATALOG["starter"]["docs_month_limit"] = 1
+    try:
+        class CurrentUser:
+            def __init__(self, user_id: int, tenant_id: str, role: str, email: str = "admin@t1.local"):
+                self.id = user_id
+                self.tenant_id = tenant_id
+                self.role = role
+                self.email = email
+
+        backend_main.app.dependency_overrides[backend_main.get_current_user] = lambda: CurrentUser(u1_id, "t1", "admin")
+        async with AsyncClient(transport=ASGITransport(app=backend_main.app), base_url="http://test") as client:
+            resp = await client.post(
+                "/api/documents",
+                json={"title": "Limited doc", "metadata": {}, "products": []},
+            )
+            assert resp.status_code == 402
+    finally:
+        backend_main.PLAN_CATALOG["starter"] = original
+
+
+@pytest.mark.asyncio
+async def test_yookassa_checkout_requires_credentials(rbac_db):
+    u1_id, _, _ = _seed_data(rbac_db)
+
+    class CurrentUser:
+        def __init__(self, user_id: int, tenant_id: str, role: str, email: str = "admin@t1.local"):
+            self.id = user_id
+            self.tenant_id = tenant_id
+            self.role = role
+            self.email = email
+
+    backend_main.app.dependency_overrides[backend_main.get_current_user] = lambda: CurrentUser(u1_id, "t1", "admin")
+    old_shop, old_key = backend_main.YOOKASSA_SHOP_ID, backend_main.YOOKASSA_SECRET_KEY
+    backend_main.YOOKASSA_SHOP_ID = ""
+    backend_main.YOOKASSA_SECRET_KEY = ""
+    try:
+        async with AsyncClient(transport=ASGITransport(app=backend_main.app), base_url="http://test") as client:
+            resp = await client.post("/api/tenant/payments/yookassa/checkout", json={"plan_code": "pro"})
+            assert resp.status_code == 400
+    finally:
+        backend_main.YOOKASSA_SHOP_ID, backend_main.YOOKASSA_SECRET_KEY = old_shop, old_key

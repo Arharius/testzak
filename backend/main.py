@@ -8,7 +8,11 @@ from sqlalchemy import text
 import logging
 import json
 import os
+import base64
+import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
 from scraper_poc import scrape_dns
 from doc_generator import generate_tz_document
@@ -21,6 +25,19 @@ from auth import (
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "").strip().lower()
+SUPERADMIN_TENANT_ID = os.getenv("SUPERADMIN_TENANT_ID", "root")
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "").strip()
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "").strip()
+YOOKASSA_RETURN_URL = os.getenv("YOOKASSA_RETURN_URL", "").strip() or "https://tz-generator-frontend.onrender.com"
+YOOKASSA_WEBHOOK_SECRET = os.getenv("YOOKASSA_WEBHOOK_SECRET", "").strip()
+
+PLAN_CATALOG: dict[str, dict[str, int]] = {
+    "starter": {"price_cents": 19900, "users_limit": 3, "docs_month_limit": 100},
+    "pro": {"price_cents": 49900, "users_limit": 15, "docs_month_limit": 1500},
+    "enterprise": {"price_cents": 149900, "users_limit": 200, "docs_month_limit": 20000},
+}
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -144,27 +161,118 @@ class IntegrationEventIn(BaseModel):
     idempotency_key: str = ""
 
 
+class YooKassaCheckoutIn(BaseModel):
+    plan_code: str
+    return_url: Optional[str] = ""
+
+
 def _can_access_doc(user: User, doc: TZDocument) -> bool:
     if doc.tenant_id != user.tenant_id:
         return False
-    if user.role in ("admin", "manager"):
+    if user.role in ("superadmin", "admin", "manager"):
         return True
     return doc.user_id == user.id
 
 
 def _can_manage_tenant(user: User) -> bool:
-    return user.role in ("admin", "manager")
+    return user.role in ("superadmin", "admin", "manager")
+
+
+def _is_superadmin(user: User) -> bool:
+    role = str(getattr(user, "role", "")).lower()
+    email = str(getattr(user, "email", "")).lower()
+    return role == "superadmin" or (SUPERADMIN_EMAIL and email == SUPERADMIN_EMAIL)
+
+
+def _plan_info(plan_code: str) -> dict[str, int]:
+    code = (plan_code or "starter").strip().lower()
+    return PLAN_CATALOG.get(code, PLAN_CATALOG["starter"])
+
+
+def _month_start_utc(now: Optional[datetime] = None) -> datetime:
+    dt = now or datetime.now(timezone.utc)
+    return datetime(dt.year, dt.month, 1, tzinfo=timezone.utc)
 
 
 def _ensure_subscription(db: Session, tenant_id: str) -> TenantSubscription:
     sub = db.query(TenantSubscription).filter(TenantSubscription.tenant_id == tenant_id).first()
     if sub:
         return sub
-    sub = TenantSubscription(tenant_id=tenant_id)
+    info = _plan_info("starter")
+    sub = TenantSubscription(tenant_id=tenant_id, plan_code="starter", monthly_price_cents=info["price_cents"])
     db.add(sub)
     db.commit()
     db.refresh(sub)
     return sub
+
+
+def _enforce_users_limit(db: Session, tenant_id: str) -> None:
+    sub = _ensure_subscription(db, tenant_id)
+    info = _plan_info(sub.plan_code)
+    users_total = db.query(User).filter(User.tenant_id == tenant_id).count()
+    if users_total >= info["users_limit"]:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Лимит пользователей по плану {sub.plan_code}: {info['users_limit']}. Нужен апгрейд.",
+        )
+
+
+def _enforce_docs_limit(db: Session, tenant_id: str) -> None:
+    sub = _ensure_subscription(db, tenant_id)
+    info = _plan_info(sub.plan_code)
+    start = _month_start_utc()
+    docs_month = db.query(TZDocument).filter(
+        TZDocument.tenant_id == tenant_id,
+        TZDocument.created_at >= start,
+    ).count()
+    if docs_month >= info["docs_month_limit"]:
+        raise HTTPException(
+            status_code=402,
+            detail=f"Лимит документов в месяц по плану {sub.plan_code}: {info['docs_month_limit']}. Нужен апгрейд.",
+        )
+
+
+def _log_integration_event(db: Session, tenant_id: str, user_id: Optional[int], event_name: str, payload: Dict[str, Any]) -> None:
+    row = IntegrationEventLog(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        event_name=(event_name or "integration.event")[:180],
+        payload_json=json.dumps(payload or {}, ensure_ascii=False),
+    )
+    db.add(row)
+    db.commit()
+
+
+def _yookassa_headers(idempotence_key: str) -> dict[str, str]:
+    auth = base64.b64encode(f"{YOOKASSA_SHOP_ID}:{YOOKASSA_SECRET_KEY}".encode("utf-8")).decode("ascii")
+    return {
+        "Content-Type": "application/json",
+        "Authorization": f"Basic {auth}",
+        "Idempotence-Key": idempotence_key,
+    }
+
+
+def _create_yookassa_payment(payload: Dict[str, Any], idempotence_key: str) -> Dict[str, Any]:
+    if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
+        raise HTTPException(status_code=400, detail="YOOKASSA credentials are not configured")
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = Request(
+        "https://api.yookassa.ru/v3/payments",
+        data=body,
+        headers=_yookassa_headers(idempotence_key),
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=25) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except HTTPError as err:
+        detail = err.read().decode("utf-8", errors="ignore") if hasattr(err, "read") else str(err)
+        raise HTTPException(status_code=502, detail=f"yookassa_http_{err.code}: {detail[:240]}")
+    except URLError as err:
+        raise HTTPException(status_code=502, detail=f"yookassa_url_error: {err.reason}")
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"yookassa_error: {str(err)[:240]}")
 
 
 # ── Core Endpoints ──
@@ -222,8 +330,12 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
 
     users_count = db.query(User).count()
-    tenant_id = (req.tenant_id or "").strip() or "default"
-    role = "admin" if users_count == 0 else "manager"
+    requested_tenant = (req.tenant_id or "").strip() or "default"
+    is_superadmin_signup = bool(SUPERADMIN_EMAIL and req.email.strip().lower() == SUPERADMIN_EMAIL)
+    tenant_id = SUPERADMIN_TENANT_ID if is_superadmin_signup else requested_tenant
+    role = "superadmin" if is_superadmin_signup else ("admin" if users_count == 0 else "manager")
+    if not is_superadmin_signup and users_count > 0:
+        _enforce_users_limit(db, tenant_id)
     user = User(
         email=req.email,
         name=req.name,
@@ -264,6 +376,8 @@ def get_me(user: User = Depends(get_current_user)):
 
 @app.post("/api/documents", response_model=DocumentOut)
 def save_document(req: SaveDocumentRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not _is_superadmin(user):
+        _enforce_docs_limit(db, user.tenant_id)
     doc = TZDocument(
         user_id=user.id,
         tenant_id=user.tenant_id,
@@ -279,7 +393,9 @@ def save_document(req: SaveDocumentRequest, user: User = Depends(get_current_use
 
 @app.get("/api/documents", response_model=List[DocumentOut])
 def list_documents(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if user.role in ("admin", "manager"):
+    if _is_superadmin(user):
+        docs = db.query(TZDocument).order_by(TZDocument.updated_at.desc()).all()
+    elif user.role in ("admin", "manager"):
         docs = (
             db.query(TZDocument)
             .filter(TZDocument.tenant_id == user.tenant_id)
@@ -341,10 +457,10 @@ def update_tenant_user_role(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if user.role != "admin":
+    if user.role not in ("superadmin", "admin"):
         raise HTTPException(status_code=403, detail="Только admin может менять роли")
     role = (req.role or "").strip().lower()
-    if role not in ("admin", "manager", "viewer"):
+    if role not in ("superadmin", "admin", "manager", "viewer"):
         raise HTTPException(status_code=400, detail="Неверная роль")
     target = db.query(User).filter(User.id == req.user_id, User.tenant_id == user.tenant_id).first()
     if not target:
@@ -404,30 +520,34 @@ def tenant_subscription_update(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if user.role != "admin":
+    if user.role not in ("superadmin", "admin"):
         raise HTTPException(status_code=403, detail="Только admin может менять подписку")
     if req.plan_code.strip().lower() not in ("starter", "pro", "enterprise"):
         raise HTTPException(status_code=400, detail="Неверный план")
     sub = _ensure_subscription(db, user.tenant_id)
-    sub.plan_code = req.plan_code.strip().lower()
-    sub.monthly_price_cents = max(0, int(req.monthly_price_cents))
+    plan_code = req.plan_code.strip().lower()
+    info = _plan_info(plan_code)
+    sub.plan_code = plan_code
+    sub.monthly_price_cents = max(0, int(req.monthly_price_cents or info["price_cents"]))
     sub.status = req.status.strip().lower() or "active"
     sub.billing_cycle = req.billing_cycle.strip().lower() or "monthly"
     db.commit()
-    return {"ok": True, "plan_code": sub.plan_code, "monthly_price_cents": sub.monthly_price_cents}
+    return {
+        "ok": True,
+        "plan_code": sub.plan_code,
+        "monthly_price_cents": sub.monthly_price_cents,
+        "limits": {
+            "users_limit": info["users_limit"],
+            "docs_month_limit": info["docs_month_limit"],
+        },
+    }
 
 
 @app.post("/api/v1/integration/event")
 def integration_event(body: IntegrationEventIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    row = IntegrationEventLog(
-        tenant_id=user.tenant_id,
-        user_id=user.id,
-        event_name=(body.kind or "integration.event")[:180],
-        payload_json=json.dumps(body.payload or {}, ensure_ascii=False),
-    )
-    db.add(row)
-    db.commit()
-    return {"ok": True, "id": row.id}
+    _log_integration_event(db, user.tenant_id, user.id, body.kind or "integration.event", body.payload or {})
+    last = db.query(IntegrationEventLog).order_by(IntegrationEventLog.id.desc()).first()
+    return {"ok": True, "id": last.id if last else None}
 
 
 @app.get("/api/v1/integration/metrics")
@@ -473,6 +593,7 @@ def tenant_billing_summary(
     if not _can_manage_tenant(user):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
     sub = _ensure_subscription(db, user.tenant_id)
+    info = _plan_info(sub.plan_code)
     dt_30 = datetime.now(timezone.utc) - timedelta(days=30)
     docs_30d = db.query(TZDocument).filter(TZDocument.tenant_id == user.tenant_id, TZDocument.created_at >= dt_30).count()
     usage_events_30d = db.query(IntegrationEventLog).filter(
@@ -489,6 +610,8 @@ def tenant_billing_summary(
             "status": sub.status,
             "monthly_price_cents": sub.monthly_price_cents,
             "billing_cycle": sub.billing_cycle,
+            "users_limit": info["users_limit"],
+            "docs_month_limit": info["docs_month_limit"],
         },
         "usage_30d_docs": metered_docs,
         "estimated_metered_revenue_cents": metered_docs * max(0, int(price_per_doc_cents)),
@@ -521,6 +644,94 @@ def tenant_alerts(user: User = Depends(get_current_user), db: Session = Depends(
     if not alerts:
         alerts.append({"level": "ok", "code": "ALL_GREEN", "message": "Критичных сигналов нет."})
     return {"ok": True, "tenant_id": user.tenant_id, "items": alerts}
+
+
+@app.get("/api/tenant/plan/limits")
+def tenant_plan_limits(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    sub = _ensure_subscription(db, user.tenant_id)
+    info = _plan_info(sub.plan_code)
+    docs_month = db.query(TZDocument).filter(
+        TZDocument.tenant_id == user.tenant_id,
+        TZDocument.created_at >= _month_start_utc(),
+    ).count()
+    users_total = db.query(User).filter(User.tenant_id == user.tenant_id).count()
+    return {
+        "ok": True,
+        "tenant_id": user.tenant_id,
+        "plan_code": sub.plan_code,
+        "limits": info,
+        "usage": {"users_total": users_total, "docs_month_total": docs_month},
+        "unlimited": _is_superadmin(user),
+    }
+
+
+@app.post("/api/tenant/payments/yookassa/checkout")
+def yookassa_checkout(
+    req: YooKassaCheckoutIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not _can_manage_tenant(user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    plan_code = (req.plan_code or "").strip().lower()
+    if plan_code not in PLAN_CATALOG:
+        raise HTTPException(status_code=400, detail="Неверный план")
+    info = _plan_info(plan_code)
+    payload = {
+        "amount": {"value": f"{info['price_cents'] / 100:.2f}", "currency": "RUB"},
+        "capture": True,
+        "confirmation": {"type": "redirect", "return_url": (req.return_url or "").strip() or YOOKASSA_RETURN_URL},
+        "description": f"TZ Generator plan {plan_code}",
+        "metadata": {"tenant_id": user.tenant_id, "plan_code": plan_code, "requested_by_user_id": str(user.id)},
+    }
+    payment = _create_yookassa_payment(payload, idempotence_key=str(uuid.uuid4()))
+    _log_integration_event(
+        db,
+        user.tenant_id,
+        user.id,
+        "payment.yookassa.checkout_created",
+        {"plan_code": plan_code, "payment_id": payment.get("id", "")},
+    )
+    return {
+        "ok": True,
+        "plan_code": plan_code,
+        "payment_id": payment.get("id", ""),
+        "status": payment.get("status", ""),
+        "confirmation_url": ((payment.get("confirmation") or {}).get("confirmation_url") if isinstance(payment, dict) else ""),
+    }
+
+
+@app.post("/api/tenant/payments/yookassa/webhook")
+async def yookassa_webhook(payload: Dict[str, Any], db: Session = Depends(get_db)):
+    if YOOKASSA_WEBHOOK_SECRET:
+        token = str(payload.get("webhook_secret", "")).strip()
+        if token != YOOKASSA_WEBHOOK_SECRET:
+            raise HTTPException(status_code=401, detail="invalid webhook secret")
+
+    event = str(payload.get("event", "")).strip().lower()
+    obj = payload.get("object") if isinstance(payload.get("object"), dict) else {}
+    status = str(obj.get("status", "")).strip().lower()
+    metadata = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
+    tenant_id = str(metadata.get("tenant_id", "")).strip() or "default"
+    plan_code = str(metadata.get("plan_code", "")).strip().lower()
+
+    if event == "payment.succeeded" and status == "succeeded" and plan_code in PLAN_CATALOG:
+        sub = _ensure_subscription(db, tenant_id)
+        info = _plan_info(plan_code)
+        sub.plan_code = plan_code
+        sub.monthly_price_cents = info["price_cents"]
+        sub.status = "active"
+        db.commit()
+        _log_integration_event(
+            db,
+            tenant_id,
+            None,
+            "payment.yookassa.succeeded",
+            {"plan_code": plan_code, "payment_id": obj.get("id", "")},
+        )
+        return {"ok": True, "updated": True, "tenant_id": tenant_id, "plan_code": plan_code}
+
+    return {"ok": True, "updated": False}
 
 
 def _doc_to_out(doc: TZDocument) -> DocumentOut:

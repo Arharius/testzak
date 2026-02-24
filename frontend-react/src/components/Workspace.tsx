@@ -853,7 +853,10 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const printTz = () => {
     if (!tzText.trim()) return;
     const popup = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=900');
-    if (!popup) return;
+    if (!popup) {
+      window.alert('Браузер заблокировал окно печати. Разрешите всплывающие окна для сайта.');
+      return;
+    }
 
     const sectionsHtml = structuredRows
       .map(({ row, parsed, specs }) => {
@@ -910,8 +913,21 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
 </body>
 </html>`);
     popup.document.close();
-    popup.focus();
-    popup.print();
+    let printed = false;
+    const doPrint = () => {
+      if (printed) return;
+      printed = true;
+      try {
+        popup.focus();
+        popup.print();
+      } catch {
+        // no-op
+      }
+    };
+    popup.onload = () => {
+      doPrint();
+    };
+    window.setTimeout(doPrint, 350);
   };
 
   return (

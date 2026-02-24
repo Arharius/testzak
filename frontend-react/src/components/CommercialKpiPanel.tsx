@@ -1,5 +1,12 @@
 import { useMemo, useState } from 'react';
-import { fetchTenantKpi, type TenantKpi } from '../lib/api';
+import {
+  fetchTenantAlerts,
+  fetchTenantBillingSummary,
+  fetchTenantKpi,
+  type TenantAlert,
+  type TenantBillingSummary,
+  type TenantKpi
+} from '../lib/api';
 import { getAutomationLog } from '../lib/storage';
 import type { AutomationSettings } from '../types/schemas';
 
@@ -13,6 +20,8 @@ function money(cents: number, currency: string): string {
 
 export function CommercialKpiPanel({ automationSettings }: Props) {
   const [remoteKpi, setRemoteKpi] = useState<TenantKpi | null>(null);
+  const [billing, setBilling] = useState<TenantBillingSummary | null>(null);
+  const [alerts, setAlerts] = useState<TenantAlert[]>([]);
   const [loading, setLoading] = useState(false);
 
   const local = useMemo(() => {
@@ -27,8 +36,14 @@ export function CommercialKpiPanel({ automationSettings }: Props) {
   const refreshRemote = async () => {
     setLoading(true);
     try {
-      const data = await fetchTenantKpi(automationSettings);
-      setRemoteKpi(data);
+      const [kpi, bill, alertList] = await Promise.all([
+        fetchTenantKpi(automationSettings),
+        fetchTenantBillingSummary(automationSettings),
+        fetchTenantAlerts(automationSettings)
+      ]);
+      setRemoteKpi(kpi);
+      setBilling(bill);
+      setAlerts(alertList);
     } finally {
       setLoading(false);
     }
@@ -67,7 +82,41 @@ export function CommercialKpiPanel({ automationSettings }: Props) {
           </table>
         </div>
       )}
+      {billing && (
+        <div className="rows-table-wrap">
+          <table className="rows-table">
+            <tbody>
+              <tr><th>План</th><td>{billing.subscription.plan_code}</td></tr>
+              <tr><th>Статус подписки</th><td>{billing.subscription.status}</td></tr>
+              <tr><th>Абонплата</th><td>{money(billing.subscription.monthly_price_cents, automationSettings.billingCurrency)}</td></tr>
+              <tr><th>Usage 30д (docs)</th><td>{billing.usage_30d_docs}</td></tr>
+              <tr><th>Metered revenue 30д</th><td>{money(billing.estimated_metered_revenue_cents, automationSettings.billingCurrency)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      {alerts.length > 0 && (
+        <div className="rows-table-wrap">
+          <table className="rows-table">
+            <thead>
+              <tr>
+                <th>Уровень</th>
+                <th>Код</th>
+                <th>Сообщение</th>
+              </tr>
+            </thead>
+            <tbody>
+              {alerts.map((a, idx) => (
+                <tr key={`${a.code}-${idx}`}>
+                  <td>{a.level}</td>
+                  <td>{a.code}</td>
+                  <td>{a.message}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
-

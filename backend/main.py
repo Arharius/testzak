@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from scraper_poc import scrape_dns
 from doc_generator import generate_tz_document
 from database import engine, get_db, Base
-from models import User, TZDocument
+from models import User, TZDocument, IntegrationEventLog, TenantSubscription
 from auth import (
     hash_password, verify_password, create_access_token,
     get_current_user, get_optional_user
@@ -130,6 +130,20 @@ class TenantKpiOut(BaseModel):
     estimated_revenue_cents: int
 
 
+class TenantSubscriptionUpdateRequest(BaseModel):
+    plan_code: str
+    monthly_price_cents: int = 19900
+    status: str = "active"
+    billing_cycle: str = "monthly"
+
+
+class IntegrationEventIn(BaseModel):
+    kind: str = "integration.event"
+    source: str = "react"
+    payload: Dict[str, Any] = {}
+    idempotency_key: str = ""
+
+
 def _can_access_doc(user: User, doc: TZDocument) -> bool:
     if doc.tenant_id != user.tenant_id:
         return False
@@ -140,6 +154,17 @@ def _can_access_doc(user: User, doc: TZDocument) -> bool:
 
 def _can_manage_tenant(user: User) -> bool:
     return user.role in ("admin", "manager")
+
+
+def _ensure_subscription(db: Session, tenant_id: str) -> TenantSubscription:
+    sub = db.query(TenantSubscription).filter(TenantSubscription.tenant_id == tenant_id).first()
+    if sub:
+        return sub
+    sub = TenantSubscription(tenant_id=tenant_id)
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+    return sub
 
 
 # ── Core Endpoints ──
@@ -353,6 +378,149 @@ def tenant_kpi(
         docs_last_30d=docs_last_30d,
         estimated_revenue_cents=max(0, int(billing_price_per_doc_cents)) * docs_last_30d,
     )
+
+
+@app.get("/api/tenant/subscription")
+def tenant_subscription(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not _can_manage_tenant(user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    sub = _ensure_subscription(db, user.tenant_id)
+    return {
+        "ok": True,
+        "subscription": {
+            "tenant_id": sub.tenant_id,
+            "plan_code": sub.plan_code,
+            "status": sub.status,
+            "monthly_price_cents": sub.monthly_price_cents,
+            "billing_cycle": sub.billing_cycle,
+            "next_billing_at": sub.next_billing_at.isoformat() if sub.next_billing_at else "",
+        },
+    }
+
+
+@app.post("/api/tenant/subscription/update")
+def tenant_subscription_update(
+    req: TenantSubscriptionUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Только admin может менять подписку")
+    if req.plan_code.strip().lower() not in ("starter", "pro", "enterprise"):
+        raise HTTPException(status_code=400, detail="Неверный план")
+    sub = _ensure_subscription(db, user.tenant_id)
+    sub.plan_code = req.plan_code.strip().lower()
+    sub.monthly_price_cents = max(0, int(req.monthly_price_cents))
+    sub.status = req.status.strip().lower() or "active"
+    sub.billing_cycle = req.billing_cycle.strip().lower() or "monthly"
+    db.commit()
+    return {"ok": True, "plan_code": sub.plan_code, "monthly_price_cents": sub.monthly_price_cents}
+
+
+@app.post("/api/v1/integration/event")
+def integration_event(body: IntegrationEventIn, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    row = IntegrationEventLog(
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        event_name=(body.kind or "integration.event")[:180],
+        payload_json=json.dumps(body.payload or {}, ensure_ascii=False),
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True, "id": row.id}
+
+
+@app.get("/api/v1/integration/metrics")
+def integration_metrics(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not _can_manage_tenant(user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    now = datetime.now(timezone.utc)
+    dt_24 = now - timedelta(hours=24)
+    dt_1h = now - timedelta(hours=1)
+    q = db.query(IntegrationEventLog).filter(
+        IntegrationEventLog.tenant_id == user.tenant_id, IntegrationEventLog.created_at >= dt_24
+    )
+    events = q.all()
+    sent = len(events)
+    failed = sum(1 for e in events if ".failed" in (e.event_name or "").lower())
+    recent = db.query(IntegrationEventLog).filter(
+        IntegrationEventLog.tenant_id == user.tenant_id, IntegrationEventLog.created_at >= dt_1h
+    ).count()
+    status = "ok" if failed == 0 else "degraded"
+    return {
+        "ok": True,
+        "metrics": {
+            "status": status,
+            "queue_total": 0,
+            "history_total": sent,
+            "dead_letter_total": failed,
+            "oldest_queued_seconds": 0,
+            "flush_24h": {"sent": sent, "queued": recent, "dead_letter": failed},
+            "target_webhook_configured": True,
+            "integration_auth_enabled": True,
+            "integration_max_attempts": 1,
+        },
+        "at": now.isoformat(),
+    }
+
+
+@app.get("/api/tenant/billing/summary")
+def tenant_billing_summary(
+    price_per_doc_cents: int = 9900,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not _can_manage_tenant(user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    sub = _ensure_subscription(db, user.tenant_id)
+    dt_30 = datetime.now(timezone.utc) - timedelta(days=30)
+    docs_30d = db.query(TZDocument).filter(TZDocument.tenant_id == user.tenant_id, TZDocument.created_at >= dt_30).count()
+    usage_events_30d = db.query(IntegrationEventLog).filter(
+        IntegrationEventLog.tenant_id == user.tenant_id,
+        IntegrationEventLog.created_at >= dt_30,
+        IntegrationEventLog.event_name == "billing.usage",
+    ).count()
+    metered_docs = max(docs_30d, usage_events_30d)
+    return {
+        "ok": True,
+        "tenant_id": user.tenant_id,
+        "subscription": {
+            "plan_code": sub.plan_code,
+            "status": sub.status,
+            "monthly_price_cents": sub.monthly_price_cents,
+            "billing_cycle": sub.billing_cycle,
+        },
+        "usage_30d_docs": metered_docs,
+        "estimated_metered_revenue_cents": metered_docs * max(0, int(price_per_doc_cents)),
+    }
+
+
+@app.get("/api/tenant/alerts")
+def tenant_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not _can_manage_tenant(user):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    alerts: list[dict[str, str]] = []
+    now = datetime.now(timezone.utc)
+    dt_7 = now - timedelta(days=7)
+    docs_7d = db.query(TZDocument).filter(TZDocument.tenant_id == user.tenant_id, TZDocument.created_at >= dt_7).count()
+    if docs_7d == 0:
+        alerts.append({"level": "warn", "code": "NO_ACTIVITY_7D", "message": "Нет документов за последние 7 дней."})
+    failures_24h = db.query(IntegrationEventLog).filter(
+        IntegrationEventLog.tenant_id == user.tenant_id,
+        IntegrationEventLog.created_at >= (now - timedelta(hours=24)),
+        IntegrationEventLog.event_name.like("%.failed%"),
+    ).count()
+    if failures_24h > 0:
+        alerts.append(
+            {
+                "level": "critical" if failures_24h >= 5 else "warn",
+                "code": "INTEGRATION_FAILURES_24H",
+                "message": f"Ошибок интеграции за 24ч: {failures_24h}.",
+            }
+        )
+    if not alerts:
+        alerts.append({"level": "ok", "code": "ALL_GREEN", "message": "Критичных сигналов нет."})
+    return {"ok": True, "tenant_id": user.tenant_id, "items": alerts}
 
 
 def _doc_to_out(doc: TZDocument) -> DocumentOut:

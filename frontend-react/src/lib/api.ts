@@ -24,6 +24,24 @@ export type TenantKpi = {
   estimated_revenue_cents: number;
 };
 
+export type TenantBillingSummary = {
+  tenant_id: string;
+  subscription: {
+    plan_code: string;
+    status: string;
+    monthly_price_cents: number;
+    billing_cycle: string;
+  };
+  usage_30d_docs: number;
+  estimated_metered_revenue_cents: number;
+};
+
+export type TenantAlert = {
+  level: string;
+  code: string;
+  message: string;
+};
+
 type DeliveryPolicy = {
   retries: number;
   baseBackoffMs: number;
@@ -333,5 +351,33 @@ export async function fetchTenantKpi(settings: AutomationSettings): Promise<Tena
       note: (error instanceof Error ? error.message : 'unknown_error').slice(0, 120)
     });
     return null;
+  }
+}
+
+export async function fetchTenantBillingSummary(settings: AutomationSettings): Promise<TenantBillingSummary | null> {
+  if (!settings.backendApiBase) return null;
+  const url =
+    `${settings.backendApiBase.replace(/\/+$/, '')}/api/tenant/billing/summary` +
+    `?price_per_doc_cents=${encodeURIComponent(String(settings.billingPricePerDocCents || 0))}`;
+  try {
+    const headers: Record<string, string> = {};
+    if (settings.backendApiToken) headers.Authorization = `Bearer ${settings.backendApiToken}`;
+    const resp = await axios.get(url, { headers, timeout: 15000 });
+    return resp.data as TenantBillingSummary;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchTenantAlerts(settings: AutomationSettings): Promise<TenantAlert[]> {
+  if (!settings.backendApiBase) return [];
+  const url = `${settings.backendApiBase.replace(/\/+$/, '')}/api/tenant/alerts`;
+  try {
+    const headers: Record<string, string> = {};
+    if (settings.backendApiToken) headers.Authorization = `Bearer ${settings.backendApiToken}`;
+    const resp = await axios.get(url, { headers, timeout: 15000 });
+    return Array.isArray(resp.data?.items) ? (resp.data.items as TenantAlert[]) : [];
+  } catch {
+    return [];
   }
 }

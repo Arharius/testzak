@@ -31,3 +31,27 @@ class TZDocument(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     owner = relationship("User", back_populates="documents")
+
+
+class IntegrationEventLog(Base):
+    __tablename__ = "integration_event_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(String, index=True, nullable=False, default="default")
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    event_name = Column(String, index=True, nullable=False)
+    payload_json = Column(Text, default="{}")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class TenantSubscription(Base):
+    __tablename__ = "tenant_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(String, unique=True, index=True, nullable=False)
+    plan_code = Column(String, nullable=False, default="starter")
+    status = Column(String, nullable=False, default="active")
+    monthly_price_cents = Column(Integer, nullable=False, default=19900)
+    billing_cycle = Column(String, nullable=False, default="monthly")
+    next_billing_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

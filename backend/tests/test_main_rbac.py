@@ -94,3 +94,33 @@ async def test_manager_cannot_change_roles(rbac_db):
         resp = await client.post("/api/tenant/users/role", json={"user_id": 2, "role": "viewer"})
         assert resp.status_code == 403
 
+
+@pytest.mark.asyncio
+async def test_billing_and_alerts_endpoints(rbac_db):
+    u1_id, _, _ = _seed_data(rbac_db)
+
+    class CurrentUser:
+        def __init__(self, user_id: int, tenant_id: str, role: str):
+            self.id = user_id
+            self.tenant_id = tenant_id
+            self.role = role
+
+    backend_main.app.dependency_overrides[backend_main.get_current_user] = lambda: CurrentUser(u1_id, "t1", "admin")
+    async with AsyncClient(transport=ASGITransport(app=backend_main.app), base_url="http://test") as client:
+        evt = await client.post("/api/v1/integration/event", json={"kind": "billing.usage", "payload": {"docs": 1}})
+        assert evt.status_code == 200
+
+        billing = await client.get("/api/tenant/billing/summary?price_per_doc_cents=10000")
+        assert billing.status_code == 200
+        b = billing.json()
+        assert b["ok"] is True
+        assert b["usage_30d_docs"] >= 1
+
+        sub = await client.get("/api/tenant/subscription")
+        assert sub.status_code == 200
+        upd = await client.post("/api/tenant/subscription/update", json={"plan_code": "pro", "monthly_price_cents": 49900})
+        assert upd.status_code == 200
+
+        alerts = await client.get("/api/tenant/alerts")
+        assert alerts.status_code == 200
+        assert alerts.json()["ok"] is True

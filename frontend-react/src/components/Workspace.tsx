@@ -223,7 +223,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         issues.push({ level: 'critical', message: `Строка #${idx + 1}: количество должно быть не менее 1.` });
       }
       if (!row.internetHints && row.model.trim().length >= 4) {
-        issues.push({ level: 'warn', message: `Строка #${idx + 1}: нет интернет-подсказок по конкретной модели.` });
+        issues.push({ level: 'warn', message: `Строка #${idx + 1}: рекомендуется подтянуть данные из интернета по конкретной модели.` });
       }
     });
     if (lawMode === '223' && !platformSettings.orgName.trim()) {
@@ -232,7 +232,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     if (automationSettings.billingEnabled && !automationSettings.tenantId.trim()) {
       issues.push({ level: 'warn', message: 'Billing telemetry: заполните Tenant ID.' });
     }
-    if (!platformSettings.endpoint.trim()) {
+    if (platformSettings.autoSendDraft && !platformSettings.endpoint.trim()) {
       issues.push({ level: 'warn', message: 'Не задан endpoint коннектора ЕИС/ЭТП.' });
     }
     if (automationSettings.requireHttpsForIntegrations && isInsecureExternalHttp(platformSettings.endpoint)) {

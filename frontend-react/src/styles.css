@@ -41,6 +41,14 @@ body {
   overflow: hidden;
 }
 
+.bg-layer::before,
+.bg-layer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .orb {
   position: absolute;
   border-radius: 999px;
@@ -502,6 +510,27 @@ textarea[readonly] {
   color: #102236;
 }
 
+.layout.theme-legacy .bg-layer::before {
+  background:
+    radial-gradient(1200px 600px at 70% -10%, rgba(255, 255, 255, 0.24), transparent 62%),
+    radial-gradient(900px 500px at 10% 120%, rgba(196, 206, 218, 0.26), transparent 60%),
+    linear-gradient(155deg, #0a0d11 0%, #11161d 40%, #1a212a 100%);
+  filter: saturate(0.15) contrast(1.08);
+}
+
+.layout.theme-legacy .bg-layer::after {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.03) 0px,
+      rgba(255, 255, 255, 0.03) 1px,
+      transparent 1px,
+      transparent 14px
+    ),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05), transparent 45%, rgba(255, 255, 255, 0.03));
+  opacity: 0.55;
+}
+
 .layout.theme-legacy .orb {
   opacity: 0.16;
 }
@@ -595,6 +624,33 @@ textarea[readonly] {
   filter: blur(16px) saturate(1.3);
 }
 
+.layout.theme-gala .bg-layer::before {
+  background:
+    radial-gradient(1200px 700px at 15% 0%, rgba(255, 74, 174, 0.28), transparent 62%),
+    radial-gradient(1000px 600px at 85% 10%, rgba(43, 231, 255, 0.25), transparent 60%),
+    radial-gradient(900px 700px at 50% 100%, rgba(255, 204, 0, 0.2), transparent 64%),
+    linear-gradient(130deg, #130a2e 0%, #301048 38%, #10234e 70%, #0b1230 100%);
+  background-size: 120% 120%, 120% 120%, 120% 120%, 100% 100%;
+  animation: galaShift 18s ease-in-out infinite;
+}
+
+.layout.theme-gala .bg-layer::after {
+  background:
+    radial-gradient(circle at 8% 12%, rgba(255, 255, 255, 0.26) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 22% 28%, rgba(255, 217, 0, 0.22) 0 3px, transparent 3.5px),
+    radial-gradient(circle at 41% 20%, rgba(58, 234, 255, 0.22) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 63% 16%, rgba(255, 129, 192, 0.26) 0 3px, transparent 3.5px),
+    radial-gradient(circle at 78% 30%, rgba(199, 137, 255, 0.2) 0 2.5px, transparent 3px),
+    radial-gradient(circle at 91% 24%, rgba(255, 255, 255, 0.24) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 14% 62%, rgba(255, 120, 94, 0.2) 0 3px, transparent 3.5px),
+    radial-gradient(circle at 30% 72%, rgba(255, 230, 120, 0.18) 0 2.2px, transparent 2.7px),
+    radial-gradient(circle at 49% 67%, rgba(81, 214, 255, 0.2) 0 2.8px, transparent 3.3px),
+    radial-gradient(circle at 67% 78%, rgba(255, 121, 220, 0.22) 0 2.6px, transparent 3px),
+    radial-gradient(circle at 84% 64%, rgba(255, 255, 255, 0.2) 0 2.2px, transparent 2.8px);
+  opacity: 0.42;
+  animation: confettiDrift 14s linear infinite;
+}
+
 .layout.theme-gala .hero {
   background: linear-gradient(120deg, rgba(28, 20, 70, 0.88) 0%, rgba(86, 13, 73, 0.84) 45%, rgba(17, 34, 86, 0.86) 100%);
   border-color: rgba(255, 165, 229, 0.45);
@@ -620,6 +676,28 @@ textarea[readonly] {
     inset 0 1px 0 rgba(255, 255, 255, 0.16),
     inset 0 -1px 0 rgba(95, 63, 20, 0.35);
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+.layout.theme-aurelia .bg-layer::before {
+  background:
+    radial-gradient(700px 420px at 12% 2%, rgba(255, 187, 86, 0.3), transparent 62%),
+    radial-gradient(900px 520px at 88% 6%, rgba(122, 171, 255, 0.22), transparent 65%),
+    radial-gradient(1100px 680px at 52% 120%, rgba(255, 157, 72, 0.16), transparent 60%),
+    linear-gradient(158deg, #060b16 0%, #0c1428 42%, #131f35 100%);
+}
+
+.layout.theme-aurelia .bg-layer::after {
+  background:
+    radial-gradient(circle at 6% 14%, rgba(255, 228, 172, 0.24) 0 2px, transparent 2.8px),
+    radial-gradient(circle at 17% 24%, rgba(255, 197, 112, 0.22) 0 3px, transparent 3.8px),
+    radial-gradient(circle at 27% 18%, rgba(255, 244, 212, 0.2) 0 1.8px, transparent 2.4px),
+    radial-gradient(circle at 44% 12%, rgba(255, 176, 93, 0.18) 0 2.4px, transparent 3px),
+    radial-gradient(circle at 59% 20%, rgba(255, 236, 188, 0.22) 0 2.2px, transparent 2.9px),
+    radial-gradient(circle at 73% 14%, rgba(255, 168, 82, 0.2) 0 2.7px, transparent 3.3px),
+    radial-gradient(circle at 88% 22%, rgba(255, 244, 220, 0.18) 0 2px, transparent 2.6px),
+    linear-gradient(100deg, transparent 0%, rgba(255, 203, 127, 0.08) 42%, transparent 78%);
+  opacity: 0.55;
+  animation: lampGlow 10s ease-in-out infinite;
 }
 
 .layout.theme-aurelia .lookup-btn {
@@ -730,6 +808,47 @@ textarea[readonly] {
   }
   to {
     transform: translateX(420%) rotate(18deg);
+  }
+}
+
+@keyframes galaShift {
+  0%,
+  100% {
+    transform: scale(1) translate3d(0, 0, 0);
+    filter: hue-rotate(0deg) saturate(1.05);
+  }
+  50% {
+    transform: scale(1.04) translate3d(-1.2%, -1.5%, 0);
+    filter: hue-rotate(12deg) saturate(1.2);
+  }
+}
+
+@keyframes confettiDrift {
+  0% {
+    transform: translateY(0px);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateY(8px);
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(0px);
+    opacity: 0.35;
+  }
+}
+
+@keyframes lampGlow {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+    filter: blur(0px);
+  }
+  50% {
+    transform: translateY(4px);
+    opacity: 0.68;
+    filter: blur(0.4px);
   }
 }
 

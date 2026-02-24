@@ -6,22 +6,10 @@ import { jsPDF } from 'jspdf';
 import { generateItemSpecs, postPlatformDraft, sendEventThroughBestChannel } from '../lib/api';
 import { appendAutomationLog } from '../lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from '../types/schemas';
+import { buildTypeCandidates, detectTypeDetailed, type GoodsType } from '../lib/autodetect';
 
 type Provider = 'openrouter' | 'groq' | 'deepseek';
 type LawMode = '44' | '223';
-
-type GoodsType =
-  | 'pc'
-  | 'laptop'
-  | 'monitor'
-  | 'printer'
-  | 'mfu'
-  | 'server'
-  | 'switch'
-  | 'router'
-  | 'cable'
-  | 'dvd'
-  | 'software';
 
 type Row = {
   id: number;
@@ -33,6 +21,7 @@ type Row = {
   result?: string;
   okpd2?: string;
   ktru?: string;
+  candidates?: Array<{ type: GoodsType; score: number; reason: string }>;
 };
 
 const GOODS_LABELS: Record<GoodsType, string> = {
@@ -48,36 +37,6 @@ const GOODS_LABELS: Record<GoodsType, string> = {
   dvd: 'Оптический диск',
   software: 'Программное обеспечение'
 };
-
-const TYPE_HINTS: Array<{ token: string; type: GoodsType }> = [
-  { token: 'vivobook', type: 'laptop' },
-  { token: 'macbook', type: 'laptop' },
-  { token: 'notebook', type: 'laptop' },
-  { token: 'ноут', type: 'laptop' },
-  { token: 'monitor', type: 'monitor' },
-  { token: 'монитор', type: 'monitor' },
-  { token: 'switch', type: 'switch' },
-  { token: 'коммут', type: 'switch' },
-  { token: 'router', type: 'router' },
-  { token: 'маршрутиз', type: 'router' },
-  { token: 'utp', type: 'cable' },
-  { token: 'витая пара', type: 'cable' },
-  { token: 'cat6', type: 'cable' },
-  { token: 'dvd', type: 'dvd' },
-  { token: 'printer', type: 'printer' },
-  { token: 'принтер', type: 'printer' },
-  { token: 'мфу', type: 'mfu' },
-  { token: 'server', type: 'server' },
-  { token: 'depo', type: 'server' },
-  { token: 'гравитон', type: 'pc' },
-  { token: 'astra linux', type: 'software' }
-];
-
-function detectType(model: string, fallback: GoodsType): GoodsType {
-  const text = model.toLowerCase();
-  const found = TYPE_HINTS.find((x) => text.includes(x.token));
-  return found?.type || fallback;
-}
 
 function buildPrompt(row: Row, lawMode: LawMode): string {
   const goodsName = GOODS_LABELS[row.type];
@@ -201,7 +160,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         await sendEventThroughBestChannel(automationSettings, 'tz.generated.react', payload);
       }
       if (platformSettings.autoSendDraft) {
-        await postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload);
+        await postPlatformDraft(platformSettings, payload);
       }
 
       appendAutomationLog({ at: new Date().toISOString(), event: 'react.generate', ok: true, note: `rows=${next.length}` });
@@ -211,6 +170,12 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
 
   const addRow = () => {
     setRows((prev) => [...prev, { id: Date.now(), type: 'pc', model: '', qty: 1, status: 'idle' }]);
+  };
+
+  const applyCandidate = (rowId: number, candidateType: GoodsType) => {
+    setRows((prev) =>
+      prev.map((x) => (x.id === rowId ? { ...x, type: candidateType, candidates: [] } : x))
+    );
   };
 
   const exportPackage = () => {
@@ -314,9 +279,37 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                 placeholder="Модель / описание"
                 onChange={(e) => {
                   const value = e.target.value;
-                  setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, model: value, type: detectType(value, x.type) } : x)));
+                  setRows((prev) =>
+                    prev.map((x) => {
+                      if (x.id !== row.id) return x;
+                      const detected = detectTypeDetailed(value, x.type);
+                      const candidates = buildTypeCandidates(value, detected.type);
+                      return {
+                        ...x,
+                        model: value,
+                        type: detected.type,
+                        candidates: value.trim().length >= 3 ? candidates : []
+                      };
+                    })
+                  );
                 }}
               />
+              {Array.isArray(row.candidates) && row.candidates.length > 1 && (
+                <div className="row-suggest-box">
+                  <div className="row-suggest-head">Найдено несколько вариантов</div>
+                  {row.candidates.map((candidate) => (
+                    <button
+                      key={`${row.id}-${candidate.type}-${candidate.reason}`}
+                      type="button"
+                      className="row-suggest-item"
+                      onClick={() => applyCandidate(row.id, candidate.type)}
+                    >
+                      <strong>{GOODS_LABELS[candidate.type]}</strong>
+                      <span>{candidate.reason}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <input
                 type="number"
                 min={1}

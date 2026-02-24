@@ -67,7 +67,7 @@ export function App() {
         customerInn: platformSettings.customerInn,
         items: []
       };
-      return postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload);
+      return postPlatformDraft(platformSettings, payload);
     },
     onSuccess: () => setRefreshTick((x) => x + 1)
   });

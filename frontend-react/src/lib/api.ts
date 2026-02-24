@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { appendAutomationLog } from './storage';
 import type { AutomationSettings } from '../types/schemas';
+import { buildPlatformDraftRequest, validatePlatformSettings } from './platformAdapters';
+import type { PlatformIntegrationSettings } from '../types/schemas';
 
 export async function postWebhook(url: string, secret: string, payload: unknown): Promise<boolean> {
   if (!url) return false;
@@ -16,12 +18,39 @@ export async function postWebhook(url: string, secret: string, payload: unknown)
   }
 }
 
-export async function postPlatformDraft(endpoint: string, token: string, payload: unknown): Promise<boolean> {
-  if (!endpoint) return false;
+export async function postPlatformDraft(
+  settingsOrEndpoint: PlatformIntegrationSettings | string,
+  tokenOrPayload: string | unknown,
+  maybePayload?: unknown
+): Promise<boolean> {
   try {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    await axios.post(endpoint, payload, { headers, timeout: 10000 });
+    const settings: PlatformIntegrationSettings =
+      typeof settingsOrEndpoint === 'string'
+        ? {
+            profile: 'custom',
+            endpoint: settingsOrEndpoint,
+            apiToken: typeof tokenOrPayload === 'string' ? tokenOrPayload : '',
+            customerInn: '',
+            orgName: '',
+            autoExport: false,
+            autoSendDraft: false
+          }
+        : settingsOrEndpoint;
+
+    const payload = typeof settingsOrEndpoint === 'string' ? maybePayload : tokenOrPayload;
+    const check = validatePlatformSettings(settings);
+    if (!check.ok) {
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event: 'platform.validation.failed',
+        ok: false,
+        note: check.errors.join(' | ').slice(0, 180)
+      });
+      return false;
+    }
+
+    const req = buildPlatformDraftRequest({ settings, payload: (payload || {}) as Record<string, unknown> });
+    await axios.post(req.endpoint, req.body, { headers: req.headers, timeout: 10000 });
     appendAutomationLog({ at: new Date().toISOString(), event: 'platform.sent', ok: true });
     return true;
   } catch {

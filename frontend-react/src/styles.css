@@ -195,6 +195,43 @@ button:disabled {
   background: color-mix(in srgb, var(--surface-strong) 85%, #dce8f3 15%);
 }
 
+.row-suggest-box {
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 88%, #e9f2fa 12%);
+  display: grid;
+  gap: 6px;
+}
+
+.row-suggest-head {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+}
+
+.row-suggest-item {
+  text-align: left;
+  display: grid;
+  gap: 2px;
+  background: var(--surface-strong);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.row-suggest-item strong {
+  font-size: 12px;
+}
+
+.row-suggest-item span {
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
 .ok {
   color: var(--ok);
   font-weight: 700;

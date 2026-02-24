@@ -94,7 +94,7 @@ export function App() {
             <h1>TZ Generator</h1>
             <p>React-версия: автоматизация закупок, ТЗ, комплаенс 44/223-ФЗ.</p>
           </div>
-          <div className="theme-switch" role="group" aria-label="Theme switch">
+          <div className="theme-switch" role="group" aria-label="Переключатель темы">
             <button
               type="button"
               className={theme === 'legacy' ? 'active' : ''}
@@ -103,7 +103,7 @@ export function App() {
                 localStorage.setItem('tz_react_theme', 'legacy');
               }}
             >
-              Legacy
+              Классика
             </button>
             <button
               type="button"
@@ -113,7 +113,7 @@ export function App() {
                 localStorage.setItem('tz_react_theme', 'aurelia');
               }}
             >
-              Aurelia
+              Аурелия
             </button>
             <button
               type="button"
@@ -123,7 +123,7 @@ export function App() {
                 localStorage.setItem('tz_react_theme', 'gala');
               }}
             >
-              Gala
+              Гала
             </button>
           </div>
         </div>
@@ -146,7 +146,7 @@ export function App() {
           setRefreshTick((x) => x + 1);
         }}
         onImportLearning={() => {
-          const raw = prompt('Paste learning map JSON');
+          const raw = prompt('Вставьте JSON карты обучения');
           if (!raw) return;
           const result = importLearningMap(raw);
           appendAutomationLog({

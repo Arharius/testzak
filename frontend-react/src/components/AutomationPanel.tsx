@@ -30,7 +30,7 @@ export function AutomationPanel({
 
   return (
     <section className="panel">
-      <h2>Automation and Training</h2>
+      <h2>Автоматизация и обучение</h2>
       <div className="grid two">
         <label>
           Webhook URL
@@ -41,26 +41,26 @@ export function AutomationPanel({
           <input {...form.register('webhookSecret')} placeholder="X-TZ-Secret" />
         </label>
         <label>
-          Backend API base
+          База Backend API
           <input {...form.register('backendApiBase')} placeholder="https://api.example.com" />
         </label>
         <label>
-          Backend API token
+          Токен Backend API
           <input {...form.register('backendApiToken')} placeholder="Bearer token" />
         </label>
       </div>
       <div className="checks">
-        <label><input type="checkbox" {...form.register('autoSend')} /> auto send webhook after generation</label>
-        <label><input type="checkbox" {...form.register('autopilot')} /> autopilot mode</label>
-        <label><input type="checkbox" {...form.register('autoPickTopCandidate')} /> auto pick top candidate</label>
-        <label><input type="checkbox" {...form.register('useBackendQueueApi')} /> send events via backend queue API</label>
+        <label><input type="checkbox" {...form.register('autoSend')} /> Автоотправка webhook после генерации</label>
+        <label><input type="checkbox" {...form.register('autopilot')} /> Режим автопилота</label>
+        <label><input type="checkbox" {...form.register('autoPickTopCandidate')} /> Автовыбор лучшего кандидата</label>
+        <label><input type="checkbox" {...form.register('useBackendQueueApi')} /> Отправка событий через очередь Backend API</label>
       </div>
       <div className="actions">
-        <button onClick={form.handleSubmit(onSave)} type="button">save settings</button>
-        <button onClick={() => void onSendTest()} type="button">test webhook</button>
-        <button onClick={() => void onAutopilot()} type="button">run autopilot</button>
-        <button onClick={onExportLearning} type="button">export learning</button>
-        <button onClick={onImportLearning} type="button">import learning</button>
+        <button onClick={form.handleSubmit(onSave)} type="button">Сохранить настройки</button>
+        <button onClick={() => void onSendTest()} type="button">Тест webhook</button>
+        <button onClick={() => void onAutopilot()} type="button">Запустить автопилот</button>
+        <button onClick={onExportLearning} type="button">Экспорт обучения</button>
+        <button onClick={onImportLearning} type="button">Импорт обучения</button>
       </div>
     </section>
   );

@@ -21,10 +21,10 @@ export function PlatformPanel({ value, onSave, onSendDraft, onExportPack }: Prop
 
   return (
     <section className="panel">
-      <h2>EIS and Auction Platforms</h2>
+      <h2>ЕИС и торговые площадки</h2>
       <div className="grid two">
         <label>
-          Profile
+          Профиль
           <select {...form.register('profile')}>
             <option value="eis">EIS 44-FZ</option>
             <option value="eis_223">EIS 223-FZ</option>
@@ -39,11 +39,11 @@ export function PlatformPanel({ value, onSave, onSendDraft, onExportPack }: Prop
           </select>
         </label>
         <label>
-          Connector endpoint
+          Endpoint коннектора
           <input {...form.register('endpoint')} placeholder="https://connector.example/api/eis/drafts" />
         </label>
         <label>
-          API token
+          API-токен
           <input {...form.register('apiToken')} placeholder="Bearer token" />
         </label>
         <label>
@@ -52,17 +52,17 @@ export function PlatformPanel({ value, onSave, onSendDraft, onExportPack }: Prop
         </label>
       </div>
       <label>
-        Organization
-        <input {...form.register('orgName')} placeholder="Customer organization" />
+        Организация
+        <input {...form.register('orgName')} placeholder="Наименование заказчика" />
       </label>
       <div className="checks">
-        <label><input type="checkbox" {...form.register('autoExport')} /> auto export package after generation</label>
-        <label><input type="checkbox" {...form.register('autoSendDraft')} /> auto send draft to connector</label>
+        <label><input type="checkbox" {...form.register('autoExport')} /> Автоэкспорт пакета после генерации</label>
+        <label><input type="checkbox" {...form.register('autoSendDraft')} /> Автоотправка черновика в коннектор</label>
       </div>
       <div className="actions">
-        <button onClick={form.handleSubmit(onSave)} type="button">save platform profile</button>
-        <button onClick={onExportPack} type="button">export package</button>
-        <button onClick={() => void onSendDraft()} type="button">send draft</button>
+        <button onClick={form.handleSubmit(onSave)} type="button">Сохранить профиль площадки</button>
+        <button onClick={onExportPack} type="button">Экспорт пакета</button>
+        <button onClick={() => void onSendDraft()} type="button">Отправить черновик</button>
       </div>
     </section>
   );

@@ -232,7 +232,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
 
   return (
     <section className="panel">
-      <h2>React Workspace (core flow)</h2>
+      <h2>Рабочая область ТЗ</h2>
       <div className="checks">
         <label><input type="radio" checked={lawMode === '44'} onChange={() => setLawMode('44')} /> 44-ФЗ</label>
         <label><input type="radio" checked={lawMode === '223'} onChange={() => setLawMode('223')} /> 223-ФЗ</label>
@@ -241,7 +241,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
 
       <div className="grid two">
         <label>
-          Provider
+          Провайдер
           <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
             <option value="deepseek">DeepSeek</option>
             <option value="openrouter">OpenRouter</option>
@@ -249,11 +249,11 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
           </select>
         </label>
         <label>
-          Model
+          Модель
           <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
         </label>
         <label>
-          API Key
+          API-ключ
           <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." />
         </label>
       </div>
@@ -320,10 +320,10 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                 }}
               />
               <div className={row.status === 'done' ? 'ok' : row.status === 'error' ? 'warn' : 'muted'}>
-                {row.status === 'idle' && 'idle'}
-                {row.status === 'loading' && 'generating...'}
-                {row.status === 'done' && 'done'}
-                {row.status === 'error' && `error: ${row.error || ''}`}
+                {row.status === 'idle' && 'Ожидание'}
+                {row.status === 'loading' && 'Генерация...'}
+                {row.status === 'done' && 'Готово'}
+                {row.status === 'error' && `Ошибка: ${row.error || ''}`}
               </div>
             </div>
           </div>
@@ -331,13 +331,13 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       </div>
 
       <div className="actions">
-        <button type="button" onClick={addRow}>add row</button>
+        <button type="button" onClick={addRow}>Добавить строку</button>
         <button type="button" disabled={!canGenerate || mutation.isPending} onClick={() => mutation.mutate()}>
-          {mutation.isPending ? 'generating...' : 'generate TZ'}
+          {mutation.isPending ? 'Генерация...' : 'Сгенерировать ТЗ'}
         </button>
-        <button type="button" onClick={exportPackage}>export package</button>
-        <button type="button" onClick={() => void exportDocx()} disabled={!tzText.trim()}>export DOCX</button>
-        <button type="button" onClick={exportPdf} disabled={!tzText.trim()}>export PDF</button>
+        <button type="button" onClick={exportPackage}>Экспорт пакета</button>
+        <button type="button" onClick={() => void exportDocx()} disabled={!tzText.trim()}>Скачать DOCX</button>
+        <button type="button" onClick={exportPdf} disabled={!tzText.trim()}>Скачать PDF</button>
       </div>
 
       <textarea value={tzText} readOnly rows={18} style={{ width: '100%', fontFamily: 'monospace' }} />

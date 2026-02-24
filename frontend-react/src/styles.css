@@ -136,6 +136,7 @@ button {
   border: 1px solid var(--border);
   padding: 9px 10px;
   font-size: 13px;
+  min-height: 38px;
 }
 
 input,
@@ -156,6 +157,7 @@ button {
   color: var(--primary-contrast);
   background: var(--primary);
   border-color: color-mix(in srgb, var(--primary) 70%, #000 30%);
+  width: auto;
 }
 
 button:disabled {
@@ -168,6 +170,7 @@ button:disabled {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .checks label {
@@ -193,6 +196,10 @@ button:disabled {
   border-radius: 12px;
   padding: 10px;
   background: color-mix(in srgb, var(--surface-strong) 85%, #dce8f3 15%);
+}
+
+.row-card > div {
+  min-width: 0;
 }
 
 .row-suggest-box {
@@ -230,6 +237,7 @@ button:disabled {
 .row-suggest-item span {
   font-size: 11px;
   color: var(--text-soft);
+  overflow-wrap: anywhere;
 }
 
 .ok {
@@ -263,6 +271,17 @@ button:disabled {
   font-size: 12px;
   padding: 5px 0;
   border-bottom: 1px dashed var(--border);
+}
+
+.log-item span,
+.log-item b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.theme-switch button,
+.actions button {
+  white-space: nowrap;
 }
 
 textarea {

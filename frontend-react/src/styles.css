@@ -303,6 +303,10 @@ button:disabled {
   width: 100%;
 }
 
+.rows-table td:last-child {
+  width: 160px;
+}
+
 .num-cell {
   width: 48px;
   text-align: center;
@@ -323,6 +327,54 @@ button:disabled {
 .danger-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.lookup-btn {
+  width: 100%;
+  margin-bottom: 6px;
+  background: linear-gradient(120deg, #58dfff 0%, #5ca8ff 45%, #73b7ff 100%);
+  border-color: rgba(180, 228, 255, 0.9);
+  color: #06203a;
+}
+
+.row-suggest-box {
+  margin-top: 8px;
+  border: 1px solid rgba(130, 168, 240, 0.36);
+  border-radius: 9px;
+  background: rgba(8, 16, 36, 0.84);
+  padding: 8px;
+  display: grid;
+  gap: 4px;
+}
+
+.row-suggest-head {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9ec0ff;
+}
+
+.row-suggest-item {
+  text-align: left;
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  border: 1px solid rgba(130, 168, 240, 0.36);
+  background: rgba(9, 18, 39, 0.86);
+  color: #dbe6ff;
+}
+
+.row-suggest-item strong {
+  font-size: 12px;
+}
+
+.row-suggest-item span {
+  font-size: 11px;
+  color: #9ab0de;
 }
 
 textarea[readonly] {

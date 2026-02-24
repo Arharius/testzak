@@ -22,6 +22,8 @@ type Row = {
   okpd2?: string;
   ktru?: string;
   candidates?: Array<{ type: GoodsType; score: number; reason: string }>;
+  lookupState?: 'idle' | 'loading' | 'done' | 'error' | 'choose';
+  lookupNote?: string;
 };
 
 const GOODS_LABELS: Record<GoodsType, string> = {
@@ -37,6 +39,85 @@ const GOODS_LABELS: Record<GoodsType, string> = {
   dvd: 'Оптический диск',
   software: 'Программное обеспечение'
 };
+
+function normalizeText(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/[\s\n\r\t]+/g, ' ')
+    .trim();
+}
+
+function cutText(text: string, maxLen: number): string {
+  const s = String(text || '').trim();
+  return s.length <= maxLen ? s : `${s.slice(0, maxLen)}...`;
+}
+
+function looksLikeUrl(value: string): boolean {
+  return /^https?:\/\/\S+/i.test(String(value || '').trim());
+}
+
+function parseJsonArrayFromText(text: string): Array<{ type: GoodsType; model?: string; reason?: string }> {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  const start = raw.indexOf('[');
+  const end = raw.lastIndexOf(']');
+  if (start === -1 || end === -1 || end <= start) return [];
+  try {
+    const parsed = JSON.parse(raw.slice(start, end + 1));
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((x) => x && typeof x === 'object' && typeof x.type === 'string' && x.type in GOODS_LABELS)
+      .map((x) => ({
+        type: x.type as GoodsType,
+        model: typeof x.model === 'string' ? x.model : '',
+        reason: typeof x.reason === 'string' ? x.reason : ''
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function fetchInternetHints(query: string): Promise<string> {
+  const q = String(query || '').trim();
+  if (!q) return '';
+
+  if (looksLikeUrl(q)) {
+    try {
+      const target = q.replace(/^https?:\/\//i, '');
+      const resp = await fetch(`https://r.jina.ai/http://${target}`, { method: 'GET' });
+      if (resp.ok) {
+        const raw = await resp.text();
+        return cutText(normalizeText(raw), 5000);
+      }
+    } catch {
+      // ignore and fallback
+    }
+  }
+
+  try {
+    const ddg = `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_redirect=1&no_html=1`;
+    const resp = await fetch(ddg, { method: 'GET' });
+    if (!resp.ok) return '';
+    const data = (await resp.json()) as {
+      Heading?: string;
+      AbstractText?: string;
+      RelatedTopics?: Array<{ Text?: string }>;
+    };
+    const parts: string[] = [];
+    if (data?.Heading) parts.push(data.Heading);
+    if (data?.AbstractText) parts.push(data.AbstractText);
+    if (Array.isArray(data?.RelatedTopics)) {
+      for (const topic of data.RelatedTopics.slice(0, 4)) {
+        if (topic?.Text) parts.push(topic.Text);
+      }
+    }
+    return cutText(normalizeText(parts.join(' ; ')), 2500);
+  } catch {
+    return '';
+  }
+}
 
 function buildPrompt(row: Row, lawMode: LawMode): string {
   const goodsName = GOODS_LABELS[row.type];
@@ -104,6 +185,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [model, setModel] = useState('deepseek-chat');
   const [rows, setRows] = useState<Row[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
   const [tzText, setTzText] = useState('');
+  const [bulkLookup, setBulkLookup] = useState(false);
 
   const canGenerate = useMemo(
     () => apiKey.trim().length > 6 && rows.every((r) => r.model.trim().length > 0),
@@ -177,8 +259,108 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
 
   const applyCandidate = (rowId: number, candidateType: GoodsType) => {
     setRows((prev) =>
-      prev.map((x) => (x.id === rowId ? { ...x, type: candidateType, candidates: [] } : x))
+      prev.map((x) => (x.id === rowId ? { ...x, type: candidateType, candidates: [], lookupState: 'done', lookupNote: 'Тип выбран' } : x))
     );
+  };
+
+  const enrichRowFromInternet = async (rowId: number): Promise<void> => {
+    const row = rows.find((x) => x.id === rowId);
+    if (!row) return;
+    const query = String(row.model || '').trim();
+    if (!query) {
+      setRows((prev) => prev.map((x) => (x.id === rowId ? { ...x, lookupState: 'error', lookupNote: 'Введите модель/описание' } : x)));
+      return;
+    }
+
+    setRows((prev) =>
+      prev.map((x) => (x.id === rowId ? { ...x, lookupState: 'loading', lookupNote: 'Ищу в интернете...', candidates: [] } : x))
+    );
+
+    const hints = await fetchInternetHints(query);
+    const combined = normalizeText(`${query} ${hints}`.trim());
+
+    let candidates = buildTypeCandidates(combined || query, row.type);
+
+    if (apiKey.trim().length > 6) {
+      try {
+        const catalogHint = Object.entries(GOODS_LABELS)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join('; ');
+        const aiPrompt =
+          `Ты классификатор ИТ-товаров для госзакупок.\n` +
+          `Запрос: "${query}".\n` +
+          `Подсказки из интернета: "${cutText(hints, 1300)}".\n` +
+          `Каталог типов: ${catalogHint}\n` +
+          `Верни только JSON-массив 1..6 элементов вида {"type":"<ключ>","model":"<модель>","reason":"<кратко>"}.`;
+        const aiRaw = await generateItemSpecs(provider, apiKey, model, aiPrompt);
+        const aiList = parseJsonArrayFromText(aiRaw);
+        if (aiList.length) {
+          const fromAi = aiList.map((x, index) => ({
+            type: x.type,
+            score: 100 - index,
+            reason: x.reason || 'Подбор по интернет-данным'
+          }));
+          const merged = new Map<GoodsType, { type: GoodsType; score: number; reason: string }>();
+          for (const c of [...fromAi, ...candidates]) {
+            const prev = merged.get(c.type);
+            if (!prev || c.score > prev.score) merged.set(c.type, c);
+          }
+          candidates = Array.from(merged.values()).sort((a, b) => b.score - a.score).slice(0, 8);
+        }
+      } catch {
+        // AI fallback is optional
+      }
+    }
+
+    if (!candidates.length) {
+      setRows((prev) =>
+        prev.map((x) => (x.id === rowId ? { ...x, lookupState: 'error', lookupNote: 'Не удалось найти подсказки' } : x))
+      );
+      return;
+    }
+
+    if (candidates.length === 1) {
+      const top = candidates[0];
+      setRows((prev) =>
+        prev.map((x) =>
+          x.id === rowId
+            ? {
+                ...x,
+                type: top.type,
+                candidates: [],
+                lookupState: 'done',
+                lookupNote: hints ? 'Интернет + автоподбор' : 'Автоподбор'
+              }
+            : x
+        )
+      );
+      return;
+    }
+
+    setRows((prev) =>
+      prev.map((x) =>
+        x.id === rowId
+          ? {
+              ...x,
+              candidates,
+              lookupState: 'choose',
+              lookupNote: 'Найдено несколько вариантов'
+            }
+          : x
+      )
+    );
+  };
+
+  const enrichAllRowsFromInternet = async (): Promise<void> => {
+    setBulkLookup(true);
+    try {
+      for (const row of rows) {
+        // eslint-disable-next-line no-await-in-loop
+        await enrichRowFromInternet(row.id);
+      }
+    } finally {
+      setBulkLookup(false);
+    }
   };
 
   const exportPackage = () => {
@@ -313,7 +495,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                   />
                   {Array.isArray(row.candidates) && row.candidates.length > 1 && (
                     <div className="row-suggest-box">
-                      <div className="row-suggest-head">Найдено несколько вариантов</div>
+                      <div className="row-suggest-head">Найдено несколько вариантов — выберите</div>
                       {row.candidates.map((candidate) => (
                         <button
                           key={`${row.id}-${candidate.type}-${candidate.reason}`}
@@ -346,8 +528,25 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                     {row.status === 'done' && 'Готово'}
                     {row.status === 'error' && `Ошибка: ${row.error || ''}`}
                   </div>
+                  {row.lookupState && row.lookupState !== 'idle' && (
+                    <div className={row.lookupState === 'error' ? 'warn' : row.lookupState === 'done' ? 'ok' : 'muted'}>
+                      {row.lookupState === 'loading' && '🌐 Поиск...'}
+                      {row.lookupState === 'choose' && '🔎 Выбор'}
+                      {row.lookupState === 'done' && '✅ Интернет'}
+                      {row.lookupState === 'error' && '⚠️ Нет данных'}
+                      {row.lookupNote ? `: ${row.lookupNote}` : ''}
+                    </div>
+                  )}
                 </td>
                 <td>
+                  <button
+                    type="button"
+                    className="lookup-btn"
+                    disabled={row.lookupState === 'loading' || bulkLookup}
+                    onClick={() => void enrichRowFromInternet(row.id)}
+                  >
+                    🌐 Подтянуть
+                  </button>
                   <button type="button" className="danger-btn" onClick={() => removeRow(row.id)} disabled={rows.length <= 1}>
                     Удалить
                   </button>
@@ -360,6 +559,9 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
 
       <div className="actions">
         <button type="button" onClick={addRow}>Добавить строку</button>
+        <button type="button" onClick={() => void enrichAllRowsFromInternet()} disabled={bulkLookup || rows.length === 0}>
+          {bulkLookup ? '🌐 Поиск...' : '🌐 Подтянуть из интернета'}
+        </button>
         <button type="button" disabled={!canGenerate || mutation.isPending} onClick={() => mutation.mutate()}>
           {mutation.isPending ? 'Генерация...' : 'Сгенерировать ТЗ'}
         </button>

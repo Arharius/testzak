@@ -18,6 +18,8 @@ import {
 } from './lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from './types/schemas';
 
+type ThemeMode = 'aurelia' | 'legacy' | 'gala';
+
 function download(name: string, content: string, type: string): void {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -29,6 +31,11 @@ function download(name: string, content: string, type: string): void {
 }
 
 export function App() {
+  const [theme, setTheme] = useState<ThemeMode>(() => {
+    const saved = localStorage.getItem('tz_react_theme');
+    if (saved === 'legacy' || saved === 'gala' || saved === 'aurelia') return saved;
+    return 'aurelia';
+  });
   const [automationSettings, setAutomationState] = useState<AutomationSettings>(getAutomationSettings());
   const [platformSettings, setPlatformState] = useState<PlatformIntegrationSettings>(getPlatformSettings());
   const [refreshTick, setRefreshTick] = useState(0);
@@ -80,7 +87,7 @@ export function App() {
   };
 
   return (
-    <main className="layout">
+    <main className={`layout theme-${theme}`}>
       <div className="bg-layer" aria-hidden="true">
         <span className="orb orb-1"></span>
         <span className="orb orb-2"></span>
@@ -88,7 +95,41 @@ export function App() {
       </div>
 
       <header className="hero">
-        <span className="hero-chip">44/223-ФЗ</span>
+        <div className="hero-top">
+          <span className="hero-chip">44/223-ФЗ</span>
+          <div className="theme-switch" role="group" aria-label="Переключение темы">
+            <button
+              type="button"
+              className={theme === 'aurelia' ? 'active' : ''}
+              onClick={() => {
+                setTheme('aurelia');
+                localStorage.setItem('tz_react_theme', 'aurelia');
+              }}
+            >
+              Аурелия
+            </button>
+            <button
+              type="button"
+              className={theme === 'legacy' ? 'active' : ''}
+              onClick={() => {
+                setTheme('legacy');
+                localStorage.setItem('tz_react_theme', 'legacy');
+              }}
+            >
+              Классика
+            </button>
+            <button
+              type="button"
+              className={theme === 'gala' ? 'active' : ''}
+              onClick={() => {
+                setTheme('gala');
+                localStorage.setItem('tz_react_theme', 'gala');
+              }}
+            >
+              Гала
+            </button>
+          </div>
+        </div>
         <h1>Генератор ТЗ</h1>
         <p>Премиальная рабочая среда закупок: спецификации, КТРУ/ОКПД2 и контроль комплаенса.</p>
       </header>

@@ -471,6 +471,14 @@ button:disabled {
   gap: 8px;
 }
 
+.tz-html-block {
+  gap: 6px;
+}
+
+.tz-section-title {
+  margin: 2px 0 4px 0;
+}
+
 .tz-item h3 {
   margin: 0;
   font-size: 15px;
@@ -493,6 +501,30 @@ button:disabled {
   color: #e2ebff;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.tz-two-col {
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.tz-two-col td:first-child {
+  font-weight: 600;
+}
+
+.tz-two-col td {
+  white-space: normal;
+  word-break: break-word;
+}
+
+.tz-specs {
+  table-layout: fixed;
+}
+
+.tz-specs td,
+.tz-specs th {
+  white-space: normal;
+  word-break: break-word;
 }
 
 .raw-result-box {

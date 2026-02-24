@@ -1208,10 +1208,14 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       {structuredRows.length > 0 && (
         <div id="tz-print-root" className="tz-output">
           {structuredRows.map(({ row, parsed, specs }) => (
-            <article key={row.id} className="tz-item">
-              <h3>{GOODS_LABELS[row.type]} / {row.model}</h3>
+            <article key={row.id} className="tz-item tz-html-block">
+              <h3 className="tz-section-title">{GOODS_LABELS[row.type]} / {row.model}</h3>
               <div className="rows-table-wrap">
-                <table className="rows-table">
+                <table className="rows-table tz-two-col">
+                  <colgroup>
+                    <col style={{ width: '34%' }} />
+                    <col style={{ width: '66%' }} />
+                  </colgroup>
                   <tbody>
                     <tr><td>Наименование объекта поставки</td><td>{GOODS_LABELS[row.type]}</td></tr>
                     <tr><td>Модель / описание</td><td>{row.model}</td></tr>
@@ -1228,7 +1232,11 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                 </table>
               </div>
               <div className="rows-table-wrap">
-                <table className="rows-table">
+                <table className="rows-table tz-two-col">
+                  <colgroup>
+                    <col style={{ width: '34%' }} />
+                    <col style={{ width: '66%' }} />
+                  </colgroup>
                   <tbody>
                     {buildGeneralRequirements(lawMode).map((req) => (
                       <tr key={`${row.id}-req-${req.name}`}>
@@ -1241,7 +1249,13 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
               </div>
               {specs.length > 0 ? (
                 <div className="rows-table-wrap">
-                  <table className="rows-table">
+                  <table className="rows-table tz-specs">
+                    <colgroup>
+                      <col style={{ width: '5%' }} />
+                      <col style={{ width: '54%' }} />
+                      <col style={{ width: '29%' }} />
+                      <col style={{ width: '12%' }} />
+                    </colgroup>
                     <thead>
                       <tr>
                         <th>№</th>

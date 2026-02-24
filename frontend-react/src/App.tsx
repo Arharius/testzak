@@ -91,8 +91,8 @@ export function App() {
       <header className="hero">
         <div className="title-row">
           <div>
-            <h1>TZ Generator</h1>
-            <p>React-версия: автоматизация закупок, ТЗ, комплаенс 44/223-ФЗ.</p>
+            <h1>Генератор ТЗ</h1>
+            <p>Автоматизация закупок, ТЗ и комплаенс 44/223-ФЗ.</p>
           </div>
           <div className="theme-switch" role="group" aria-label="Переключатель темы">
             <button

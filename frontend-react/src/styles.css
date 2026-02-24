@@ -41,6 +41,7 @@ body {
   padding: 28px 18px 40px;
   display: grid;
   gap: 16px;
+  animation: pageFade 0.45s ease-out;
 }
 
 .hero {
@@ -106,6 +107,7 @@ body {
   gap: 10px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(10px);
+  animation: panelIn 0.35s ease-out;
 }
 
 .panel h2 {
@@ -158,6 +160,13 @@ button {
   background: var(--primary);
   border-color: color-mix(in srgb, var(--primary) 70%, #000 30%);
   width: auto;
+  transition: transform 0.18s ease, filter 0.18s ease, box-shadow 0.18s ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+  box-shadow: 0 8px 18px rgba(5, 19, 43, 0.25);
 }
 
 button:disabled {
@@ -185,21 +194,46 @@ button:disabled {
   border: 1px solid var(--border);
 }
 
-.rows-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 10px;
-}
-
-.row-card {
+.rows-table-wrap {
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 10px;
-  background: color-mix(in srgb, var(--surface-strong) 85%, #dce8f3 15%);
+  overflow: auto;
+  background: color-mix(in srgb, var(--surface-strong) 92%, #dce8f3 8%);
 }
 
-.row-card > div {
-  min-width: 0;
+.rows-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+}
+
+.rows-table th,
+.rows-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 8px;
+  vertical-align: top;
+}
+
+.rows-table th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: color-mix(in srgb, var(--surface-strong) 70%, #cedfeb 30%);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.rows-table td:first-child {
+  width: 42px;
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.rows-table td:last-child {
+  width: 110px;
 }
 
 .row-suggest-box {
@@ -284,10 +318,36 @@ button:disabled {
   white-space: nowrap;
 }
 
+.danger-btn {
+  background: #b83a34;
+  border-color: #982822;
+  color: #fff;
+}
+
 textarea {
   min-height: 320px;
   line-height: 1.5;
   font-size: 12px;
+}
+
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pageFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 /* Theme: Aurelia */
@@ -385,6 +445,10 @@ textarea {
   }
 
   .checks label {
+    width: 100%;
+  }
+
+  .actions button {
     width: 100%;
   }
 }

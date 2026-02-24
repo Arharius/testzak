@@ -171,6 +171,9 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const addRow = () => {
     setRows((prev) => [...prev, { id: Date.now(), type: 'pc', model: '', qty: 1, status: 'idle' }]);
   };
+  const removeRow = (rowId: number) => {
+    setRows((prev) => (prev.length <= 1 ? prev : prev.filter((x) => x.id !== rowId)));
+  };
 
   const applyCandidate = (rowId: number, candidateType: GoodsType) => {
     setRows((prev) =>
@@ -258,76 +261,101 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         </label>
       </div>
 
-      <div className="rows-grid">
-        {rows.map((row, idx) => (
-          <div className="row-card" key={row.id}>
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div style={{ fontSize: 12, color: '#64748b' }}>#{idx + 1}</div>
-              <select
-                value={row.type}
-                onChange={(e) => {
-                  const val = e.target.value as GoodsType;
-                  setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, type: val } : x)));
-                }}
-              >
-                {Object.entries(GOODS_LABELS).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
-              <input
-                value={row.model}
-                placeholder="Модель / описание"
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setRows((prev) =>
-                    prev.map((x) => {
-                      if (x.id !== row.id) return x;
-                      const detected = detectTypeDetailed(value, x.type);
-                      const candidates = buildTypeCandidates(value, detected.type);
-                      return {
-                        ...x,
-                        model: value,
-                        type: detected.type,
-                        candidates: value.trim().length >= 3 ? candidates : []
-                      };
-                    })
-                  );
-                }}
-              />
-              {Array.isArray(row.candidates) && row.candidates.length > 1 && (
-                <div className="row-suggest-box">
-                  <div className="row-suggest-head">Найдено несколько вариантов</div>
-                  {row.candidates.map((candidate) => (
-                    <button
-                      key={`${row.id}-${candidate.type}-${candidate.reason}`}
-                      type="button"
-                      className="row-suggest-item"
-                      onClick={() => applyCandidate(row.id, candidate.type)}
-                    >
-                      <strong>{GOODS_LABELS[candidate.type]}</strong>
-                      <span>{candidate.reason}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <input
-                type="number"
-                min={1}
-                value={row.qty}
-                onChange={(e) => {
-                  const qty = Number(e.target.value || 1);
-                  setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, qty } : x)));
-                }}
-              />
-              <div className={row.status === 'done' ? 'ok' : row.status === 'error' ? 'warn' : 'muted'}>
-                {row.status === 'idle' && 'Ожидание'}
-                {row.status === 'loading' && 'Генерация...'}
-                {row.status === 'done' && 'Готово'}
-                {row.status === 'error' && `Ошибка: ${row.error || ''}`}
-              </div>
-            </div>
-          </div>
-        ))}
+      <div className="rows-table-wrap">
+        <table className="rows-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Тип товара</th>
+              <th>Модель / описание</th>
+              <th>Кол-во</th>
+              <th>Статус</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, idx) => (
+              <tr key={row.id}>
+                <td>{idx + 1}</td>
+                <td>
+                  <select
+                    value={row.type}
+                    onChange={(e) => {
+                      const val = e.target.value as GoodsType;
+                      setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, type: val } : x)));
+                    }}
+                  >
+                    {Object.entries(GOODS_LABELS).map(([key, label]) => (
+                      <option key={key} value={key}>{label}</option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  <input
+                    value={row.model}
+                    placeholder="Модель / описание"
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setRows((prev) =>
+                        prev.map((x) => {
+                          if (x.id !== row.id) return x;
+                          const detected = detectTypeDetailed(value, x.type);
+                          const candidates = buildTypeCandidates(value, detected.type);
+                          return {
+                            ...x,
+                            model: value,
+                            type: detected.type,
+                            candidates: value.trim().length >= 3 ? candidates : []
+                          };
+                        })
+                      );
+                    }}
+                  />
+                  {Array.isArray(row.candidates) && row.candidates.length > 1 && (
+                    <div className="row-suggest-box">
+                      <div className="row-suggest-head">Найдено несколько вариантов</div>
+                      {row.candidates.map((candidate) => (
+                        <button
+                          key={`${row.id}-${candidate.type}-${candidate.reason}`}
+                          type="button"
+                          className="row-suggest-item"
+                          onClick={() => applyCandidate(row.id, candidate.type)}
+                        >
+                          <strong>{GOODS_LABELS[candidate.type]}</strong>
+                          <span>{candidate.reason}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </td>
+                <td>
+                  <input
+                    type="number"
+                    min={1}
+                    value={row.qty}
+                    onChange={(e) => {
+                      const qty = Number(e.target.value || 1);
+                      setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, qty } : x)));
+                    }}
+                  />
+                </td>
+                <td>
+                  <div className={row.status === 'done' ? 'ok' : row.status === 'error' ? 'warn' : 'muted'}>
+                    {row.status === 'idle' && 'Ожидание'}
+                    {row.status === 'loading' && 'Генерация...'}
+                    {row.status === 'done' && 'Готово'}
+                    {row.status === 'error' && `Ошибка: ${row.error || ''}`}
+                  </div>
+                </td>
+                <td>
+                  <button type="button" className="danger-btn" onClick={() => removeRow(row.id)} disabled={rows.length <= 1}>
+                    Удалить
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <div className="actions">

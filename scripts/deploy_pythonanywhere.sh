@@ -40,6 +40,7 @@ FILES_TO_UPLOAD=(
   "docx.min.js"
   "html2pdf.bundle.min.js"
 )
+REACT_DIST_DIR="${PROJECT_ROOT}/frontend-react/dist"
 
 for rel in "${FILES_TO_UPLOAD[@]}"; do
   if [[ ! -f "${PROJECT_ROOT}/${rel}" ]]; then
@@ -153,6 +154,28 @@ for rel in "${FILES_TO_UPLOAD[@]}"; do
   assert_status "$up_status" "201,200" "$up_body"
   echo "   uploaded: ${rel}"
 done
+
+# Build and upload React app under /react if frontend-react is present.
+if [[ -f "${PROJECT_ROOT}/frontend-react/package.json" ]]; then
+  echo "==> Building React app (frontend-react)"
+  if [[ ! -d "${PROJECT_ROOT}/frontend-react/node_modules" ]]; then
+    (cd "${PROJECT_ROOT}/frontend-react" && npm ci)
+  fi
+  (cd "${PROJECT_ROOT}/frontend-react" && npm run build)
+
+  if [[ -d "${REACT_DIST_DIR}" ]]; then
+    echo "==> Uploading React static files to ${PA_SITE_PATH}/react"
+    while IFS= read -r -d '' file; do
+      rel="${file#${REACT_DIST_DIR}/}"
+      dst="${PA_SITE_PATH}/react/${rel}"
+      call_request POST "${BASE_URL}/files/path${dst}" -F "content=@${file}"
+      up_status="$API_STATUS"
+      up_body="$API_BODY"
+      assert_status "$up_status" "201,200" "$up_body"
+      echo "   uploaded react: ${rel}"
+    done < <(find "${REACT_DIST_DIR}" -type f -print0)
+  fi
+fi
 
 domain_enc="$(urlencode "$PA_DOMAIN")"
 echo "==> Ensuring static mapping '/' -> ${PA_SITE_PATH}"

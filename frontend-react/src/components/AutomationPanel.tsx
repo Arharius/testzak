@@ -38,7 +38,7 @@ export function AutomationPanel({
         </label>
         <label>
           Secret
-          <input {...form.register('webhookSecret')} placeholder="X-TZ-Secret" />
+          <input type="password" autoComplete="new-password" {...form.register('webhookSecret')} placeholder="X-TZ-Secret (вводится заново при изменении)" />
         </label>
         <label>
           База Backend API
@@ -46,7 +46,7 @@ export function AutomationPanel({
         </label>
         <label>
           Токен Backend API
-          <input {...form.register('backendApiToken')} placeholder="Bearer token" />
+          <input type="password" autoComplete="new-password" {...form.register('backendApiToken')} placeholder="Bearer token (не хранится в браузере)" />
         </label>
         <label>
           Ретраи доставки

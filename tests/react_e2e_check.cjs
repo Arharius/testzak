@@ -93,7 +93,7 @@ async function run() {
   await page.waitForSelector('text=Endpoint коннектора');
   await page.locator('.fold-head:has-text("ЕИС и торговые площадки")').click();
 
-  await page.fill('input[placeholder="sk-..."]', 'sk-react-e2e');
+  await page.fill('input[placeholder^="sk-..."]', 'sk-react-e2e');
   await page.fill('input[placeholder="Модель / описание"]', 'Asus VivoBook 15 X1504');
 
   await page.click('button:has-text("🌐 Подтянуть из интернета")');

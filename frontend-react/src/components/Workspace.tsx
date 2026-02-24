@@ -553,7 +553,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         </label>
         <label>
           API-ключ
-          <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." />
+          <input type="password" autoComplete="new-password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-... (не сохраняется в браузере)" />
         </label>
       </div>
 

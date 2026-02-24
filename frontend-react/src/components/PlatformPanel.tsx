@@ -44,7 +44,7 @@ export function PlatformPanel({ value, onSave, onSendDraft, onExportPack }: Prop
         </label>
         <label>
           API-токен
-          <input {...form.register('apiToken')} placeholder="Bearer token" />
+          <input type="password" autoComplete="new-password" {...form.register('apiToken')} placeholder="Bearer token (не хранится в браузере)" />
         </label>
         <label>
           INN

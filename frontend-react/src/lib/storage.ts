@@ -38,7 +38,13 @@ export function getAutomationSettings(): AutomationSettings {
 }
 
 export function setAutomationSettings(value: AutomationSettings): void {
-  writeJson(KEYS.automationSettings, value);
+  // Never persist secret values in local storage.
+  const safe: AutomationSettings = {
+    ...value,
+    webhookSecret: '',
+    backendApiToken: ''
+  };
+  writeJson(KEYS.automationSettings, safe);
 }
 
 export function getPlatformSettings(): PlatformIntegrationSettings {
@@ -49,7 +55,12 @@ export function getPlatformSettings(): PlatformIntegrationSettings {
 }
 
 export function setPlatformSettings(value: PlatformIntegrationSettings): void {
-  writeJson(KEYS.platformSettings, value);
+  // Never persist provider tokens in local storage.
+  const safe: PlatformIntegrationSettings = {
+    ...value,
+    apiToken: ''
+  };
+  writeJson(KEYS.platformSettings, safe);
 }
 
 export function getAutomationLog(): AutomationEvent[] {

@@ -40,11 +40,20 @@ export function AutomationPanel({
           Secret
           <input {...form.register('webhookSecret')} placeholder="X-TZ-Secret" />
         </label>
+        <label>
+          Backend API base
+          <input {...form.register('backendApiBase')} placeholder="https://api.example.com" />
+        </label>
+        <label>
+          Backend API token
+          <input {...form.register('backendApiToken')} placeholder="Bearer token" />
+        </label>
       </div>
       <div className="checks">
         <label><input type="checkbox" {...form.register('autoSend')} /> auto send webhook after generation</label>
         <label><input type="checkbox" {...form.register('autopilot')} /> autopilot mode</label>
         <label><input type="checkbox" {...form.register('autoPickTopCandidate')} /> auto pick top candidate</label>
+        <label><input type="checkbox" {...form.register('useBackendQueueApi')} /> send events via backend queue API</label>
       </div>
       <div className="actions">
         <button onClick={form.handleSubmit(onSave)} type="button">save settings</button>

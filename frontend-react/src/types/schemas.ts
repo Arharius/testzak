@@ -3,6 +3,9 @@ import { z } from 'zod';
 export const automationSettingsSchema = z.object({
   webhookUrl: z.string().url().or(z.literal('')),
   webhookSecret: z.string().max(300),
+  backendApiBase: z.string().url().or(z.literal('')),
+  backendApiToken: z.string().max(2000),
+  useBackendQueueApi: z.boolean(),
   autoSend: z.boolean(),
   autopilot: z.boolean(),
   autoPickTopCandidate: z.boolean()
@@ -43,6 +46,9 @@ export type AutomationEvent = z.infer<typeof automationEventSchema>;
 export const defaultAutomationSettings: AutomationSettings = {
   webhookUrl: '',
   webhookSecret: '',
+  backendApiBase: '',
+  backendApiToken: '',
+  useBackendQueueApi: false,
   autoSend: false,
   autopilot: false,
   autoPickTopCandidate: true

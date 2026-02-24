@@ -71,6 +71,19 @@ button {
   flex-wrap: wrap;
 }
 
+.rows-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.row-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
 .log-box {
   border: 1px solid #e2e8f0;
   border-radius: 8px;

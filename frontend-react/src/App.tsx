@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { AutomationPanel } from './components/AutomationPanel';
 import { PlatformPanel } from './components/PlatformPanel';
 import { EventLog } from './components/EventLog';
+import { Workspace } from './components/Workspace';
 import { postPlatformDraft, postWebhook } from './lib/api';
 import {
   appendAutomationLog,
@@ -136,6 +137,8 @@ export function App() {
           setRefreshTick((x) => x + 1);
         }}
       />
+
+      <Workspace automationSettings={automationSettings} platformSettings={platformSettings} />
 
       <EventLog
         events={events}

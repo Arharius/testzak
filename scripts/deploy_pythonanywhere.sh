@@ -37,6 +37,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 FILES_TO_UPLOAD=(
   "index.html"
+  "legacy/index.html"
   "docx.min.js"
   "html2pdf.bundle.min.js"
 )

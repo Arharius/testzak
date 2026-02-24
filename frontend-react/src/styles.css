@@ -184,6 +184,26 @@ body {
   color: #ecf2ff;
 }
 
+.fold {
+  display: grid;
+  gap: 10px;
+}
+
+.fold-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 12px;
+  padding: 11px 14px;
+}
+
+.fold-state {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
 .grid.two {
   display: grid;
   grid-template-columns: 1fr 1fr;

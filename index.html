@@ -809,6 +809,39 @@
         </div>
       </div>
       <div id="keyStatus" style="font-size:12px;margin-top:4px;color:#9ca3af">Ключ не введён</div>
+      <details class="api-section" style="margin-top:8px;">
+        <summary>🔌 Автоматизация, обучение и интеграции</summary>
+        <div style="margin-top:8px;padding:10px;border:1px solid #d6e1ea;border-radius:10px;background:#f9fcff;">
+          <div class="form-row" style="margin-bottom:8px;">
+            <div class="form-group" style="flex:2;min-width:240px;">
+              <label for="automationWebhook">Webhook URL (n8n/Make/Zapier/CRM)</label>
+              <input id="automationWebhook" type="text" placeholder="https://hooks.example.com/..." />
+            </div>
+            <div class="form-group" style="min-width:180px;">
+              <label for="automationSecret">Секрет (опционально)</label>
+              <input id="automationSecret" type="text" placeholder="X-TZ-Secret" />
+            </div>
+          </div>
+          <div class="form-row" style="margin-bottom:8px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
+              <input id="automationAutoSend" type="checkbox" style="width:auto;" /> Автоотправка webhook после генерации ТЗ
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
+              <input id="automationAutopilot" type="checkbox" style="width:auto;" /> Автопилот: подтянуть → выбрать → сгенерировать
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
+              <input id="automationAutoPick" type="checkbox" style="width:auto;" checked /> Автовыбор первого кандидата в списке
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-secondary" type="button" onclick="saveAutomationSettings()" style="padding:7px 14px;font-size:13px;">💾 Сохранить настройки</button>
+            <button class="btn btn-info" type="button" onclick="runFullAutopilot()" style="padding:7px 14px;font-size:13px;">🚀 Запустить автопилот</button>
+            <button class="btn btn-secondary" type="button" onclick="trainFromCurrentRows()" style="padding:7px 14px;font-size:13px;">🧠 Дообучить на текущих строках</button>
+            <button class="btn btn-secondary" type="button" onclick="sendTestWebhook()" style="padding:7px 14px;font-size:13px;">🛰 Тест webhook</button>
+          </div>
+          <div id="learningStatus" style="font-size:11px;color:#6b7280;margin-top:8px;">Локальное обучение: 0 шаблонов</div>
+        </div>
+      </details>
     </div>
 
     <!-- Шаг 2: Список товаров -->
@@ -2016,6 +2049,118 @@ function normalizeDetectText(value) {
     .trim();
 }
 
+function loadLearnedTypeMap() {
+  const storageKey = (typeof LEARNED_TYPE_MAP_KEY !== 'undefined') ? LEARNED_TYPE_MAP_KEY : 'tz_learned_type_map_v1';
+  try {
+    const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem(storageKey) : null;
+    const parsed = raw ? JSON.parse(raw) : {};
+    learnedTypeMap = parsed && typeof parsed === 'object' ? parsed : {};
+  } catch (_) {
+    learnedTypeMap = {};
+  }
+}
+
+function saveLearnedTypeMap() {
+  const storageKey = (typeof LEARNED_TYPE_MAP_KEY !== 'undefined') ? LEARNED_TYPE_MAP_KEY : 'tz_learned_type_map_v1';
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey, JSON.stringify(learnedTypeMap)); } catch (_) {}
+  const c = Object.keys(learnedTypeMap || {}).length;
+  const el = document.getElementById('learningStatus');
+  if (el) el.textContent = `Локальное обучение: ${c} шаблонов`;
+}
+
+function learnTypeFromText(text, type, source = 'manual') {
+  const key = normalizeDetectText(text);
+  if (!key || key.length < 3 || !GOODS_CATALOG[type]) return;
+  const prev = learnedTypeMap[key];
+  if (!prev || prev.type !== type) {
+    learnedTypeMap[key] = { type, count: 1, source, updatedAt: Date.now() };
+  } else {
+    prev.count = (prev.count || 0) + 1;
+    prev.source = source;
+    prev.updatedAt = Date.now();
+  }
+  saveLearnedTypeMap();
+}
+
+function detectTypeFromLearning(value) {
+  if (typeof learnedTypeMap === 'undefined') {
+    if (typeof globalThis !== 'undefined' && !globalThis.learnedTypeMap) globalThis.learnedTypeMap = {};
+  }
+  const map = (typeof learnedTypeMap !== 'undefined') ? learnedTypeMap : (globalThis.learnedTypeMap || {});
+  const key = normalizeDetectText(value);
+  if (!key) return '';
+  if (map[key]?.type && GOODS_CATALOG[map[key].type]) return map[key].type;
+  let bestKey = '';
+  let bestScore = 0;
+  let bestType = '';
+  for (const [k, v] of Object.entries(map)) {
+    if (!v || !GOODS_CATALOG[v.type]) continue;
+    if (!hasDetectMatch(key, k)) continue;
+    const score = (v.count || 1) * Math.max(2, k.length);
+    if (score > bestScore) {
+      bestScore = score;
+      bestKey = k;
+      bestType = v.type;
+    }
+  }
+  if (bestKey) return bestType;
+  return '';
+}
+
+function loadAutomationSettings() {
+  try {
+    const raw = localStorage.getItem(AUTOMATION_SETTINGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    automationSettings = { ...automationSettings, ...(parsed || {}) };
+  } catch (_) {}
+  const urlEl = document.getElementById('automationWebhook');
+  const secEl = document.getElementById('automationSecret');
+  const autoEl = document.getElementById('automationAutoSend');
+  const pilotEl = document.getElementById('automationAutopilot');
+  const pickEl = document.getElementById('automationAutoPick');
+  if (urlEl) urlEl.value = automationSettings.webhookUrl || '';
+  if (secEl) secEl.value = automationSettings.webhookSecret || '';
+  if (autoEl) autoEl.checked = !!automationSettings.autoSend;
+  if (pilotEl) pilotEl.checked = !!automationSettings.autopilot;
+  if (pickEl) pickEl.checked = automationSettings.autoPickTopCandidate !== false;
+}
+
+function saveAutomationSettings() {
+  const urlEl = document.getElementById('automationWebhook');
+  const secEl = document.getElementById('automationSecret');
+  const autoEl = document.getElementById('automationAutoSend');
+  const pilotEl = document.getElementById('automationAutopilot');
+  const pickEl = document.getElementById('automationAutoPick');
+  automationSettings.webhookUrl = (urlEl?.value || '').trim();
+  automationSettings.webhookSecret = (secEl?.value || '').trim();
+  automationSettings.autoSend = !!autoEl?.checked;
+  automationSettings.autopilot = !!pilotEl?.checked;
+  automationSettings.autoPickTopCandidate = !!pickEl?.checked;
+  try { localStorage.setItem(AUTOMATION_SETTINGS_KEY, JSON.stringify(automationSettings)); } catch (_) {}
+  hideError();
+}
+
+async function sendAutomationEvent(eventName, payload) {
+  const url = (automationSettings.webhookUrl || '').trim();
+  if (!url) return;
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (automationSettings.webhookSecret) headers['X-TZ-Secret'] = automationSettings.webhookSecret;
+    await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        app: 'tz_generator',
+        event: eventName,
+        at: new Date().toISOString(),
+        payload
+      })
+    });
+  } catch (_) {
+    // Не блокируем основной сценарий
+  }
+}
+
 const MODEL_TO_TYPE_NORMALIZED = Object.entries(MODEL_TO_TYPE)
   .map(([key, type]) => [normalizeDetectText(key), type])
   .filter(([key]) => key)
@@ -2154,8 +2299,11 @@ function autoDetectGoodsType(rowId, modelValue) {
   AI_TYPE_DETECT_SEQ += 1;
   const detectSeq = AI_TYPE_DETECT_SEQ;
   let detectedType = null;
+  const learnedType = detectTypeFromLearning(val);
   // Точное совпадение сначала
-  if (looksLikeTwistedPairCable(val)) {
+  if (learnedType && GOODS_CATALOG[learnedType]) {
+    detectedType = learnedType;
+  } else if (looksLikeTwistedPairCable(val)) {
     detectedType = 'patchCord';
   } else if (MODEL_TO_TYPE[rawVal]) {
     detectedType = MODEL_TO_TYPE[rawVal];
@@ -2268,6 +2416,10 @@ function applyInternetSuggestion(rowId, idx) {
   if (c.type) applyDetectedGoodsType(rowId, c.type, 'rules');
   const modelEl = document.getElementById('goods-model-' + rowId);
   if (modelEl && c.model && c.model.trim()) modelEl.value = c.model.trim();
+  if (c.type) {
+    const learnText = (modelEl?.value || c.model || '').trim();
+    if (learnText) learnTypeFromText(learnText, c.type, 'internet_pick');
+  }
   const statusEl = document.getElementById('goods-status-' + rowId);
   if (statusEl) statusEl.innerHTML = '<span style="font-size:12px;color:#059669;">✅ Выбрано</span>';
   hideRowSuggestions(rowId);
@@ -2467,6 +2619,79 @@ async function enrichRowsFromInternet() {
   if (okCount === 0) {
     showError('Не удалось получить интернет-подсказки. Проверьте интернет/URL или API-ключ для ИИ-фоллбэка.');
   }
+  await sendAutomationEvent('rows.enriched', {
+    rows: rows.length,
+    successRows: okCount
+  });
+  return { totalRows: rows.length, successRows: okCount };
+}
+
+function autoResolveTopSuggestions() {
+  if (!automationSettings.autoPickTopCandidate) return 0;
+  const bucket = window.__internetCandidatesByRow || {};
+  let applied = 0;
+  for (const [rowId, list] of Object.entries(bucket)) {
+    if (!Array.isArray(list) || !list.length) continue;
+    applyInternetSuggestion(Number(rowId), 0);
+    applied += 1;
+  }
+  return applied;
+}
+
+function trainFromCurrentRows() {
+  const rows = Array.from(document.querySelectorAll('#goods-rows tr'));
+  let learned = 0;
+  for (const tr of rows) {
+    const id = tr.dataset.rowId;
+    const type = document.getElementById('goods-type-' + id)?.value;
+    const model = document.getElementById('goods-model-' + id)?.value?.trim();
+    if (!type || !model) continue;
+    learnTypeFromText(model, type, 'batch_train');
+    learned += 1;
+  }
+  hideError();
+  if (!learned) showError('Нет данных для обучения: заполните модель и выберите тип.');
+}
+
+async function sendTestWebhook() {
+  saveAutomationSettings();
+  if (!automationSettings.webhookUrl) {
+    showError('Укажите Webhook URL в блоке автоматизации.');
+    return;
+  }
+  await sendAutomationEvent('webhook.test', { ok: true, source: 'manual_test' });
+  hideError();
+}
+
+async function runFullAutopilot() {
+  saveAutomationSettings();
+  hideError();
+  setLoading(true, 'Автопилот: интернет-поиск и автоклассификация...');
+  try {
+    await enrichRowsFromInternet();
+    const autoPicked = autoResolveTopSuggestions();
+    const rows = Array.from(document.querySelectorAll('#goods-rows tr'));
+    let missingModel = 0;
+    for (const tr of rows) {
+      const id = tr.dataset.rowId;
+      const model = document.getElementById('goods-model-' + id)?.value?.trim();
+      if (!model) missingModel += 1;
+    }
+    if (missingModel === 0 && document.getElementById('apiKey')?.value?.trim()) {
+      setLoading(false);
+      await generateTZ();
+    } else {
+      setLoading(false);
+      showError(`Автопилот завершён частично. Автовыборов: ${autoPicked}. Проверьте строки без модели/API-ключ.`);
+    }
+    await sendAutomationEvent('autopilot.completed', {
+      autoPicked,
+      missingModel
+    });
+  } catch (e) {
+    setLoading(false);
+    showError('Ошибка автопилота: ' + (e?.message || 'неизвестно'));
+  }
 }
 
 // HTML дропдауна для строки
@@ -2520,6 +2745,7 @@ function selectRowGoods(rowId, value) {
   const modelInput = document.getElementById('goods-model-' + rowId);
   if (modelInput) {
     if (g.placeholder) modelInput.placeholder = g.placeholder;
+    if (modelInput.value.trim()) learnTypeFromText(modelInput.value.trim(), value, 'manual_pick');
     modelInput.focus();
   }
 }
@@ -2617,6 +2843,17 @@ const GOODS_GROUPS = [
 // =====================
 let goodsItems = [];      // [{ id, type, model, qty, specs, meta, status }]
 let goodsRowCounter = 0;  // для уникальных ID строк
+const LEARNED_TYPE_MAP_KEY = 'tz_learned_type_map_v1';
+const AUTOMATION_SETTINGS_KEY = 'tz_automation_settings_v1';
+let learnedTypeMap = Object.create(null);
+let automationSettings = {
+  webhookUrl: '',
+  webhookSecret: '',
+  autoSend: false,
+  autopilot: false,
+  autoPickTopCandidate: true
+};
+let AUTOPILOT_RUNNING = false;
 
 // (buildDropdownHTML/openGoodsDropdown/filterGoods/selectGoods удалены — используется мульти-строчный интерфейс)
 
@@ -2624,6 +2861,9 @@ let goodsRowCounter = 0;  // для уникальных ID строк
 document.addEventListener('DOMContentLoaded', function() {
   // Добавляем первую строку по умолчанию
   addGoodsRow('pc', '', 30);
+  loadLearnedTypeMap();
+  saveLearnedTypeMap();
+  loadAutomationSettings();
 });
 
 // =====================
@@ -2676,6 +2916,17 @@ async function callAI(prompt, apiKey, provider, aiModel) {
 }
 
 async function generateTZ() {
+  saveAutomationSettings();
+  if (automationSettings.autopilot && !AUTOPILOT_RUNNING) {
+    AUTOPILOT_RUNNING = true;
+    try {
+      await runFullAutopilot();
+    } finally {
+      AUTOPILOT_RUNNING = false;
+    }
+    return;
+  }
+
   const apiKey = document.getElementById('apiKey').value.trim();
   const provider = document.getElementById('apiProvider').value;
   const aiModel = document.getElementById('modelSelect').value;
@@ -2797,6 +3048,26 @@ async function generateTZ() {
     const firstErr = goodsItems.find(it => it.status === 'error');
     const details = firstErr?.error ? ` Причина: ${firstErr.error}` : '';
     showError(`Ошибка при генерации ${errCount} позиций. Остальные позиции отображены в ТЗ.${details}`);
+  }
+
+  // Обучаемся на успешных строках и отправляем событие автоматизации.
+  const doneItems = goodsItems.filter(it => it.status === 'done');
+  for (const it of doneItems) {
+    if (it.model && it.type) learnTypeFromText(it.model, it.type, 'post_generate');
+  }
+  if (automationSettings.autoSend) {
+    await sendAutomationEvent('tz.generated', {
+      total: goodsItems.length,
+      success: doneItems.length,
+      failed: goodsItems.filter(it => it.status === 'error').length,
+      items: doneItems.map(it => ({
+        type: it.type,
+        model: it.model,
+        qty: it.qty,
+        okpd2: it._codes?.okpd2 || '',
+        ktru: it._codes?.ktru || ''
+      }))
+    });
   }
 }
 

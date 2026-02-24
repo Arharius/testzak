@@ -701,38 +701,63 @@ textarea[readonly] {
 }
 
 .layout.theme-gala .orb {
-  opacity: 0.5;
-  filter: blur(16px) saturate(1.3);
+  opacity: 0.62;
+  filter: blur(14px) saturate(1.35);
+}
+
+.layout.theme-gala .orb-1 {
+  width: 300px;
+  height: 300px;
+  left: -90px;
+  top: 58%;
+  background: radial-gradient(circle, rgba(255, 64, 182, 0.9) 0%, rgba(255, 64, 182, 0.06) 70%);
+  animation: galaOrbDrift 17s ease-in-out infinite;
+}
+
+.layout.theme-gala .orb-2 {
+  width: 260px;
+  height: 260px;
+  right: -70px;
+  top: 16%;
+  background: radial-gradient(circle, rgba(250, 214, 66, 0.85) 0%, rgba(250, 214, 66, 0.05) 72%);
+  animation: galaOrbDrift 20s ease-in-out infinite reverse;
+}
+
+.layout.theme-gala .orb-3 {
+  width: 240px;
+  height: 240px;
+  right: 4%;
+  bottom: -80px;
+  background: radial-gradient(circle, rgba(132, 92, 255, 0.92) 0%, rgba(132, 92, 255, 0.08) 72%);
+  animation: galaOrbDrift 15s ease-in-out infinite;
 }
 
 .layout.theme-gala .bg-layer::before {
   background:
-    linear-gradient(132deg, rgba(10, 8, 28, 0.56) 0%, rgba(21, 10, 44, 0.48) 45%, rgba(8, 16, 40, 0.52) 100%),
-    radial-gradient(1200px 700px at 15% 0%, rgba(255, 74, 174, 0.28), transparent 62%),
-    radial-gradient(1000px 600px at 85% 10%, rgba(43, 231, 255, 0.25), transparent 60%),
-    radial-gradient(900px 700px at 50% 100%, rgba(255, 204, 0, 0.2), transparent 64%),
+    radial-gradient(1400px 900px at 10% -10%, rgba(255, 71, 188, 0.3), transparent 60%),
+    radial-gradient(1200px 900px at 90% 0%, rgba(93, 230, 255, 0.26), transparent 58%),
+    radial-gradient(1100px 780px at 50% 100%, rgba(255, 193, 72, 0.24), transparent 62%),
+    linear-gradient(130deg, rgba(23, 10, 59, 0.46) 0%, rgba(45, 18, 98, 0.42) 34%, rgba(56, 17, 118, 0.42) 62%, rgba(27, 18, 84, 0.5) 100%),
     url('./assets/bg-gala.png');
-  background-size: 100% 100%, 120% 120%, 120% 120%, 120% 120%, cover;
+  background-size: 120% 120%, 120% 120%, 120% 120%, 100% 100%, cover;
   background-position: center, center, center, center, center;
   background-repeat: no-repeat;
-  animation: galaShift 18s ease-in-out infinite;
+  animation: galaShift 16s ease-in-out infinite;
 }
 
 .layout.theme-gala .bg-layer::after {
   background:
-    radial-gradient(circle at 8% 12%, rgba(255, 255, 255, 0.26) 0 2px, transparent 2.5px),
-    radial-gradient(circle at 22% 28%, rgba(255, 217, 0, 0.22) 0 3px, transparent 3.5px),
-    radial-gradient(circle at 41% 20%, rgba(58, 234, 255, 0.22) 0 2px, transparent 2.5px),
-    radial-gradient(circle at 63% 16%, rgba(255, 129, 192, 0.26) 0 3px, transparent 3.5px),
-    radial-gradient(circle at 78% 30%, rgba(199, 137, 255, 0.2) 0 2.5px, transparent 3px),
-    radial-gradient(circle at 91% 24%, rgba(255, 255, 255, 0.24) 0 2px, transparent 2.5px),
-    radial-gradient(circle at 14% 62%, rgba(255, 120, 94, 0.2) 0 3px, transparent 3.5px),
-    radial-gradient(circle at 30% 72%, rgba(255, 230, 120, 0.18) 0 2.2px, transparent 2.7px),
-    radial-gradient(circle at 49% 67%, rgba(81, 214, 255, 0.2) 0 2.8px, transparent 3.3px),
-    radial-gradient(circle at 67% 78%, rgba(255, 121, 220, 0.22) 0 2.6px, transparent 3px),
-    radial-gradient(circle at 84% 64%, rgba(255, 255, 255, 0.2) 0 2.2px, transparent 2.8px);
-  opacity: 0.42;
-  animation: confettiDrift 12s linear infinite, galaSparkle 24s ease-in-out infinite;
+    radial-gradient(circle at 6% 12%, rgba(255, 255, 255, 0.25) 0 1.8px, transparent 2.4px),
+    radial-gradient(circle at 13% 30%, rgba(255, 208, 83, 0.28) 0 2.4px, transparent 3.1px),
+    radial-gradient(circle at 24% 20%, rgba(255, 130, 210, 0.24) 0 2px, transparent 2.7px),
+    radial-gradient(circle at 33% 68%, rgba(96, 225, 255, 0.24) 0 2.2px, transparent 2.8px),
+    radial-gradient(circle at 49% 17%, rgba(255, 255, 255, 0.22) 0 1.8px, transparent 2.5px),
+    radial-gradient(circle at 64% 26%, rgba(255, 121, 220, 0.24) 0 2.4px, transparent 3px),
+    radial-gradient(circle at 79% 65%, rgba(255, 217, 88, 0.2) 0 2.2px, transparent 2.9px),
+    radial-gradient(circle at 91% 36%, rgba(255, 255, 255, 0.2) 0 1.8px, transparent 2.5px),
+    radial-gradient(circle at 86% 84%, rgba(149, 130, 255, 0.25) 0 2.6px, transparent 3.3px);
+  opacity: 0.5;
+  animation: confettiDrift 10s linear infinite, galaSparkle 20s ease-in-out infinite;
 }
 
 .layout.theme-gala .hero {
@@ -767,7 +792,7 @@ textarea[readonly] {
     linear-gradient(145deg, rgba(4, 8, 16, 0.8) 0%, rgba(8, 14, 28, 0.72) 35%, rgba(20, 13, 8, 0.62) 100%),
     radial-gradient(650px 380px at 10% 12%, rgba(255, 194, 104, 0.34), transparent 62%),
     radial-gradient(900px 520px at 86% 10%, rgba(126, 171, 255, 0.2), transparent 66%),
-    url('https://images.unsplash.com/photo-1543201237-97ce16863f7c?auto=format&fit=crop&w=2400&q=80');
+    url('./assets/bg-aurelia.png');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

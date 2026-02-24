@@ -6,9 +6,9 @@
   <title>Генератор ТЗ для госзакупок — 44-ФЗ / 223-ФЗ</title>
 
   <!-- docx.js для генерации DOCX (локальный файл) -->
-  <script src="docx.min.js"></script>
+  <script src="../docx.min.js"></script>
   <!-- html2pdf для PDF (локальный файл — работает без интернета и CDN) -->
-  <script src="html2pdf.bundle.min.js"></script>
+  <script src="../html2pdf.bundle.min.js"></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;800&family=Manrope:wght@400;500;700&family=Montserrat:wght@400;700;900&display=swap');
@@ -5582,13 +5582,13 @@ async function downloadDOCX() {
     if (typeof docx === 'undefined') {
       await new Promise((resolve, reject) => {
         const s = document.createElement('script');
-        s.src = 'docx.min.js';
+        s.src = '../docx.min.js';
         s.onload = resolve;
         s.onerror = () => reject(new Error('Не удалось загрузить docx.min.js'));
         document.head.appendChild(s);
       });
       if (typeof docx === 'undefined') {
-        throw new Error('Библиотека docx не загружена. Убедитесь что файл docx.min.js находится рядом с index.html');
+        throw new Error('Библиотека docx не загружена. Убедитесь что файл ../docx.min.js доступен.');
       }
     }
 

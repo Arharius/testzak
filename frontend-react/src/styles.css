@@ -580,6 +580,16 @@ textarea[readonly] {
   background: linear-gradient(90deg, rgba(220, 236, 249, 0.95) 0%, rgba(209, 229, 246, 0.92) 100%);
 }
 
+.layout.theme-legacy .fold-head {
+  color: #1b3149;
+  background: linear-gradient(180deg, #e9f3fb 0%, #dbeaf7 100%);
+  border: 1px solid rgba(120, 154, 186, 0.52);
+}
+
+.layout.theme-legacy .fold-head .fold-state {
+  color: #37536f;
+}
+
 .layout.theme-gala .orb {
   opacity: 0.5;
   filter: blur(16px) saturate(1.3);

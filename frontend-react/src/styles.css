@@ -575,7 +575,7 @@ textarea[readonly] {
     linear-gradient(145deg, rgba(7, 10, 14, 0.8) 0%, rgba(12, 16, 22, 0.7) 40%, rgba(20, 24, 30, 0.65) 100%),
     radial-gradient(1200px 680px at 70% -10%, rgba(255, 255, 255, 0.2), transparent 62%),
     radial-gradient(900px 520px at 10% 120%, rgba(196, 206, 218, 0.24), transparent 60%),
-    url('https://images.unsplash.com/photo-1535223289827-42f1e9919769?auto=format&fit=crop&w=2400&q=80');
+    url('./assets/bg-classic.png');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -694,11 +694,14 @@ textarea[readonly] {
 
 .layout.theme-gala .bg-layer::before {
   background:
+    linear-gradient(132deg, rgba(10, 8, 28, 0.56) 0%, rgba(21, 10, 44, 0.48) 45%, rgba(8, 16, 40, 0.52) 100%),
     radial-gradient(1200px 700px at 15% 0%, rgba(255, 74, 174, 0.28), transparent 62%),
     radial-gradient(1000px 600px at 85% 10%, rgba(43, 231, 255, 0.25), transparent 60%),
     radial-gradient(900px 700px at 50% 100%, rgba(255, 204, 0, 0.2), transparent 64%),
-    linear-gradient(130deg, #130a2e 0%, #301048 38%, #10234e 70%, #0b1230 100%);
-  background-size: 120% 120%, 120% 120%, 120% 120%, 100% 100%;
+    url('./assets/bg-gala.png');
+  background-size: 100% 100%, 120% 120%, 120% 120%, 120% 120%, cover;
+  background-position: center, center, center, center, center;
+  background-repeat: no-repeat;
   animation: galaShift 18s ease-in-out infinite;
 }
 
@@ -751,7 +754,7 @@ textarea[readonly] {
     linear-gradient(145deg, rgba(4, 8, 16, 0.8) 0%, rgba(8, 14, 28, 0.72) 35%, rgba(20, 13, 8, 0.62) 100%),
     radial-gradient(650px 380px at 10% 12%, rgba(255, 194, 104, 0.34), transparent 62%),
     radial-gradient(900px 520px at 86% 10%, rgba(126, 171, 255, 0.2), transparent 66%),
-    url('https://images.unsplash.com/photo-1543201237-97ce16863f7c?auto=format&fit=crop&w=2200&q=80');
+    url('./assets/bg-aurelia.jpg');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

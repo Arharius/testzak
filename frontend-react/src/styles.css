@@ -226,9 +226,9 @@ textarea:focus {
 button {
   cursor: pointer;
   font-weight: 700;
-  background: linear-gradient(120deg, #2a93ff 0%, #6a6dff 45%, #ffb74e 100%);
-  border-color: rgba(187, 211, 255, 0.7);
-  color: #091426;
+  background: linear-gradient(180deg, #203a63 0%, #162946 100%);
+  border-color: rgba(152, 184, 247, 0.48);
+  color: #e9f1ff;
   transition: transform 0.15s ease, filter 0.15s ease;
 }
 
@@ -332,9 +332,9 @@ button:disabled {
 .lookup-btn {
   width: 100%;
   margin-bottom: 6px;
-  background: linear-gradient(120deg, #58dfff 0%, #5ca8ff 45%, #73b7ff 100%);
-  border-color: rgba(180, 228, 255, 0.9);
-  color: #06203a;
+  background: linear-gradient(180deg, #2a5f89 0%, #204c72 100%);
+  border-color: rgba(164, 208, 242, 0.74);
+  color: #e8f5ff;
 }
 
 .row-suggest-box {
@@ -474,6 +474,23 @@ textarea[readonly] {
   box-shadow: 0 12px 28px rgba(24, 66, 100, 0.14);
 }
 
+.layout.theme-legacy button {
+  background: linear-gradient(180deg, #126b8a 0%, #0f5675 100%);
+  border-color: rgba(104, 166, 201, 0.66);
+  color: #ffffff;
+}
+
+.layout.theme-legacy .lookup-btn {
+  background: linear-gradient(180deg, #2f7a99 0%, #23617c 100%);
+  border-color: rgba(127, 180, 214, 0.75);
+}
+
+.layout.theme-legacy .danger-btn {
+  background: linear-gradient(180deg, #cf5a61 0%, #b3464d 100%);
+  border-color: rgba(220, 136, 143, 0.85);
+  color: #ffffff;
+}
+
 .layout.theme-legacy input,
 .layout.theme-legacy select,
 .layout.theme-legacy textarea {
@@ -511,6 +528,18 @@ textarea[readonly] {
 .layout.theme-gala button {
   background: linear-gradient(120deg, #40dcff 0%, #9f6aff 48%, #ff82b7 100%);
   border-color: rgba(236, 190, 255, 0.7);
+  color: #0b0e22;
+}
+
+.layout.theme-aurelia button {
+  background: linear-gradient(120deg, #1f365b 0%, #2d4f87 55%, #b68845 100%);
+  border-color: rgba(197, 171, 116, 0.58);
+  color: #f5f2ea;
+}
+
+.layout.theme-aurelia .lookup-btn {
+  background: linear-gradient(120deg, #2e4f7f 0%, #3c6ab0 60%, #4aa2c7 100%);
+  border-color: rgba(155, 204, 235, 0.75);
 }
 
 @keyframes pageFade {

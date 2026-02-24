@@ -397,6 +397,34 @@ button:disabled {
   color: #9ab0de;
 }
 
+.preflight-box {
+  border: 1px solid rgba(131, 166, 236, 0.36);
+  border-radius: 10px;
+  background: rgba(9, 17, 36, 0.72);
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.preflight-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.preflight-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 3px;
+}
+
+.critical {
+  color: #ff9ca8;
+  font-weight: 700;
+}
+
 textarea[readonly] {
   border: 1px solid rgba(126, 165, 245, 0.45);
   border-radius: 10px;

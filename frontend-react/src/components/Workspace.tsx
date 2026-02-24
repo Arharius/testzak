@@ -184,6 +184,11 @@ type Props = {
   platformSettings: PlatformIntegrationSettings;
 };
 
+type PreflightIssue = {
+  level: 'critical' | 'warn';
+  message: string;
+};
+
 export function Workspace({ automationSettings, platformSettings }: Props) {
   const [lawMode, setLawMode] = useState<LawMode>('44');
   const [provider, setProvider] = useState<Provider>('deepseek');
@@ -194,10 +199,35 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [bulkLookup, setBulkLookup] = useState(false);
   const [autopilotRunning, setAutopilotRunning] = useState(false);
 
-  const canGenerate = useMemo(
-    () => apiKey.trim().length > 6 && rows.every((r) => r.model.trim().length > 0),
-    [apiKey, rows]
-  );
+  const preflight = useMemo(() => {
+    const issues: PreflightIssue[] = [];
+    if (apiKey.trim().length <= 6) {
+      issues.push({ level: 'critical', message: 'Не задан API-ключ для генерации.' });
+    }
+    rows.forEach((row, idx) => {
+      if (!row.model.trim()) {
+        issues.push({ level: 'critical', message: `Строка #${idx + 1}: не указана модель/описание.` });
+      }
+      if (!Number.isFinite(row.qty) || row.qty < 1) {
+        issues.push({ level: 'critical', message: `Строка #${idx + 1}: количество должно быть не менее 1.` });
+      }
+      if (!row.internetHints && row.model.trim().length >= 4) {
+        issues.push({ level: 'warn', message: `Строка #${idx + 1}: нет интернет-подсказок по конкретной модели.` });
+      }
+    });
+    if (lawMode === '223' && !platformSettings.orgName.trim()) {
+      issues.push({ level: 'warn', message: '223-ФЗ: заполните организацию заказчика.' });
+    }
+    if (!platformSettings.endpoint.trim()) {
+      issues.push({ level: 'warn', message: 'Не задан endpoint коннектора ЕИС/ЭТП.' });
+    }
+    const critical = issues.filter((x) => x.level === 'critical').length;
+    const warn = issues.filter((x) => x.level === 'warn').length;
+    const score = Math.max(0, 100 - critical * 25 - warn * 8);
+    return { issues, critical, warn, score };
+  }, [apiKey, rows, lawMode, platformSettings.orgName, platformSettings.endpoint]);
+
+  const canGenerate = preflight.critical === 0;
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -603,6 +633,26 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="preflight-box">
+        <div className="preflight-head">
+          <strong>Контроль качества перед генерацией</strong>
+          <span className={preflight.score >= 80 ? 'ok' : preflight.score >= 60 ? 'warn' : 'critical'}>
+            Индекс готовности: {preflight.score}%
+          </span>
+        </div>
+        {preflight.issues.length === 0 ? (
+          <div className="ok">Все проверки пройдены.</div>
+        ) : (
+          <ul className="preflight-list">
+            {preflight.issues.slice(0, 8).map((issue, idx) => (
+              <li key={`${issue.level}-${idx}`} className={issue.level === 'critical' ? 'critical' : 'warn'}>
+                {issue.level === 'critical' ? '⛔' : '⚠️'} {issue.message}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div className="actions">

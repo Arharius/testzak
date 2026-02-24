@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
-import { generateItemSpecs, postPlatformDraft, sendEventThroughBestChannel } from '../lib/api';
+import { fetchOpenRouterModels, generateItemSpecs, postPlatformDraft, sendEventThroughBestChannel } from '../lib/api';
 import { appendAutomationLog } from '../lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from '../types/schemas';
 import { buildTypeCandidates, detectTypeDetailed, type GoodsType } from '../lib/autodetect';
@@ -221,6 +221,9 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [provider, setProvider] = useState<Provider>('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('deepseek-chat');
+  const [openRouterModels, setOpenRouterModels] = useState<Array<{ id: string; name?: string; context_length?: number }>>([]);
+  const [openRouterLoading, setOpenRouterLoading] = useState(false);
+  const [openRouterError, setOpenRouterError] = useState('');
   const [rows, setRows] = useState<Row[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
   const [tzText, setTzText] = useState('');
   const [bulkLookup, setBulkLookup] = useState(false);
@@ -270,6 +273,30 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   ]);
 
   const canGenerate = preflight.critical === 0;
+
+  const loadOpenRouterModels = async (): Promise<void> => {
+    if (openRouterLoading) return;
+    setOpenRouterLoading(true);
+    setOpenRouterError('');
+    try {
+      const items = await fetchOpenRouterModels(apiKey);
+      setOpenRouterModels(items);
+      if (items.length > 0 && (!model.trim() || model === 'deepseek-chat')) {
+        setModel(items[0].id);
+      }
+    } catch (e) {
+      setOpenRouterError(e instanceof Error ? e.message : 'openrouter_models_load_failed');
+    } finally {
+      setOpenRouterLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (provider !== 'openrouter') return;
+    if (openRouterModels.length > 0) return;
+    if (apiKey.trim().length < 6) return;
+    void loadOpenRouterModels();
+  }, [provider, apiKey, openRouterModels.length]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -565,7 +592,33 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         </label>
         <label>
           Модель
-          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
+          <input
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder={provider === 'openrouter' ? 'например: openai/gpt-4o-mini' : 'deepseek-chat'}
+            list={provider === 'openrouter' && openRouterModels.length > 0 ? 'openrouter-models' : undefined}
+          />
+          {provider === 'openrouter' && openRouterModels.length > 0 && (
+            <datalist id="openrouter-models">
+              {openRouterModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name ? `${m.name}${m.context_length ? ` (${m.context_length})` : ''}` : m.id}
+                </option>
+              ))}
+            </datalist>
+          )}
+          {provider === 'openrouter' && (
+            <div className="actions" style={{ marginTop: 8 }}>
+              <button type="button" onClick={() => void loadOpenRouterModels()} disabled={openRouterLoading}>
+                {openRouterLoading ? 'Загрузка моделей...' : `Загрузить модели OpenRouter (${openRouterModels.length || 0})`}
+              </button>
+            </div>
+          )}
+          {provider === 'openrouter' && openRouterError && (
+            <div className="warn" style={{ marginTop: 6 }}>
+              OpenRouter models: {openRouterError}
+            </div>
+          )}
         </label>
         <label>
           API-ключ

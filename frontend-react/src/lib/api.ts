@@ -213,6 +213,12 @@ const API_ENDPOINTS: Record<Provider, string> = {
   deepseek: 'https://api.deepseek.com/chat/completions'
 };
 
+export type OpenRouterModel = {
+  id: string;
+  name?: string;
+  context_length?: number;
+};
+
 function normalizeModelForProvider(provider: Provider, model: string): string {
   const raw = String(model || '').trim();
   if (!raw) return raw;
@@ -225,6 +231,27 @@ function normalizeModelForProvider(provider: Provider, model: string): string {
     return tail || raw;
   }
   return raw;
+}
+
+export async function fetchOpenRouterModels(apiKey: string): Promise<OpenRouterModel[]> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'HTTP-Referer': sanitizeHeaderValue('https://openrouter.ai'),
+    'X-Title': sanitizeHeaderValue('TZ Generator React')
+  };
+  const cleanKey = sanitizeHeaderValue(apiKey).replace(/^Bearer\s+/i, '');
+  if (cleanKey) headers.Authorization = `Bearer ${cleanKey}`;
+
+  const resp = await axios.get('https://openrouter.ai/api/v1/models', { headers, timeout: 30000 });
+  const items = Array.isArray(resp.data?.data) ? (resp.data.data as Array<Record<string, unknown>>) : [];
+  return items
+    .map((m) => ({
+      id: String(m.id || '').trim(),
+      name: typeof m.name === 'string' ? m.name : undefined,
+      context_length: Number.isFinite(m.context_length as number) ? Number(m.context_length) : undefined
+    }))
+    .filter((m) => !!m.id)
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export async function generateItemSpecs(

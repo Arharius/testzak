@@ -18,8 +18,6 @@ import {
 } from './lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from './types/schemas';
 
-type ThemeMode = 'legacy' | 'aurelia' | 'gala';
-
 function download(name: string, content: string, type: string): void {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -31,11 +29,6 @@ function download(name: string, content: string, type: string): void {
 }
 
 export function App() {
-  const [theme, setTheme] = useState<ThemeMode>(() => {
-    const saved = localStorage.getItem('tz_react_theme');
-    if (saved === 'legacy' || saved === 'aurelia' || saved === 'gala') return saved;
-    return 'legacy';
-  });
   const [automationSettings, setAutomationState] = useState<AutomationSettings>(getAutomationSettings());
   const [platformSettings, setPlatformState] = useState<PlatformIntegrationSettings>(getPlatformSettings());
   const [refreshTick, setRefreshTick] = useState(0);
@@ -67,7 +60,7 @@ export function App() {
         customerInn: platformSettings.customerInn,
         items: []
       };
-      return postPlatformDraft(platformSettings, payload);
+      return postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload);
     },
     onSuccess: () => setRefreshTick((x) => x + 1)
   });
@@ -87,46 +80,17 @@ export function App() {
   };
 
   return (
-    <main className={`layout theme-${theme}`}>
+    <main className="layout">
+      <div className="bg-layer" aria-hidden="true">
+        <span className="orb orb-1"></span>
+        <span className="orb orb-2"></span>
+        <span className="orb orb-3"></span>
+      </div>
+
       <header className="hero">
-        <div className="title-row">
-          <div>
-            <h1>Генератор ТЗ</h1>
-            <p>Автоматизация закупок, ТЗ и комплаенс 44/223-ФЗ.</p>
-          </div>
-          <div className="theme-switch" role="group" aria-label="Переключатель темы">
-            <button
-              type="button"
-              className={theme === 'legacy' ? 'active' : ''}
-              onClick={() => {
-                setTheme('legacy');
-                localStorage.setItem('tz_react_theme', 'legacy');
-              }}
-            >
-              Классика
-            </button>
-            <button
-              type="button"
-              className={theme === 'aurelia' ? 'active' : ''}
-              onClick={() => {
-                setTheme('aurelia');
-                localStorage.setItem('tz_react_theme', 'aurelia');
-              }}
-            >
-              Аурелия
-            </button>
-            <button
-              type="button"
-              className={theme === 'gala' ? 'active' : ''}
-              onClick={() => {
-                setTheme('gala');
-                localStorage.setItem('tz_react_theme', 'gala');
-              }}
-            >
-              Гала
-            </button>
-          </div>
-        </div>
+        <span className="hero-chip">44/223-ФЗ</span>
+        <h1>Генератор ТЗ</h1>
+        <p>Премиальная рабочая среда закупок: спецификации, КТРУ/ОКПД2 и контроль комплаенса.</p>
       </header>
 
       <AutomationPanel

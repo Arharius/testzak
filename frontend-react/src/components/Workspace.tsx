@@ -346,9 +346,6 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       if (!Number.isFinite(row.qty) || row.qty < 1) {
         issues.push({ level: 'critical', message: `Строка #${idx + 1}: количество должно быть не менее 1.` });
       }
-      if (!row.internetHints && row.model.trim().length >= 4) {
-        issues.push({ level: 'warn', message: `Строка #${idx + 1}: рекомендуется подтянуть данные из интернета по конкретной модели.` });
-      }
     });
     if (lawMode === '223' && !platformSettings.orgName.trim()) {
       issues.push({ level: 'warn', message: '223-ФЗ: заполните организацию заказчика.' });

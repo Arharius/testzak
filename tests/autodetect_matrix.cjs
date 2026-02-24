@@ -101,6 +101,16 @@ const CASES_BY_TYPE = {
     'IRU Home 310',
     'Yadro Vegman N110',
     'YADRO V',
+    'Системный блок офисный',
+    'Системник Core i5',
+    'Desktop workstation',
+    'Рабочая станция в корпусе tower',
+  ],
+  monitor: [
+    'Монитор 24 дюйма IPS',
+    'Monitor 27 QHD 165Hz',
+    'LCD display 24 inch',
+    '4K OLED monitor',
   ],
   dvd: [
     'DVD-R Verbatim 4.7GB',
@@ -306,6 +316,8 @@ const FALSE_POSITIVE_CASES = [
   { input: 'г', initial: 'pc', expected: 'pc' },
   { input: 'гр', initial: 'pc', expected: 'pc' },
   { input: 'gra', initial: 'pc', expected: 'pc' },
+  { input: 'rdw', initial: 'pc', expected: 'pc' },
+  { input: 'RDW', initial: 'pc', expected: 'pc' },
   { input: 'zzzz', initial: 'pc', expected: 'pc' },
 ];
 

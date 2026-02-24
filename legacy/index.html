@@ -1971,7 +1971,9 @@ const MODEL_TO_TYPE = {
   'hdmi': 'hdmiCable', 'displayport': 'hdmiCable', 'dp cable': 'hdmiCable', 'dvi': 'hdmiCable', 'vga': 'hdmiCable',
   'кабель питания': 'powerCable', 'power cord': 'powerCable', 'iec c13': 'powerCable', 'iec c14': 'powerCable',
   // Компьютеры и серверы (бренды/серии)
-  'system unit': 'pc', 'desktop': 'pc', 'мини пк': 'pc', 'mini pc': 'pc', 'sff': 'pc',
+  'system unit': 'pc', 'desktop': 'pc', 'workstation': 'pc', 'рабочая станция': 'pc',
+  'системный блок': 'pc', 'системник': 'pc', 'персональный компьютер': 'pc',
+  'мини пк': 'pc', 'mini pc': 'pc', 'sff': 'pc', 'microtower': 'pc', 'mini tower': 'pc', 'tower pc': 'pc',
   'optiplex': 'pc', 'prodesk': 'pc', 'elitedesk': 'pc', 'thinkcentre': 'pc',
   'сервер': 'server', 'server': 'server', 'rack server': 'serverRack', 'tower server': 'server',
   'xeon': 'server', 'epyc': 'server', 'dell poweredge': 'server', 'hpe proliant': 'server',
@@ -1983,7 +1985,8 @@ const MODEL_TO_TYPE = {
   'san': 'san', 'схд': 'san', 'storage array': 'san',
   'патч панель': 'patchPanel', 'patch panel': 'patchPanel', 'медиаконвертер': 'mediaConverter', 'media converter': 'mediaConverter',
   // Периферия
-  'монитор': 'monitor', 'monitor': 'monitor', 'printer': 'printer', 'принтер': 'printer',
+  'монитор': 'monitor', 'monitor': 'monitor', 'дисплей': 'monitor', 'display': 'monitor', 'lcd': 'monitor',
+  'led monitor': 'monitor', 'ips monitor': 'monitor', 'printer': 'printer', 'принтер': 'printer',
   'мфу': 'mfu', 'scanner': 'scanner', 'сканер': 'scanner',
   'web camera': 'webcam', 'вебкамера': 'webcam', 'веб камера': 'webcam',
   'headset': 'headset', 'гарнитура': 'headset', 'наушники': 'headset',
@@ -2889,6 +2892,21 @@ function inferTypeByStrongKeywords(value) {
   const v = normalizeDetectText(value);
   if (!v) return '';
 
+  // Краткие аббревиатуры 2-4 символа без явных маркеров — оставляем на этап списка вариантов.
+  if (/^[a-zа-я]{2,4}\d{0,2}$/i.test(v)) {
+    return '';
+  }
+
+  // Мониторы и дисплеи: выносим выше СУБД/серверов для снижения ложных software-срабатываний.
+  if (/(монитор|monitor|дисплей|display|lcd|oled|ips|va panel|tn panel|\b\d{2,3}\s?(?:hz|гц)\b|\b\d{2,3}\s?(?:дюйм|\"|inch)\b|fhd|qhd|uhd|4k)/i.test(v)) {
+    return 'monitor';
+  }
+
+  // Системные блоки/рабочие станции.
+  if (/(системн(?:ый)? блок|системник|desktop pc|desktop|workstation|рабочая станция|персональный компьютер|microtower|mini tower|\bsff\b|\bmt\b|\bdt\b)/i.test(v)) {
+    return 'pc';
+  }
+
   // Приоритет для СУБД, чтобы "sql server" не улетел в hardware server.
   if (/(sql server|postgres(?:ql)?|mysql|mariadb|oracle|mongodb|clickhouse|greenplum|db2|tantor|jatoba|субд)/i.test(v)) {
     return 'dbms';
@@ -3113,6 +3131,20 @@ function buildHeuristicCandidates(query, hints) {
     scores.laptop = (scores.laptop || 0) + 1;
     scores.printer = (scores.printer || 0) + 1;
   }
+  if (/(монитор|monitor|display|дисплей|lcd|oled|ips|qhd|uhd|4k)/i.test(combined)) {
+    scores.monitor = (scores.monitor || 0) + 5;
+  }
+  if (/(системн(?:ый)? блок|системник|desktop|workstation|рабочая станция|microtower|mini tower|\bsff\b)/i.test(combined)) {
+    scores.pc = (scores.pc || 0) + 5;
+  }
+  if (/^[a-zа-я]{2,4}\d{0,2}$/i.test(combined)) {
+    // Короткая аббревиатура: сохраняем аппаратные варианты в топе.
+    scores.pc = (scores.pc || 0) + 4;
+    scores.monitor = (scores.monitor || 0) + 3;
+    scores.printer = (scores.printer || 0) + 2;
+    scores.laptop = (scores.laptop || 0) + 2;
+    scores.server = (scores.server || 0) + 2;
+  }
 
   return Object.entries(scores)
     .filter(([type]) => GOODS_CATALOG[type])
@@ -3177,11 +3209,19 @@ function prioritizeCandidates(rowId, query, candidates) {
     push({ type: currentType, model: query, reason: 'Текущий выбранный тип' });
   }
 
-  // 2) Основные кандидаты (AI + эвристика).
+  // 2) Для коротких/неоднозначных аббревиатур добавляем железо в ПРИОРИТЕТЕ.
+  const isShortAmbiguous = q.length <= 4 || /^[a-zа-я]{2,5}\d{0,2}$/i.test(q);
+  if (isShortAmbiguous) {
+    const hardwareFallbackFirst = ['pc', 'monitor', 'printer', 'laptop', 'server'];
+    for (const type of hardwareFallbackFirst) {
+      push({ type, model: query, reason: 'Базовый аппаратный вариант для короткой аббревиатуры' });
+    }
+  }
+
+  // 3) Основные кандидаты (AI + эвристика).
   for (const c of candidates) push(c);
 
-  // 3) Для коротких/неоднозначных аббревиатур добавляем железо в список выбора.
-  const isShortAmbiguous = q.length <= 4 || /^[a-zа-я]{2,5}\d{0,2}$/i.test(q);
+  // 4) Если после основного набора остались только software-кандидаты — добавляем железо.
   const onlySoftwareNow = out.length > 0 && out.every(c => isSoftwareType(c.type));
   if (isShortAmbiguous || onlySoftwareNow) {
     const hardwareFallback = ['pc', 'monitor', 'printer', 'laptop', 'server'];

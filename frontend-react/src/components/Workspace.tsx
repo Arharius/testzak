@@ -315,6 +315,33 @@ function buildNormativeBlock(lawMode: LawMode): string {
   ].join('\n');
 }
 
+function buildGeneralRequirements(lawMode: LawMode): Array<{ name: string; value: string }> {
+  return [
+    {
+      name: 'Состояние товара',
+      value: 'Новый, заводской сборки, серийный, не бывший в эксплуатации, не восстановленный.'
+    },
+    {
+      name: 'Соответствие стандартам',
+      value: 'Товар должен отвечать требованиям качества, безопасности и иным обязательным требованиям законодательства РФ.'
+    },
+    {
+      name: 'Гарантия производителя',
+      value: 'Не менее 12 (двенадцати) месяцев с даты поставки.'
+    },
+    {
+      name: 'Гарантия поставщика',
+      value: 'Не менее срока гарантии производителя.'
+    },
+    {
+      name: 'Товарный знак',
+      value: lawMode === '44'
+        ? 'При указании товарного знака применять формулировку «или эквивалент» (ст. 33 44-ФЗ).'
+        : 'Допускается указание товарного знака в соответствии с положением о закупке заказчика.'
+    }
+  ];
+}
+
 function makeCell(text: string, bold = false): TableCell {
   return new TableCell({
     children: [
@@ -736,6 +763,14 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       });
       sections.push(metaTable, new Paragraph({ text: '' }));
 
+      const reqTable = new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: buildGeneralRequirements(lawMode).map((item) =>
+          new TableRow({ children: [makeCell(item.name, true), makeCell(item.value)] })
+        )
+      });
+      sections.push(reqTable, new Paragraph({ text: '' }));
+
       const specRows: TableRow[] = [
         new TableRow({
           children: [
@@ -824,15 +859,20 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       .map(({ row, parsed, specs }) => {
         const meta = parsed?.meta || {};
         const head = `<h3>${escapeHtml(GOODS_LABELS[row.type])} / ${escapeHtml(row.model)}</h3>`;
-        const metaHtml = `
-          <div class="meta">
-            <span><strong>ОКПД2:</strong> ${escapeHtml(meta.okpd2_code || 'не указано')}</span>
-            <span><strong>КТРУ:</strong> ${escapeHtml(meta.ktru_code || 'не указано')}</span>
-            <span><strong>ПП 1875:</strong> ${escapeHtml(meta.law175_status || 'не указано')}${meta.law175_basis ? ` (${escapeHtml(meta.law175_basis)})` : ''}</span>
-          </div>
-        `;
+        const metaRowsHtml = [
+          ['Наименование объекта поставки', GOODS_LABELS[row.type]],
+          ['Модель / описание', row.model],
+          ['Код ОКПД2', meta.okpd2_code || 'не указано'],
+          ['Код КТРУ', meta.ktru_code || 'не указано'],
+          ['ПП 1875', `${meta.law175_status || 'не указано'}${meta.law175_basis ? ` (${meta.law175_basis})` : ''}`]
+        ]
+          .map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`)
+          .join('');
+        const reqRowsHtml = buildGeneralRequirements(lawMode)
+          .map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.value)}</td></tr>`)
+          .join('');
         if (!specs.length) {
-          return `${head}${metaHtml}<pre>${escapeHtml(String(row.result || ''))}</pre>`;
+          return `${head}<table><tbody>${metaRowsHtml}</tbody></table><table><tbody>${reqRowsHtml}</tbody></table><pre>${escapeHtml(String(row.result || ''))}</pre>`;
         }
         const rowsHtml = specs
           .map(
@@ -842,7 +882,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
             }
           )
           .join('');
-        return `${head}${metaHtml}<table><thead><tr><th>№</th><th>Наименование характеристики</th><th>Значение / требование</th><th>Ед. изм.</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+        return `${head}<table><tbody>${metaRowsHtml}</tbody></table><table><tbody>${reqRowsHtml}</tbody></table><table><thead><tr><th>№</th><th>Наименование характеристики</th><th>Значение / требование</th><th>Ед. изм.</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
       })
       .join('');
 
@@ -1154,13 +1194,34 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
           {structuredRows.map(({ row, parsed, specs }) => (
             <article key={row.id} className="tz-item">
               <h3>{GOODS_LABELS[row.type]} / {row.model}</h3>
-              <div className="tz-meta">
-                <span><strong>ОКПД2:</strong> {parsed?.meta?.okpd2_code || 'не указано'}</span>
-                <span><strong>КТРУ:</strong> {parsed?.meta?.ktru_code || 'не указано'}</span>
-                <span>
-                  <strong>ПП 1875:</strong> {parsed?.meta?.law175_status || 'не указано'}
-                  {parsed?.meta?.law175_basis ? ` (${parsed.meta.law175_basis})` : ''}
-                </span>
+              <div className="rows-table-wrap">
+                <table className="rows-table">
+                  <tbody>
+                    <tr><td>Наименование объекта поставки</td><td>{GOODS_LABELS[row.type]}</td></tr>
+                    <tr><td>Модель / описание</td><td>{row.model}</td></tr>
+                    <tr><td>Код ОКПД2</td><td>{parsed?.meta?.okpd2_code || 'не указано'}</td></tr>
+                    <tr><td>Код КТРУ</td><td>{parsed?.meta?.ktru_code || 'не указано'}</td></tr>
+                    <tr>
+                      <td>ПП 1875</td>
+                      <td>
+                        {parsed?.meta?.law175_status || 'не указано'}
+                        {parsed?.meta?.law175_basis ? ` (${parsed.meta.law175_basis})` : ''}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="rows-table-wrap">
+                <table className="rows-table">
+                  <tbody>
+                    {buildGeneralRequirements(lawMode).map((req) => (
+                      <tr key={`${row.id}-req-${req.name}`}>
+                        <td>{req.name}</td>
+                        <td>{req.value}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
               {specs.length > 0 ? (
                 <div className="rows-table-wrap">

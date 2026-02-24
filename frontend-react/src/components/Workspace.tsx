@@ -3,7 +3,14 @@ import { useMutation } from '@tanstack/react-query';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
-import { fetchOpenRouterModels, generateItemSpecs, postPlatformDraft, sendEventThroughBestChannel } from '../lib/api';
+import {
+  fetchOpenRouterModels,
+  fetchPublicBillingReadiness,
+  generateItemSpecs,
+  postPlatformDraft,
+  sendEventThroughBestChannel,
+  type BillingReadiness
+} from '../lib/api';
 import { appendAutomationLog } from '../lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from '../types/schemas';
 import { buildTypeCandidates, detectTypeDetailed, type GoodsType } from '../lib/autodetect';
@@ -224,6 +231,8 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [openRouterModels, setOpenRouterModels] = useState<Array<{ id: string; name?: string; context_length?: number }>>([]);
   const [openRouterLoading, setOpenRouterLoading] = useState(false);
   const [openRouterError, setOpenRouterError] = useState('');
+  const [billingReadiness, setBillingReadiness] = useState<BillingReadiness | null>(null);
+  const [billingReadinessLoading, setBillingReadinessLoading] = useState(false);
   const [rows, setRows] = useState<Row[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
   const [tzText, setTzText] = useState('');
   const [bulkLookup, setBulkLookup] = useState(false);
@@ -251,6 +260,9 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     if (automationSettings.billingEnabled && !automationSettings.tenantId.trim()) {
       issues.push({ level: 'warn', message: 'Billing telemetry: заполните Tenant ID.' });
     }
+    if (billingReadiness && !billingReadiness.ready_for_checkout) {
+      issues.push({ level: 'warn', message: 'YooKassa не готова к checkout: заполните env на backend.' });
+    }
     if (platformSettings.autoSendDraft && !platformSettings.endpoint.trim()) {
       issues.push({ level: 'warn', message: 'Не задан endpoint коннектора ЕИС/ЭТП.' });
     }
@@ -269,7 +281,8 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     platformSettings.endpoint,
     automationSettings.requireHttpsForIntegrations,
     automationSettings.billingEnabled,
-    automationSettings.tenantId
+    automationSettings.tenantId,
+    billingReadiness
   ]);
 
   const canGenerate = preflight.critical === 0;
@@ -297,6 +310,21 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     if (apiKey.trim().length < 6) return;
     void loadOpenRouterModels();
   }, [provider, apiKey, openRouterModels.length]);
+
+  const loadBillingReadiness = async (): Promise<void> => {
+    setBillingReadinessLoading(true);
+    try {
+      const base = automationSettings.backendApiBase.trim() || 'https://tz-generator-backend.onrender.com';
+      const data = await fetchPublicBillingReadiness(base);
+      setBillingReadiness(data);
+    } finally {
+      setBillingReadinessLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadBillingReadiness();
+  }, [automationSettings.backendApiBase]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -743,6 +771,46 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="billing-readiness-box">
+        <div className="billing-readiness-head">
+          <strong>Платежная готовность (YooKassa)</strong>
+          <button type="button" onClick={() => void loadBillingReadiness()} disabled={billingReadinessLoading}>
+            {billingReadinessLoading ? 'Проверка...' : 'Обновить'}
+          </button>
+        </div>
+        {billingReadiness ? (
+          <>
+            <div className={billingReadiness.ready_for_checkout ? 'ok' : 'warn'}>
+              {billingReadiness.ready_for_checkout ? 'Checkout готов к оплатам.' : 'Checkout пока не готов.'}
+            </div>
+            <div className="billing-grid">
+              <div>Shop ID: {billingReadiness.configured.shop_id ? '✅' : '❌'}</div>
+              <div>Secret Key: {billingReadiness.configured.secret_key ? '✅' : '❌'}</div>
+              <div>Return URL: {billingReadiness.configured.return_url ? '✅' : '❌'}</div>
+              <div>Webhook Secret: {billingReadiness.configured.webhook_secret ? '✅' : '❌'}</div>
+            </div>
+            <div className="muted">
+              Return URL: {billingReadiness.return_url || 'не задан'}
+            </div>
+            <div className="muted">
+              Webhook: {(automationSettings.backendApiBase.trim() || 'https://tz-generator-backend.onrender.com').replace(/\/+$/, '')}
+              {billingReadiness.webhook_path}
+            </div>
+            {!billingReadiness.ready_for_checkout && billingReadiness.next_steps?.length > 0 && (
+              <ul className="preflight-list" style={{ marginTop: 8 }}>
+                {billingReadiness.next_steps.map((step, idx) => (
+                  <li key={`bill-step-${idx}`} className="warn">⚠️ {step}</li>
+                ))}
+              </ul>
+            )}
+          </>
+        ) : (
+          <div className="warn">
+            Не удалось получить статус billing readiness. Проверьте backend API base в разделе Автоматизация.
+          </div>
+        )}
       </div>
 
       <div className="preflight-box">

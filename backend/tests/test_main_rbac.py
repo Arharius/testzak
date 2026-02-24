@@ -193,3 +193,30 @@ async def test_yookassa_checkout_requires_credentials(rbac_db):
             assert resp.status_code == 400
     finally:
         backend_main.YOOKASSA_SHOP_ID, backend_main.YOOKASSA_SECRET_KEY = old_shop, old_key
+
+
+@pytest.mark.asyncio
+async def test_public_billing_readiness_endpoint(rbac_db):
+    old_shop = backend_main.YOOKASSA_SHOP_ID
+    old_key = backend_main.YOOKASSA_SECRET_KEY
+    old_return = backend_main.YOOKASSA_RETURN_URL
+    old_hook = backend_main.YOOKASSA_WEBHOOK_SECRET
+    backend_main.YOOKASSA_SHOP_ID = ""
+    backend_main.YOOKASSA_SECRET_KEY = ""
+    backend_main.YOOKASSA_RETURN_URL = "https://tz-generator-frontend.onrender.com"
+    backend_main.YOOKASSA_WEBHOOK_SECRET = ""
+    try:
+        async with AsyncClient(transport=ASGITransport(app=backend_main.app), base_url="http://test") as client:
+            resp = await client.get("/api/public/billing/readiness")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["provider"] == "yookassa"
+            assert data["ready_for_checkout"] is False
+            assert data["configured"]["shop_id"] is False
+            assert data["configured"]["secret_key"] is False
+            assert data["configured"]["return_url"] is True
+    finally:
+        backend_main.YOOKASSA_SHOP_ID = old_shop
+        backend_main.YOOKASSA_SECRET_KEY = old_key
+        backend_main.YOOKASSA_RETURN_URL = old_return
+        backend_main.YOOKASSA_WEBHOOK_SECRET = old_hook

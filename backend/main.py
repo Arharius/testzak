@@ -165,6 +165,15 @@ class YooKassaCheckoutIn(BaseModel):
     plan_code: str
     return_url: Optional[str] = ""
 
+class BillingReadinessOut(BaseModel):
+    ok: bool
+    provider: str
+    ready_for_checkout: bool
+    return_url: str
+    webhook_path: str
+    configured: Dict[str, bool]
+    next_steps: List[str]
+
 
 def _can_access_doc(user: User, doc: TZDocument) -> bool:
     if doc.tenant_id != user.tenant_id:
@@ -662,6 +671,38 @@ def tenant_plan_limits(user: User = Depends(get_current_user), db: Session = Dep
         "limits": info,
         "usage": {"users_total": users_total, "docs_month_total": docs_month},
         "unlimited": _is_superadmin(user),
+    }
+
+@app.get("/api/public/billing/readiness", response_model=BillingReadinessOut)
+def public_billing_readiness():
+    has_shop = bool(YOOKASSA_SHOP_ID)
+    has_secret = bool(YOOKASSA_SECRET_KEY)
+    has_return = bool(YOOKASSA_RETURN_URL)
+    has_webhook_secret = bool(YOOKASSA_WEBHOOK_SECRET)
+    next_steps: list[str] = []
+    if not has_shop:
+        next_steps.append("Укажите YOOKASSA_SHOP_ID в backend env.")
+    if not has_secret:
+        next_steps.append("Укажите YOOKASSA_SECRET_KEY в backend env.")
+    if not has_return:
+        next_steps.append("Укажите YOOKASSA_RETURN_URL в backend env.")
+    if not has_webhook_secret:
+        next_steps.append("Укажите YOOKASSA_WEBHOOK_SECRET в backend env и в настройках webhook YooKassa.")
+    if not next_steps:
+        next_steps.append("Billing готов: можно проводить checkout и webhook подтверждение.")
+    return {
+        "ok": True,
+        "provider": "yookassa",
+        "ready_for_checkout": has_shop and has_secret,
+        "return_url": YOOKASSA_RETURN_URL,
+        "webhook_path": "/api/tenant/payments/yookassa/webhook",
+        "configured": {
+            "shop_id": has_shop,
+            "secret_key": has_secret,
+            "return_url": has_return,
+            "webhook_secret": has_webhook_secret,
+        },
+        "next_steps": next_steps,
     }
 
 

@@ -42,6 +42,21 @@ export type TenantAlert = {
   message: string;
 };
 
+export type BillingReadiness = {
+  ok: boolean;
+  provider: string;
+  ready_for_checkout: boolean;
+  return_url: string;
+  webhook_path: string;
+  configured: {
+    shop_id: boolean;
+    secret_key: boolean;
+    return_url: boolean;
+    webhook_secret: boolean;
+  };
+  next_steps: string[];
+};
+
 type DeliveryPolicy = {
   retries: number;
   baseBackoffMs: number;
@@ -446,5 +461,19 @@ export async function fetchTenantAlerts(settings: AutomationSettings): Promise<T
     return Array.isArray(resp.data?.items) ? (resp.data.items as TenantAlert[]) : [];
   } catch {
     return [];
+  }
+}
+
+export async function fetchPublicBillingReadiness(
+  backendApiBase: string
+): Promise<BillingReadiness | null> {
+  const base = String(backendApiBase || '').trim();
+  if (!base) return null;
+  try {
+    const url = `${base.replace(/\/+$/, '')}/api/public/billing/readiness`;
+    const resp = await axios.get(url, { timeout: 10000 });
+    return resp.data as BillingReadiness;
+  } catch {
+    return null;
   }
 }

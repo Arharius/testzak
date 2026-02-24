@@ -4,6 +4,18 @@ import type { AutomationSettings } from '../types/schemas';
 import { buildPlatformDraftRequest, validatePlatformSettings } from './platformAdapters';
 import type { PlatformIntegrationSettings } from '../types/schemas';
 
+export type IntegrationMetrics = {
+  status: string;
+  queue_total: number;
+  history_total: number;
+  dead_letter_total: number;
+  oldest_queued_seconds: number;
+  flush_24h: { sent: number; queued: number; dead_letter: number };
+  target_webhook_configured: boolean;
+  integration_auth_enabled: boolean;
+  integration_max_attempts: number;
+};
+
 type DeliveryPolicy = {
   retries: number;
   baseBackoffMs: number;
@@ -255,4 +267,41 @@ export async function sendEventThroughBestChannel(
     at: new Date().toISOString(),
     payload
   }, deliveryPolicy);
+}
+
+export async function fetchBackendMetrics(settings: AutomationSettings): Promise<IntegrationMetrics | null> {
+  if (!settings.backendApiBase) return null;
+  const url = `${settings.backendApiBase.replace(/\/+$/, '')}/api/v1/integration/metrics`;
+  if (settings.requireHttpsForIntegrations) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:' && parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+        appendAutomationLog({
+          at: new Date().toISOString(),
+          event: 'metrics.blocked',
+          ok: false,
+          note: 'backendApiBase must be https'
+        });
+        return null;
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    const headers: Record<string, string> = {};
+    if (settings.backendApiToken) headers.Authorization = `Bearer ${settings.backendApiToken}`;
+    const resp = await axios.get(url, { headers, timeout: 15000 });
+    appendAutomationLog({ at: new Date().toISOString(), event: 'metrics.fetch', ok: true });
+    return (resp.data?.metrics || null) as IntegrationMetrics | null;
+  } catch (error) {
+    appendAutomationLog({
+      at: new Date().toISOString(),
+      event: 'metrics.fetch',
+      ok: false,
+      note: (error instanceof Error ? error.message : 'unknown_error').slice(0, 140)
+    });
+    return null;
+  }
 }

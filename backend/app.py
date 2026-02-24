@@ -2,13 +2,13 @@ import json
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -21,10 +21,12 @@ STORE_FILE = Path(os.getenv("INTEGRATION_STORE_FILE", "/tmp/tz_integration_store
 AUDIT_DB_FILE = Path(os.getenv("INTEGRATION_AUDIT_DB", "/tmp/tz_integration_audit.db"))
 TARGET_WEBHOOK_URL = os.getenv("INTEGRATION_TARGET_WEBHOOK_URL", "").strip()
 TARGET_WEBHOOK_TIMEOUT = float(os.getenv("INTEGRATION_TARGET_TIMEOUT", "12"))
+INTEGRATION_API_TOKEN = os.getenv("INTEGRATION_API_TOKEN", "").strip()
+INTEGRATION_MAX_ATTEMPTS = max(1, int(os.getenv("INTEGRATION_MAX_ATTEMPTS", "5")))
 
 
 def _default_store() -> dict[str, Any]:
-    return {"queue": [], "history": []}
+    return {"queue": [], "history": [], "dead_letter": []}
 
 
 def load_store() -> dict[str, Any]:
@@ -36,6 +38,7 @@ def load_store() -> dict[str, Any]:
             return _default_store()
         raw.setdefault("queue", [])
         raw.setdefault("history", [])
+        raw.setdefault("dead_letter", [])
         return raw
     except Exception:
         return _default_store()
@@ -170,6 +173,7 @@ def flush_queue(limit: int = 100) -> dict[str, Any]:
     success = 0
     failed = 0
     remained: list[dict[str, Any]] = []
+    dead_letter_count = 0
 
     for idx, item in enumerate(queue):
         if idx >= limit:
@@ -195,24 +199,110 @@ def flush_queue(limit: int = 100) -> dict[str, Any]:
             log_audit("queue.flush_item", "sent", record_id=item.get("id", ""), note=note)
         else:
             failed += 1
-            item["status"] = "queued"
+            attempts = int(item.get("attempts", 0))
             item["last_result"] = note
-            remained.append(item)
-            log_audit("queue.flush_item", "queued", record_id=item.get("id", ""), note=note)
+            if attempts >= INTEGRATION_MAX_ATTEMPTS:
+                item["status"] = "dead_letter"
+                item["dead_letter_at"] = utc_now()
+                store["dead_letter"].append(item)
+                dead_letter_count += 1
+                log_audit("queue.flush_item", "dead_letter", record_id=item.get("id", ""), note=note)
+            else:
+                item["status"] = "queued"
+                remained.append(item)
+                log_audit("queue.flush_item", "queued", record_id=item.get("id", ""), note=note)
 
     if len(remained) > 2000:
         remained = remained[-2000:]
     store["queue"] = remained
     if len(store["history"]) > 5000:
         store["history"] = store["history"][-5000:]
+    if len(store["dead_letter"]) > 5000:
+        store["dead_letter"] = store["dead_letter"][-5000:]
     save_store(store)
     return {
         "processed": processed,
         "success": success,
         "failed": failed,
+        "dead_lettered": dead_letter_count,
         "queue_remaining": len(remained),
         "target_configured": bool(TARGET_WEBHOOK_URL),
     }
+
+
+def parse_iso_at(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def query_audit_status_counts(hours: int = 24) -> dict[str, int]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    counts: dict[str, int] = {"sent": 0, "queued": 0, "dead_letter": 0}
+    try:
+        with sqlite3.connect(AUDIT_DB_FILE) as conn:
+            rows = conn.execute(
+                """
+                SELECT status, COUNT(*)
+                FROM audit_log
+                WHERE action = 'queue.flush_item' AND at >= ?
+                GROUP BY status
+                """,
+                (cutoff,),
+            ).fetchall()
+        for status, cnt in rows:
+            key = str(status or "")
+            if key in counts:
+                counts[key] = int(cnt or 0)
+    except Exception:
+        pass
+    return counts
+
+
+def integration_health_snapshot() -> dict[str, Any]:
+    store = load_store()
+    queue = store.get("queue", [])
+    history = store.get("history", [])
+    dead_letter = store.get("dead_letter", [])
+    now = datetime.now(timezone.utc)
+
+    oldest_queued_seconds = 0
+    if queue:
+        created_times = [parse_iso_at(str(item.get("created_at", ""))) for item in queue]
+        created_times = [t for t in created_times if t is not None]
+        if created_times:
+            oldest = min(created_times)
+            oldest_queued_seconds = max(0, int((now - oldest).total_seconds()))
+
+    counts_24h = query_audit_status_counts(24)
+    status = "ok"
+    if dead_letter:
+        status = "degraded"
+    if oldest_queued_seconds > 3600:
+        status = "degraded"
+
+    return {
+        "status": status,
+        "queue_total": len(queue),
+        "history_total": len(history),
+        "dead_letter_total": len(dead_letter),
+        "oldest_queued_seconds": oldest_queued_seconds,
+        "flush_24h": counts_24h,
+        "target_webhook_configured": bool(TARGET_WEBHOOK_URL),
+        "integration_auth_enabled": bool(INTEGRATION_API_TOKEN),
+        "integration_max_attempts": INTEGRATION_MAX_ATTEMPTS,
+    }
+
+
+def require_integration_auth(authorization: str | None = Header(default=None)) -> None:
+    if not INTEGRATION_API_TOKEN:
+        return
+    token = (authorization or "").strip()
+    if token.startswith("Bearer "):
+        token = token[7:].strip()
+    if token != INTEGRATION_API_TOKEN:
+        raise HTTPException(status_code=401, detail="unauthorized")
 
 
 class IntegrationEventIn(BaseModel):
@@ -230,7 +320,7 @@ class AuditQueryIn(BaseModel):
     limit: int = Field(default=100, ge=1, le=1000)
 
 
-app = FastAPI(title="TZ Generator Backend", version="1.1.0", docs_url="/docs")
+app = FastAPI(title="TZ Generator Backend", version="1.2.0", docs_url="/docs")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -243,12 +333,14 @@ init_audit_db()
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    store = load_store()
+    snap = integration_health_snapshot()
     return {
         "status": "ok",
-        "queue": len(store.get("queue", [])),
-        "history": len(store.get("history", [])),
-        "target_configured": bool(TARGET_WEBHOOK_URL),
+        "queue": snap["queue_total"],
+        "history": snap["history_total"],
+        "dead_letter": snap["dead_letter_total"],
+        "target_configured": snap["target_webhook_configured"],
+        "integration_status": snap["status"],
     }
 
 
@@ -258,7 +350,8 @@ def ping() -> dict[str, str]:
 
 
 @app.post("/api/v1/integration/event")
-def integration_event(body: IntegrationEventIn) -> dict[str, Any]:
+def integration_event(body: IntegrationEventIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_integration_auth(authorization)
     idem = (body.idempotency_key or "").strip()
     if idem:
         prev = get_idempotency_response(idem)
@@ -273,7 +366,8 @@ def integration_event(body: IntegrationEventIn) -> dict[str, Any]:
 
 
 @app.post("/api/v1/integration/draft")
-def integration_draft(payload: dict[str, Any]) -> dict[str, Any]:
+def integration_draft(payload: dict[str, Any], authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_integration_auth(authorization)
     idem = str(payload.get("idempotency_key", "")).strip() if isinstance(payload, dict) else ""
     if idem:
         prev = get_idempotency_response(idem)
@@ -288,22 +382,27 @@ def integration_draft(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 @app.get("/api/v1/integration/queue")
-def integration_queue() -> dict[str, Any]:
+def integration_queue(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_integration_auth(authorization)
     store = load_store()
     queue = store.get("queue", [])
     history = store.get("history", [])
+    dead_letter = store.get("dead_letter", [])
     return {
         "ok": True,
         "queue_total": len(queue),
         "history_total": len(history),
+        "dead_letter_total": len(dead_letter),
         "latest_queue": queue[-20:],
         "latest_history": history[-20:],
+        "latest_dead_letter": dead_letter[-20:],
         "target_webhook_configured": bool(TARGET_WEBHOOK_URL),
     }
 
 
 @app.post("/api/v1/integration/audit")
-def integration_audit(body: AuditQueryIn) -> dict[str, Any]:
+def integration_audit(body: AuditQueryIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_integration_auth(authorization)
     limit = body.limit
     try:
         with sqlite3.connect(AUDIT_DB_FILE) as conn:
@@ -331,9 +430,16 @@ def integration_audit(body: AuditQueryIn) -> dict[str, Any]:
 
 
 @app.post("/api/v1/integration/flush")
-def integration_flush(body: FlushIn) -> dict[str, Any]:
+def integration_flush(body: FlushIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_integration_auth(authorization)
     result = flush_queue(body.limit)
     if not result["target_configured"]:
         raise HTTPException(status_code=400, detail="INTEGRATION_TARGET_WEBHOOK_URL is not configured")
     log_audit("queue.flush", "ok", note=f"processed={result['processed']} success={result['success']} failed={result['failed']}")
     return {"ok": True, **result}
+
+
+@app.get("/api/v1/integration/metrics")
+def integration_metrics(authorization: str | None = Header(default=None)) -> dict[str, Any]:
+    require_integration_auth(authorization)
+    return {"ok": True, "metrics": integration_health_snapshot(), "at": utc_now()}

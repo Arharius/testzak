@@ -4,6 +4,7 @@ import { AutomationPanel } from './components/AutomationPanel';
 import { PlatformPanel } from './components/PlatformPanel';
 import { EventLog } from './components/EventLog';
 import { Workspace } from './components/Workspace';
+import { MonitoringPanel } from './components/MonitoringPanel';
 import { postPlatformDraft, postWebhook } from './lib/api';
 import {
   appendAutomationLog,
@@ -19,7 +20,7 @@ import {
 import type { AutomationSettings, PlatformIntegrationSettings } from './types/schemas';
 
 type ThemeMode = 'aurelia' | 'legacy' | 'gala';
-type SectionKey = 'workspace' | 'platform' | 'automation' | 'eventlog';
+type SectionKey = 'workspace' | 'platform' | 'automation' | 'monitoring' | 'eventlog';
 
 function download(name: string, content: string, type: string): void {
   const blob = new Blob([content], { type });
@@ -44,6 +45,7 @@ export function App() {
     workspace: true,
     platform: false,
     automation: false,
+    monitoring: false,
     eventlog: false
   });
 
@@ -229,6 +231,14 @@ export function App() {
             }}
           />
         )}
+      </section>
+
+      <section className="fold">
+        <button type="button" className="fold-head" onClick={() => toggleSection('monitoring')}>
+          <span>Мониторинг и SLA</span>
+          <span className="fold-state">{sectionOpen.monitoring ? 'Свернуть' : 'Развернуть'}</span>
+        </button>
+        {sectionOpen.monitoring && <MonitoringPanel automationSettings={automationSettings} />}
       </section>
 
       <section className="fold">

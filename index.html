@@ -838,8 +838,67 @@
             <button class="btn btn-info" type="button" onclick="runFullAutopilot()" style="padding:7px 14px;font-size:13px;">🚀 Запустить автопилот</button>
             <button class="btn btn-secondary" type="button" onclick="trainFromCurrentRows()" style="padding:7px 14px;font-size:13px;">🧠 Дообучить на текущих строках</button>
             <button class="btn btn-secondary" type="button" onclick="sendTestWebhook()" style="padding:7px 14px;font-size:13px;">🛰 Тест webhook</button>
+            <button class="btn btn-secondary" type="button" onclick="flushAutomationQueue(true)" style="padding:7px 14px;font-size:13px;">🔄 Повторить очередь webhook</button>
           </div>
           <div id="learningStatus" style="font-size:11px;color:#6b7280;margin-top:8px;">Локальное обучение: 0 шаблонов</div>
+          <div id="automationQueueStatus" style="font-size:11px;color:#6b7280;margin-top:4px;">Очередь webhook: 0</div>
+        </div>
+      </details>
+      <details class="api-section" style="margin-top:8px;">
+        <summary>🏛️ Интеграция с ЕИС и ЭТП</summary>
+        <div style="margin-top:8px;padding:10px;border:1px solid #d6e1ea;border-radius:10px;background:#f9fcff;">
+          <div class="form-row" style="margin-bottom:8px;">
+            <div class="form-group">
+              <label for="platformProfile">Площадка / контур</label>
+              <select id="platformProfile">
+                <option value="eis">ЕИС (zakupki.gov.ru)</option>
+                <option value="eis_223">ЕИС 223-ФЗ</option>
+                <option value="sber_ast">Сбер А</option>
+                <option value="rts_tender">РТС-тендер</option>
+                <option value="roseltorg">Росэлторг</option>
+                <option value="etp_gpb">ЭТП ГПБ</option>
+                <option value="tek_torg">ТЭК-Торг</option>
+                <option value="fabrikant">Фабрикант</option>
+                <option value="b2b_center">B2B-Center</option>
+                <option value="custom">Кастомный коннектор</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:2;min-width:260px;">
+              <label for="platformEndpoint">Endpoint коннектора</label>
+              <input id="platformEndpoint" type="text" placeholder="https://connector.example/api/eis/drafts" />
+            </div>
+          </div>
+          <div class="form-row" style="margin-bottom:8px;">
+            <div class="form-group">
+              <label for="platformApiToken">API token</label>
+              <input id="platformApiToken" type="text" placeholder="Bearer token" />
+            </div>
+            <div class="form-group">
+              <label for="platformCustomerInn">ИНН заказчика</label>
+              <input id="platformCustomerInn" type="text" placeholder="7700000000" />
+            </div>
+            <div class="form-group">
+              <label for="platformOrgName">Организация</label>
+              <input id="platformOrgName" type="text" placeholder="ГБУ/АО ..." />
+            </div>
+          </div>
+          <div class="form-row" style="margin-bottom:8px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
+              <input id="platformAutoExport" type="checkbox" style="width:auto;" /> Автоэкспорт пакета (JSON + XML) после генерации
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
+              <input id="platformAutoSend" type="checkbox" style="width:auto;" /> Автоотправка черновика в коннектор
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-secondary" type="button" onclick="savePlatformIntegrationSettings()" style="padding:7px 14px;font-size:13px;">💾 Сохранить профиль</button>
+            <button class="btn btn-secondary" type="button" onclick="exportProcurementPackage()" style="padding:7px 14px;font-size:13px;">📦 Экспорт пакета</button>
+            <button class="btn btn-secondary" type="button" onclick="sendPlatformDraftNow()" style="padding:7px 14px;font-size:13px;">📡 Отправить черновик</button>
+            <button class="btn btn-info" type="button" onclick="runEliteProcurementAutomation()" style="padding:7px 14px;font-size:13px;">🧠 Экстра-автоматизация</button>
+          </div>
+          <div id="platformStatus" style="font-size:11px;color:#6b7280;margin-top:8px;">Контур ЕИС/ЭТП: не настроен</div>
+          <div id="platformQueueStatus" style="font-size:11px;color:#6b7280;margin-top:4px;">Очередь коннектора: 0</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:6px;">Прямой API доступ к ЕИС/ЭТП зависит от вашей аккредитации, сертификатов и регламентов площадки. Для надёжной интеграции используйте собственный сервер-коннектор.</div>
         </div>
       </details>
     </div>
@@ -2125,6 +2184,32 @@ function loadAutomationSettings() {
   if (pickEl) pickEl.checked = automationSettings.autoPickTopCandidate !== false;
 }
 
+function loadAutomationQueue() {
+  try {
+    const raw = localStorage.getItem(AUTOMATION_QUEUE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    automationQueue = Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    automationQueue = [];
+  }
+}
+
+function saveAutomationQueue() {
+  try { localStorage.setItem(AUTOMATION_QUEUE_KEY, JSON.stringify(automationQueue)); } catch (_) {}
+  const el = document.getElementById('automationQueueStatus');
+  if (el) el.textContent = `Очередь webhook: ${automationQueue.length}`;
+}
+
+function enqueueAutomationEvent(eventName, payload) {
+  automationQueue.push({
+    eventName,
+    payload,
+    at: new Date().toISOString()
+  });
+  if (automationQueue.length > 100) automationQueue = automationQueue.slice(-100);
+  saveAutomationQueue();
+}
+
 function saveAutomationSettings() {
   const urlEl = document.getElementById('automationWebhook');
   const secEl = document.getElementById('automationSecret');
@@ -2138,17 +2223,21 @@ function saveAutomationSettings() {
   automationSettings.autoPickTopCandidate = !!pickEl?.checked;
   try { localStorage.setItem(AUTOMATION_SETTINGS_KEY, JSON.stringify(automationSettings)); } catch (_) {}
   hideError();
+  flushAutomationQueue(false);
 }
 
 async function sendAutomationEvent(eventName, payload) {
   const url = (automationSettings.webhookUrl || '').trim();
-  if (!url) return;
+  if (!url) return true;
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (automationSettings.webhookSecret) headers['X-TZ-Secret'] = automationSettings.webhookSecret;
-    await fetch(url, {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeout = controller ? setTimeout(() => controller.abort(), 10000) : null;
+    const response = await fetch(url, {
       method: 'POST',
       headers,
+      signal: controller?.signal,
       body: JSON.stringify({
         app: 'tz_generator',
         event: eventName,
@@ -2156,8 +2245,321 @@ async function sendAutomationEvent(eventName, payload) {
         payload
       })
     });
+    if (timeout) clearTimeout(timeout);
+    if (!response.ok) throw new Error('Webhook HTTP ' + response.status);
+    return true;
   } catch (_) {
-    // Не блокируем основной сценарий
+    enqueueAutomationEvent(eventName, payload);
+    return false;
+  }
+}
+
+async function flushAutomationQueue(manual = false) {
+  const url = (automationSettings.webhookUrl || '').trim();
+  if (!url || !automationQueue.length) {
+    saveAutomationQueue();
+    return;
+  }
+  const queueCopy = [...automationQueue];
+  automationQueue = [];
+  saveAutomationQueue();
+  for (const item of queueCopy) {
+    const ok = await sendAutomationEvent(item.eventName, {
+      ...item.payload,
+      queuedAt: item.at,
+      replay: true
+    });
+    if (!ok && automationQueue.length > 100) break;
+  }
+  if (manual && !automationQueue.length) hideError();
+  if (manual && automationQueue.length) {
+    showError(`Часть webhook-событий осталась в очереди: ${automationQueue.length}`);
+  }
+}
+
+function platformProfileLabel(profile) {
+  const labels = {
+    eis: 'ЕИС (44-ФЗ)',
+    eis_223: 'ЕИС (223-ФЗ)',
+    sber_ast: 'Сбер АСТ',
+    rts_tender: 'РТС-тендер',
+    roseltorg: 'Росэлторг',
+    etp_gpb: 'ЭТП ГПБ',
+    tek_torg: 'ТЭК-Торг',
+    fabrikant: 'Фабрикант',
+    b2b_center: 'B2B-Center',
+    custom: 'Кастомный коннектор'
+  };
+  return labels[profile] || profile || 'не выбран';
+}
+
+function updatePlatformStatus() {
+  const statusEl = document.getElementById('platformStatus');
+  if (!statusEl) return;
+  const profile = platformProfileLabel(platformIntegrationSettings.profile);
+  const endpoint = (platformIntegrationSettings.endpoint || '').trim();
+  statusEl.textContent = endpoint
+    ? `Контур ЕИС/ЭТП: ${profile}, endpoint настроен`
+    : `Контур ЕИС/ЭТП: ${profile}, endpoint не задан`;
+}
+
+function loadPlatformIntegrationSettings() {
+  try {
+    const raw = localStorage.getItem(PLATFORM_INTEGRATION_SETTINGS_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    platformIntegrationSettings = { ...platformIntegrationSettings, ...(parsed || {}) };
+  } catch (_) {}
+  const profileEl = document.getElementById('platformProfile');
+  const endpointEl = document.getElementById('platformEndpoint');
+  const tokenEl = document.getElementById('platformApiToken');
+  const innEl = document.getElementById('platformCustomerInn');
+  const orgEl = document.getElementById('platformOrgName');
+  const autoExportEl = document.getElementById('platformAutoExport');
+  const autoSendEl = document.getElementById('platformAutoSend');
+  if (profileEl) profileEl.value = platformIntegrationSettings.profile || 'eis';
+  if (endpointEl) endpointEl.value = platformIntegrationSettings.endpoint || '';
+  if (tokenEl) tokenEl.value = platformIntegrationSettings.apiToken || '';
+  if (innEl) innEl.value = platformIntegrationSettings.customerInn || '';
+  if (orgEl) orgEl.value = platformIntegrationSettings.orgName || '';
+  if (autoExportEl) autoExportEl.checked = !!platformIntegrationSettings.autoExport;
+  if (autoSendEl) autoSendEl.checked = !!platformIntegrationSettings.autoSendDraft;
+  updatePlatformStatus();
+}
+
+function savePlatformIntegrationSettings() {
+  const profileEl = document.getElementById('platformProfile');
+  const endpointEl = document.getElementById('platformEndpoint');
+  const tokenEl = document.getElementById('platformApiToken');
+  const innEl = document.getElementById('platformCustomerInn');
+  const orgEl = document.getElementById('platformOrgName');
+  const autoExportEl = document.getElementById('platformAutoExport');
+  const autoSendEl = document.getElementById('platformAutoSend');
+  platformIntegrationSettings.profile = profileEl?.value || 'eis';
+  platformIntegrationSettings.endpoint = (endpointEl?.value || '').trim();
+  platformIntegrationSettings.apiToken = (tokenEl?.value || '').trim();
+  platformIntegrationSettings.customerInn = (innEl?.value || '').trim();
+  platformIntegrationSettings.orgName = (orgEl?.value || '').trim();
+  platformIntegrationSettings.autoExport = !!autoExportEl?.checked;
+  platformIntegrationSettings.autoSendDraft = !!autoSendEl?.checked;
+  try { localStorage.setItem(PLATFORM_INTEGRATION_SETTINGS_KEY, JSON.stringify(platformIntegrationSettings)); } catch (_) {}
+  updatePlatformStatus();
+  flushPlatformQueue(false);
+}
+
+function loadPlatformQueue() {
+  try {
+    const raw = localStorage.getItem(PLATFORM_QUEUE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    platformQueue = Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    platformQueue = [];
+  }
+}
+
+function savePlatformQueue() {
+  try { localStorage.setItem(PLATFORM_QUEUE_KEY, JSON.stringify(platformQueue)); } catch (_) {}
+  const el = document.getElementById('platformQueueStatus');
+  if (el) el.textContent = `Очередь коннектора: ${platformQueue.length}`;
+}
+
+function queuePlatformDraft(payload) {
+  platformQueue.push({
+    at: new Date().toISOString(),
+    payload
+  });
+  if (platformQueue.length > 100) platformQueue = platformQueue.slice(-100);
+  savePlatformQueue();
+}
+
+function makeProcurementDraft() {
+  const rows = goodsItems && goodsItems.length
+    ? goodsItems
+    : Array.from(document.querySelectorAll('#goods-rows tr')).map(tr => {
+        const id = tr.dataset.rowId;
+        const type = document.getElementById('goods-type-' + id)?.value || 'pc';
+        const model = document.getElementById('goods-model-' + id)?.value?.trim() || '';
+        const qty = parseInt(document.getElementById('goods-qty-' + id)?.value, 10) || 1;
+        const g = GOODS_CATALOG[type] || {};
+        return {
+          id,
+          type,
+          model,
+          qty,
+          status: model ? 'draft' : 'empty',
+          _codes: { okpd2: g.okpd2 || '', ktru: g.ktru || '' }
+        };
+      });
+
+  const preparedRows = rows.map((item, idx) => {
+    const catalog = GOODS_CATALOG[item.type] || {};
+    const codeObj = item._codes || item.meta || {};
+    return {
+      no: idx + 1,
+      typeCode: item.type,
+      typeName: catalog.name || item.type,
+      model: item.model || '',
+      qty: item.qty || 1,
+      okpd2: codeObj.okpd2 || catalog.okpd2 || '',
+      ktru: codeObj.ktru || codeObj.ktru_code || catalog.ktru || '',
+      law175: codeObj.law175 || codeObj.law175_status || '',
+      law175Basis: codeObj.law175Basis || codeObj.law175_basis || ''
+    };
+  });
+
+  const subtitle = document.getElementById('tz-subtitle')?.textContent || 'на поставку товара';
+  return {
+    app: 'tz_generator',
+    createdAt: new Date().toISOString(),
+    law: (typeof activeLaw !== 'undefined' && activeLaw === '223') ? '223-FZ' : '44-FZ',
+    title: subtitle,
+    profile: platformIntegrationSettings.profile,
+    organization: platformIntegrationSettings.orgName || '',
+    customerInn: platformIntegrationSettings.customerInn || '',
+    items: preparedRows
+  };
+}
+
+function makeEisXml(draft) {
+  const esc = (v) => escHtml(String(v == null ? '' : v));
+  const itemsXml = (draft.items || []).map((it) => (
+    `<item>` +
+      `<no>${esc(it.no)}</no>` +
+      `<type>${esc(it.typeName)}</type>` +
+      `<model>${esc(it.model)}</model>` +
+      `<qty>${esc(it.qty)}</qty>` +
+      `<okpd2>${esc(it.okpd2)}</okpd2>` +
+      `<ktru>${esc(it.ktru)}</ktru>` +
+      `<law175_status>${esc(it.law175)}</law175_status>` +
+      `<law175_basis>${esc(it.law175Basis)}</law175_basis>` +
+    `</item>`
+  )).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?>` +
+    `<procurementDraft>` +
+      `<generatedAt>${esc(draft.createdAt)}</generatedAt>` +
+      `<law>${esc(draft.law)}</law>` +
+      `<profile>${esc(draft.profile)}</profile>` +
+      `<organization>${esc(draft.organization)}</organization>` +
+      `<customerInn>${esc(draft.customerInn)}</customerInn>` +
+      `<title>${esc(draft.title)}</title>` +
+      `<items>${itemsXml}</items>` +
+    `</procurementDraft>`;
+}
+
+function downloadTextFile(name, text, mime = 'text/plain;charset=utf-8') {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 3000);
+}
+
+function exportProcurementPackage() {
+  savePlatformIntegrationSettings();
+  const draft = makeProcurementDraft();
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const base = `procurement_${draft.law}_${stamp}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const xml = makeEisXml(draft);
+  downloadTextFile(`${base}.json`, JSON.stringify(draft, null, 2), 'application/json;charset=utf-8');
+  downloadTextFile(`${base}.xml`, xml, 'application/xml;charset=utf-8');
+}
+
+async function sendPlatformDraft(payload = null) {
+  const endpoint = (platformIntegrationSettings.endpoint || '').trim();
+  if (!endpoint) return false;
+  const draft = payload || makeProcurementDraft();
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (platformIntegrationSettings.apiToken) headers['Authorization'] = `Bearer ${platformIntegrationSettings.apiToken}`;
+    headers['X-Integration-Profile'] = platformIntegrationSettings.profile || 'eis';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(draft)
+    });
+    if (!response.ok) throw new Error('connector http ' + response.status);
+    return true;
+  } catch (_) {
+    queuePlatformDraft(draft);
+    return false;
+  }
+}
+
+async function flushPlatformQueue(manual = false) {
+  const endpoint = (platformIntegrationSettings.endpoint || '').trim();
+  if (!endpoint || !platformQueue.length) {
+    savePlatformQueue();
+    return;
+  }
+  const queueCopy = [...platformQueue];
+  platformQueue = [];
+  savePlatformQueue();
+  for (const item of queueCopy) {
+    const ok = await sendPlatformDraft({
+      ...item.payload,
+      replay: true,
+      replayedAt: new Date().toISOString(),
+      queuedAt: item.at
+    });
+    if (!ok && platformQueue.length > 100) break;
+  }
+  if (manual && platformQueue.length) {
+    showError(`Часть черновиков ЕИС/ЭТП осталась в очереди: ${platformQueue.length}`);
+    return;
+  }
+  if (manual) hideError();
+}
+
+async function sendPlatformDraftNow() {
+  savePlatformIntegrationSettings();
+  if (!platformIntegrationSettings.endpoint) {
+    showError('Укажите Endpoint коннектора для ЕИС/ЭТП.');
+    return;
+  }
+  const ok = await sendPlatformDraft();
+  if (ok) {
+    hideError();
+    await flushPlatformQueue(false);
+  } else {
+    showError('Черновик отправить не удалось. Добавлен в очередь коннектора.');
+  }
+}
+
+async function runEliteProcurementAutomation() {
+  saveAutomationSettings();
+  savePlatformIntegrationSettings();
+  hideError();
+  setLoading(true, 'Экстра-автоматизация: интернет → классификация → ТЗ → пакет → коннектор...');
+  try {
+    await enrichRowsFromInternet();
+    autoResolveTopSuggestions();
+    const hasApiKey = !!document.getElementById('apiKey')?.value?.trim();
+    const rows = Array.from(document.querySelectorAll('#goods-rows tr'));
+    const allModelsFilled = rows.every(tr => {
+      const id = tr.dataset.rowId;
+      return !!document.getElementById('goods-model-' + id)?.value?.trim();
+    });
+    if (hasApiKey && allModelsFilled) {
+      setLoading(false);
+      await generateTZ();
+    } else {
+      setLoading(false);
+      showError('Экстра-автоматизация: нет API-ключа или заполнены не все модели.');
+    }
+    const draft = makeProcurementDraft();
+    if (platformIntegrationSettings.autoExport) exportProcurementPackage();
+    if (platformIntegrationSettings.autoSendDraft) await sendPlatformDraft(draft);
+    await flushPlatformQueue(false);
+    await sendAutomationEvent('elite.automation.completed', {
+      profile: platformIntegrationSettings.profile,
+      items: draft.items?.length || 0
+    });
+  } catch (e) {
+    setLoading(false);
+    showError('Экстра-автоматизация завершилась с ошибкой: ' + (e?.message || 'неизвестно'));
   }
 }
 
@@ -2845,13 +3247,27 @@ let goodsItems = [];      // [{ id, type, model, qty, specs, meta, status }]
 let goodsRowCounter = 0;  // для уникальных ID строк
 const LEARNED_TYPE_MAP_KEY = 'tz_learned_type_map_v1';
 const AUTOMATION_SETTINGS_KEY = 'tz_automation_settings_v1';
+const AUTOMATION_QUEUE_KEY = 'tz_automation_queue_v1';
+const PLATFORM_INTEGRATION_SETTINGS_KEY = 'tz_platform_integration_settings_v1';
+const PLATFORM_QUEUE_KEY = 'tz_platform_queue_v1';
 let learnedTypeMap = Object.create(null);
+let automationQueue = [];
+let platformQueue = [];
 let automationSettings = {
   webhookUrl: '',
   webhookSecret: '',
   autoSend: false,
   autopilot: false,
   autoPickTopCandidate: true
+};
+let platformIntegrationSettings = {
+  profile: 'eis',
+  endpoint: '',
+  apiToken: '',
+  customerInn: '',
+  orgName: '',
+  autoExport: false,
+  autoSendDraft: false
 };
 let AUTOPILOT_RUNNING = false;
 
@@ -2863,7 +3279,14 @@ document.addEventListener('DOMContentLoaded', function() {
   addGoodsRow('pc', '', 30);
   loadLearnedTypeMap();
   saveLearnedTypeMap();
+  loadAutomationQueue();
+  saveAutomationQueue();
   loadAutomationSettings();
+  loadPlatformQueue();
+  savePlatformQueue();
+  loadPlatformIntegrationSettings();
+  flushAutomationQueue(false);
+  flushPlatformQueue(false);
 });
 
 // =====================
@@ -3051,9 +3474,15 @@ async function generateTZ() {
   }
 
   // Обучаемся на успешных строках и отправляем событие автоматизации.
-  const doneItems = goodsItems.filter(it => it.status === 'done');
   for (const it of doneItems) {
     if (it.model && it.type) learnTypeFromText(it.model, it.type, 'post_generate');
+  }
+  if (doneItems.length > 0) {
+    if (platformIntegrationSettings.autoExport) exportProcurementPackage();
+    if (platformIntegrationSettings.autoSendDraft) {
+      await sendPlatformDraft(makeProcurementDraft());
+      await flushPlatformQueue(false);
+    }
   }
   if (automationSettings.autoSend) {
     await sendAutomationEvent('tz.generated', {

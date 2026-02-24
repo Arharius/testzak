@@ -101,6 +101,12 @@ async function postJsonWithRetry(
   return { ok: false, attempts: maxAttempts, note: lastError.slice(0, 180) };
 }
 
+function sanitizeHeaderValue(value: string): string {
+  return String(value || '')
+    .replace(/[^\x20-\x7E]/g, '')
+    .trim();
+}
+
 export async function postWebhook(
   url: string,
   secret: string,
@@ -109,7 +115,7 @@ export async function postWebhook(
 ): Promise<boolean> {
   if (!url) return false;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (secret) headers['X-TZ-Secret'] = secret;
+  if (secret) headers['X-TZ-Secret'] = sanitizeHeaderValue(secret);
   const result = await postJsonWithRetry(url, payload, headers, policy);
   if (result.ok) {
     appendAutomationLog({ at: new Date().toISOString(), event: 'webhook.sent', ok: true });
@@ -165,7 +171,10 @@ export async function postPlatformDraft(
     }
 
     const req = buildPlatformDraftRequest({ settings, payload: (payload || {}) as Record<string, unknown> });
-    const result = await postJsonWithRetry(req.endpoint, req.body, req.headers, policy);
+    const safeHeaders = Object.fromEntries(
+      Object.entries(req.headers).map(([k, v]) => [k, sanitizeHeaderValue(String(v))])
+    ) as Record<string, string>;
+    const result = await postJsonWithRetry(req.endpoint, req.body, safeHeaders, policy);
     if (!result.ok) {
       appendAutomationLog({
         at: new Date().toISOString(),
@@ -211,13 +220,17 @@ export async function generateItemSpecs(
   prompt: string
 ): Promise<string> {
   const endpoint = API_ENDPOINTS[provider];
+  const cleanKey = sanitizeHeaderValue(apiKey).replace(/^Bearer\s+/i, '');
+  if (!cleanKey) {
+    throw new Error('api_key_invalid_after_sanitize');
+  }
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${apiKey}`,
+    Authorization: `Bearer ${cleanKey}`,
     'Content-Type': 'application/json'
   };
   if (provider === 'openrouter') {
-    headers['HTTP-Referer'] = 'https://openrouter.ai';
-    headers['X-Title'] = 'TZ Generator React';
+    headers['HTTP-Referer'] = sanitizeHeaderValue('https://openrouter.ai');
+    headers['X-Title'] = sanitizeHeaderValue('TZ Generator React');
   }
   const response = await axios.post(
     endpoint,
@@ -245,7 +258,7 @@ export async function sendEventThroughBestChannel(
   if (settings.useBackendQueueApi && settings.backendApiBase) {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (settings.backendApiToken) headers.Authorization = `Bearer ${settings.backendApiToken}`;
+      if (settings.backendApiToken) headers.Authorization = `Bearer ${sanitizeHeaderValue(settings.backendApiToken)}`;
       const idempotencyKey = `${eventName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const result = await postJsonWithRetry(
         `${settings.backendApiBase.replace(/\/+$/, '')}/api/v1/integration/event`,

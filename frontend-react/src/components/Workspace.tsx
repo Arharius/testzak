@@ -24,6 +24,7 @@ const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral
 type Row = {
   id: number;
   type: GoodsType;
+  typeLocked?: boolean;
   model: string;
   qty: number;
   status: 'idle' | 'loading' | 'done' | 'error';
@@ -107,6 +108,46 @@ function parseJsonArrayFromText(text: string): Array<{ type: GoodsType; model?: 
   }
 }
 
+function modelTokensForExactMatch(query: string): string[] {
+  const parts = normalizeText(query)
+    .split(' ')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const strong = parts.filter((t) => t.length >= 3 && /[a-zа-я]/i.test(t));
+  strong.sort((a, b) => {
+    const aScore = (/\d/.test(a) ? 2 : 0) + a.length / 10;
+    const bScore = (/\d/.test(b) ? 2 : 0) + b.length / 10;
+    return bScore - aScore;
+  });
+  return strong.slice(0, 6);
+}
+
+function extractExactModelHints(query: string, rawText: string): string {
+  const text = normalizeText(rawText);
+  if (!text) return '';
+  const tokens = modelTokensForExactMatch(query);
+  if (!tokens.length) return cutText(text, 2500);
+
+  const chunks = text
+    .split(/[\n.;:!?]+/g)
+    .map((x) => x.trim())
+    .filter((x) => x.length >= 24);
+
+  const scored = chunks.map((chunk) => {
+    const matched = tokens.filter((t) => chunk.includes(t)).length;
+    return { chunk, matched };
+  });
+
+  const strong = scored
+    .filter((x) => x.matched >= Math.min(2, Math.max(1, Math.floor(tokens.length / 2))))
+    .sort((a, b) => b.matched - a.matched)
+    .slice(0, 14)
+    .map((x) => x.chunk);
+
+  if (strong.length) return cutText(strong.join(' ; '), 2500);
+  return cutText(text, 2500);
+}
+
 async function fetchInternetHints(query: string): Promise<string> {
   const q = String(query || '').trim();
   if (!q) return '';
@@ -117,7 +158,7 @@ async function fetchInternetHints(query: string): Promise<string> {
       const resp = await fetch(`https://r.jina.ai/http://${target}`, { method: 'GET' });
       if (resp.ok) {
         const raw = await resp.text();
-        return cutText(normalizeText(raw), 5000);
+        return extractExactModelHints(q, raw);
       }
     } catch {
       // ignore and fallback
@@ -141,7 +182,7 @@ async function fetchInternetHints(query: string): Promise<string> {
         if (topic?.Text) parts.push(topic.Text);
       }
     }
-    return cutText(normalizeText(parts.join(' ; ')), 2500);
+    return extractExactModelHints(q, parts.join(' ; '));
   } catch {
     return '';
   }
@@ -258,7 +299,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [openRouterError, setOpenRouterError] = useState('');
   const [billingReadiness, setBillingReadiness] = useState<BillingReadiness | null>(null);
   const [billingReadinessLoading, setBillingReadinessLoading] = useState(false);
-  const [rows, setRows] = useState<Row[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
+  const [rows, setRows] = useState<Row[]>([{ id: 1, type: 'pc', typeLocked: false, model: '', qty: 1, status: 'idle' }]);
   const [tzText, setTzText] = useState('');
   const [bulkLookup, setBulkLookup] = useState(false);
   const [autopilotRunning, setAutopilotRunning] = useState(false);
@@ -457,7 +498,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   });
 
   const addRow = () => {
-    setRows((prev) => [...prev, { id: Date.now(), type: 'pc', model: '', qty: 1, status: 'idle' }]);
+    setRows((prev) => [...prev, { id: Date.now(), type: 'pc', typeLocked: false, model: '', qty: 1, status: 'idle' }]);
   };
   const removeRow = (rowId: number) => {
     setRows((prev) => (prev.length <= 1 ? prev : prev.filter((x) => x.id !== rowId)));
@@ -465,7 +506,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
 
   const applyCandidate = (rowId: number, candidateType: GoodsType) => {
     setRows((prev) =>
-      prev.map((x) => (x.id === rowId ? { ...x, type: candidateType, candidates: [], lookupState: 'done', lookupNote: 'Тип выбран' } : x))
+      prev.map((x) => (x.id === rowId ? { ...x, type: candidateType, typeLocked: true, candidates: [], lookupState: 'done', lookupNote: 'Тип выбран' } : x))
     );
   };
 
@@ -521,6 +562,22 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     if (!candidates.length) {
       setRows((prev) =>
         prev.map((x) => (x.id === rowId ? { ...x, lookupState: 'error', lookupNote: 'Не удалось найти подсказки' } : x))
+      );
+      return;
+    }
+
+    if (row.typeLocked) {
+      setRows((prev) =>
+        prev.map((x) =>
+          x.id === rowId
+            ? {
+                ...x,
+                internetHints: hints || x.internetHints,
+                lookupState: 'done',
+                lookupNote: hints ? 'Интернет-данные модели загружены (тип зафиксирован)' : 'Тип зафиксирован'
+              }
+            : x
+        )
       );
       return;
     }
@@ -775,7 +832,9 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                     value={row.type}
                     onChange={(e) => {
                       const val = e.target.value as GoodsType;
-                      setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, type: val } : x)));
+                      setRows((prev) =>
+                        prev.map((x) => (x.id === row.id ? { ...x, type: val, typeLocked: true, candidates: [] } : x))
+                      );
                     }}
                   >
                     {Object.entries(GOODS_LABELS).map(([key, label]) => (
@@ -792,6 +851,13 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                       setRows((prev) =>
                         prev.map((x) => {
                           if (x.id !== row.id) return x;
+                          if (x.typeLocked) {
+                            return {
+                              ...x,
+                              model: value,
+                              candidates: []
+                            };
+                          }
                           const detected = detectTypeDetailed(value, x.type);
                           const candidates = buildTypeCandidates(value, detected.type);
                           return {

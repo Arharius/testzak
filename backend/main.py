@@ -251,9 +251,24 @@ def _log_integration_event(db: Session, tenant_id: str, user_id: Optional[int], 
     db.add(row)
     db.commit()
 
+def _yookassa_shop_id() -> str:
+    return os.getenv("YOOKASSA_SHOP_ID", "").strip() or YOOKASSA_SHOP_ID
+
+
+def _yookassa_secret_key() -> str:
+    return os.getenv("YOOKASSA_SECRET_KEY", "").strip() or YOOKASSA_SECRET_KEY
+
+
+def _yookassa_return_url() -> str:
+    return os.getenv("YOOKASSA_RETURN_URL", "").strip() or YOOKASSA_RETURN_URL
+
+
+def _yookassa_webhook_secret() -> str:
+    return os.getenv("YOOKASSA_WEBHOOK_SECRET", "").strip() or YOOKASSA_WEBHOOK_SECRET
+
 
 def _yookassa_headers(idempotence_key: str) -> dict[str, str]:
-    auth = base64.b64encode(f"{YOOKASSA_SHOP_ID}:{YOOKASSA_SECRET_KEY}".encode("utf-8")).decode("ascii")
+    auth = base64.b64encode(f"{_yookassa_shop_id()}:{_yookassa_secret_key()}".encode("utf-8")).decode("ascii")
     return {
         "Content-Type": "application/json",
         "Authorization": f"Basic {auth}",
@@ -262,7 +277,7 @@ def _yookassa_headers(idempotence_key: str) -> dict[str, str]:
 
 
 def _create_yookassa_payment(payload: Dict[str, Any], idempotence_key: str) -> Dict[str, Any]:
-    if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
+    if not _yookassa_shop_id() or not _yookassa_secret_key():
         raise HTTPException(status_code=400, detail="YOOKASSA credentials are not configured")
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = Request(
@@ -675,10 +690,11 @@ def tenant_plan_limits(user: User = Depends(get_current_user), db: Session = Dep
 
 @app.get("/api/public/billing/readiness", response_model=BillingReadinessOut)
 def public_billing_readiness():
-    has_shop = bool(YOOKASSA_SHOP_ID)
-    has_secret = bool(YOOKASSA_SECRET_KEY)
-    has_return = bool(YOOKASSA_RETURN_URL)
-    has_webhook_secret = bool(YOOKASSA_WEBHOOK_SECRET)
+    current_return_url = _yookassa_return_url()
+    has_shop = bool(_yookassa_shop_id())
+    has_secret = bool(_yookassa_secret_key())
+    has_return = bool(current_return_url)
+    has_webhook_secret = bool(_yookassa_webhook_secret())
     next_steps: list[str] = []
     if not has_shop:
         next_steps.append("Укажите YOOKASSA_SHOP_ID в backend env.")
@@ -694,7 +710,7 @@ def public_billing_readiness():
         "ok": True,
         "provider": "yookassa",
         "ready_for_checkout": has_shop and has_secret,
-        "return_url": YOOKASSA_RETURN_URL,
+        "return_url": current_return_url,
         "webhook_path": "/api/tenant/payments/yookassa/webhook",
         "configured": {
             "shop_id": has_shop,
@@ -721,7 +737,7 @@ def yookassa_checkout(
     payload = {
         "amount": {"value": f"{info['price_cents'] / 100:.2f}", "currency": "RUB"},
         "capture": True,
-        "confirmation": {"type": "redirect", "return_url": (req.return_url or "").strip() or YOOKASSA_RETURN_URL},
+        "confirmation": {"type": "redirect", "return_url": (req.return_url or "").strip() or _yookassa_return_url()},
         "description": f"TZ Generator plan {plan_code}",
         "metadata": {"tenant_id": user.tenant_id, "plan_code": plan_code, "requested_by_user_id": str(user.id)},
     }
@@ -744,9 +760,10 @@ def yookassa_checkout(
 
 @app.post("/api/tenant/payments/yookassa/webhook")
 async def yookassa_webhook(payload: Dict[str, Any], db: Session = Depends(get_db)):
-    if YOOKASSA_WEBHOOK_SECRET:
+    webhook_secret = _yookassa_webhook_secret()
+    if webhook_secret:
         token = str(payload.get("webhook_secret", "")).strip()
-        if token != YOOKASSA_WEBHOOK_SECRET:
+        if token != webhook_secret:
             raise HTTPException(status_code=401, detail="invalid webhook secret")
 
     event = str(payload.get("event", "")).strip().lower()

@@ -836,17 +836,129 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const exportPdf = () => {
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
     const margin = 36;
-    const maxWidth = 540;
-    const lines = doc.splitTextToSize(tzText || 'Пустой документ', maxWidth);
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const contentWidth = pageWidth - margin * 2;
+    const padding = 6;
+    const lineHeight = 12;
     let y = margin;
-    lines.forEach((line: string) => {
-      if (y > 790) {
+
+    const ensureSpace = (height: number) => {
+      if (y + height > pageHeight - margin) {
         doc.addPage();
         y = margin;
       }
-      doc.text(line, margin, y);
-      y += 14;
+    };
+
+    const drawTextBlock = (text: string) => {
+      const lines = doc.splitTextToSize(text || '', contentWidth);
+      lines.forEach((line: string) => {
+        ensureSpace(lineHeight);
+        doc.text(line, margin, y);
+        y += lineHeight;
+      });
+    };
+
+    const drawTable = (rows: string[][], colWidths: number[], header?: string[]) => {
+      const drawRow = (cells: string[], isHeader = false) => {
+        const cellLines = cells.map((cell, idx) =>
+          doc.splitTextToSize(String(cell ?? ''), colWidths[idx] - padding * 2)
+        );
+        const rowHeight = Math.max(...cellLines.map((lines) => lines.length)) * lineHeight + padding * 2;
+        ensureSpace(rowHeight);
+
+        let x = margin;
+        if (isHeader) {
+          doc.setFillColor(235, 241, 248);
+          doc.rect(x, y, contentWidth, rowHeight, 'F');
+        }
+        cells.forEach((_, idx) => {
+          doc.rect(x, y, colWidths[idx], rowHeight);
+          x += colWidths[idx];
+        });
+
+        x = margin;
+        cellLines.forEach((lines, idx) => {
+          doc.text(lines, x + padding, y + padding + lineHeight - 2);
+          x += colWidths[idx];
+        });
+        y += rowHeight;
+      };
+
+      if (header) {
+        doc.setFontSize(11);
+        doc.setTextColor(30, 30, 30);
+        drawRow(header, true);
+      }
+      doc.setFontSize(10);
+      doc.setTextColor(20, 20, 20);
+      rows.forEach((row) => drawRow(row));
+      y += 10;
+    };
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(`ТЕХНИЧЕСКОЕ ЗАДАНИЕ (${lawMode === '223' ? '223-ФЗ' : '44-ФЗ'})`, margin, y);
+    y += 18;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(40, 40, 40);
+    drawTextBlock(buildNormativeBlock(lawMode));
+    y += 8;
+
+    if (structuredRows.length === 0) {
+      doc.setTextColor(20, 20, 20);
+      drawTextBlock(tzText || 'Пустой документ');
+      doc.save(`TZ_react_${Date.now()}.pdf`);
+      return;
+    }
+
+    structuredRows.forEach(({ row, parsed, specs }) => {
+      const meta = parsed?.meta || {};
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.setTextColor(15, 15, 15);
+      ensureSpace(16);
+      doc.text(`${GOODS_LABELS[row.type]} / ${row.model}`, margin, y);
+      y += 16;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+
+      const twoColWidths = [contentWidth * 0.34, contentWidth * 0.66];
+      twoColWidths[1] = contentWidth - twoColWidths[0];
+
+      const metaRows = [
+        ['Наименование объекта поставки', GOODS_LABELS[row.type]],
+        ['Модель / описание', row.model],
+        ['Код ОКПД2', meta.okpd2_code || 'не указано'],
+        ['Код КТРУ', meta.ktru_code || 'не указано'],
+        ['ПП 1875', `${meta.law175_status || 'не указано'}${meta.law175_basis ? ` (${meta.law175_basis})` : ''}`]
+      ];
+      drawTable(metaRows, twoColWidths);
+
+      const reqRows = buildGeneralRequirements(lawMode).map((req) => [req.name, req.value]);
+      drawTable(reqRows, twoColWidths);
+
+      if (specs.length > 0) {
+        const specWidths = [
+          contentWidth * 0.06,
+          contentWidth * 0.54,
+          contentWidth * 0.28,
+          contentWidth * 0.12
+        ];
+        specWidths[3] = contentWidth - (specWidths[0] + specWidths[1] + specWidths[2]);
+        const specRows = specs.map((spec, idx) => {
+          const label = spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name;
+          return [String(idx + 1), label, spec.value, spec.unit || ''];
+        });
+        drawTable(specRows, specWidths, ['№', 'Наименование характеристики', 'Значение / требование', 'Ед. изм.']);
+      } else {
+        doc.setTextColor(20, 20, 20);
+        drawTextBlock(String(row.result || ''));
+        y += 8;
+      }
     });
+
     doc.save(`TZ_react_${Date.now()}.pdf`);
   };
 

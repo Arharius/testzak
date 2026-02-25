@@ -18,6 +18,7 @@ PA_USERNAME="${PA_USERNAME:-}"
 PA_API_TOKEN="${PA_API_TOKEN:-}"
 PA_HOST="${PA_HOST:-www.pythonanywhere.com}"
 PA_PYTHON_VERSION="${PA_PYTHON_VERSION:-python312}"
+PA_REACT_MODE="${PA_REACT_MODE:-react}"
 
 if [[ -z "$PA_USERNAME" || -z "$PA_API_TOKEN" ]]; then
   echo "ERROR: PA_USERNAME and PA_API_TOKEN are required."
@@ -156,25 +157,35 @@ for rel in "${FILES_TO_UPLOAD[@]}"; do
   echo "   uploaded: ${rel}"
 done
 
-# Build and upload React app under /react if frontend-react is present.
-if [[ -f "${PROJECT_ROOT}/frontend-react/package.json" ]]; then
-  echo "==> Building React app (frontend-react)"
-  if [[ ! -d "${PROJECT_ROOT}/frontend-react/node_modules" ]]; then
-    (cd "${PROJECT_ROOT}/frontend-react" && npm ci)
-  fi
-  (cd "${PROJECT_ROOT}/frontend-react" && npm run build)
+if [[ "${PA_REACT_MODE}" == "legacy" ]]; then
+  echo "==> Using legacy HTML for /react"
+  call_request POST "${BASE_URL}/files/path${PA_SITE_PATH}/react/index.html" -F "content=@${PROJECT_ROOT}/legacy/index.html"
+  assert_status "$API_STATUS" "201,200" "$API_BODY"
+  call_request POST "${BASE_URL}/files/path${PA_SITE_PATH}/react/docx.min.js" -F "content=@${PROJECT_ROOT}/docx.min.js"
+  assert_status "$API_STATUS" "201,200" "$API_BODY"
+  call_request POST "${BASE_URL}/files/path${PA_SITE_PATH}/react/html2pdf.bundle.min.js" -F "content=@${PROJECT_ROOT}/html2pdf.bundle.min.js"
+  assert_status "$API_STATUS" "201,200" "$API_BODY"
+else
+  # Build and upload React app under /react if frontend-react is present.
+  if [[ -f "${PROJECT_ROOT}/frontend-react/package.json" ]]; then
+    echo "==> Building React app (frontend-react)"
+    if [[ ! -d "${PROJECT_ROOT}/frontend-react/node_modules" ]]; then
+      (cd "${PROJECT_ROOT}/frontend-react" && npm ci)
+    fi
+    (cd "${PROJECT_ROOT}/frontend-react" && npm run build)
 
-  if [[ -d "${REACT_DIST_DIR}" ]]; then
-    echo "==> Uploading React static files to ${PA_SITE_PATH}/react"
-    while IFS= read -r -d '' file; do
-      rel="${file#${REACT_DIST_DIR}/}"
-      dst="${PA_SITE_PATH}/react/${rel}"
-      call_request POST "${BASE_URL}/files/path${dst}" -F "content=@${file}"
-      up_status="$API_STATUS"
-      up_body="$API_BODY"
-      assert_status "$up_status" "201,200" "$up_body"
-      echo "   uploaded react: ${rel}"
-    done < <(find "${REACT_DIST_DIR}" -type f -print0)
+    if [[ -d "${REACT_DIST_DIR}" ]]; then
+      echo "==> Uploading React static files to ${PA_SITE_PATH}/react"
+      while IFS= read -r -d '' file; do
+        rel="${file#${REACT_DIST_DIR}/}"
+        dst="${PA_SITE_PATH}/react/${rel}"
+        call_request POST "${BASE_URL}/files/path${dst}" -F "content=@${file}"
+        up_status="$API_STATUS"
+        up_body="$API_BODY"
+        assert_status "$up_status" "201,200" "$up_body"
+        echo "   uploaded react: ${rel}"
+      done < <(find "${REACT_DIST_DIR}" -type f -print0)
+    fi
   fi
 fi
 

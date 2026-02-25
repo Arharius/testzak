@@ -378,11 +378,14 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const structuredRows = useMemo(
     () =>
       rows
-        .filter((row) => row.status === 'done' && String(row.result || '').trim().length > 0)
+        .filter((row) => String(row.model || '').trim().length > 0)
         .map((row) => {
           const parsed = parseResultObject(row.result);
           const specs = Array.isArray(parsed?.specs) ? parsed!.specs! : [];
-          return { row, parsed, specs };
+          const fallback =
+            String(row.result || '').trim() ||
+            (row.error ? `Ошибка: ${row.error}` : 'Данные не сформированы');
+          return { row, parsed, specs, fallback };
         }),
     [rows]
   );
@@ -913,7 +916,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       return;
     }
 
-    structuredRows.forEach(({ row, parsed, specs }) => {
+    structuredRows.forEach(({ row, parsed, specs, fallback }) => {
       const meta = parsed?.meta || {};
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
@@ -939,24 +942,19 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       const reqRows = buildGeneralRequirements(lawMode).map((req) => [req.name, req.value]);
       drawTable(reqRows, twoColWidths);
 
-      if (specs.length > 0) {
-        const specWidths = [
-          contentWidth * 0.06,
-          contentWidth * 0.54,
-          contentWidth * 0.28,
-          contentWidth * 0.12
-        ];
-        specWidths[3] = contentWidth - (specWidths[0] + specWidths[1] + specWidths[2]);
-        const specRows = specs.map((spec, idx) => {
-          const label = spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name;
-          return [String(idx + 1), label, spec.value, spec.unit || ''];
-        });
-        drawTable(specRows, specWidths, ['№', 'Наименование характеристики', 'Значение / требование', 'Ед. изм.']);
-      } else {
-        doc.setTextColor(20, 20, 20);
-        drawTextBlock(String(row.result || ''));
-        y += 8;
-      }
+      const specWidths = [
+        contentWidth * 0.06,
+        contentWidth * 0.54,
+        contentWidth * 0.28,
+        contentWidth * 0.12
+      ];
+      specWidths[3] = contentWidth - (specWidths[0] + specWidths[1] + specWidths[2]);
+      const baseSpecs = specs.length > 0 ? specs : [{ group: '', name: 'Данные', value: fallback, unit: '' }];
+      const specRows = baseSpecs.map((spec, idx) => {
+        const label = spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name;
+        return [String(idx + 1), label, spec.value, spec.unit || ''];
+      });
+      drawTable(specRows, specWidths, ['№', 'Наименование характеристики', 'Значение / требование', 'Ед. изм.']);
     });
 
     doc.save(`TZ_react_${Date.now()}.pdf`);
@@ -986,10 +984,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         const reqRowsHtml = buildGeneralRequirements(lawMode)
           .map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.value)}</td></tr>`)
           .join('');
-        if (!specs.length) {
-          return `${head}<table><tbody>${metaRowsHtml}</tbody></table><table><tbody>${reqRowsHtml}</tbody></table><pre>${escapeHtml(String(row.result || ''))}</pre>`;
-        }
-        const rowsHtml = specs
+        const rowsHtml = (specs.length > 0 ? specs : [{ group: '', name: 'Данные', value: fallback, unit: '' }])
           .map(
             (spec, idx) => {
               const param = spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name;
@@ -1317,9 +1312,9 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         <button type="button" onClick={printTz} disabled={!tzText.trim()}>Печать</button>
       </div>
 
-      {structuredRows.length > 0 && (
+      {(structuredRows.length > 0 || tzText.trim()) && (
         <div id="tz-print-root" className="tz-output">
-          {structuredRows.map(({ row, parsed, specs }) => (
+          {structuredRows.map(({ row, parsed, specs, fallback }) => (
             <article key={row.id} className="tz-item tz-html-block">
               <h3 className="tz-section-title">{GOODS_LABELS[row.type]} / {row.model}</h3>
               <div className="rows-table-wrap">
@@ -1359,38 +1354,34 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
                   </tbody>
                 </table>
               </div>
-              {specs.length > 0 ? (
-                <div className="rows-table-wrap">
-                  <table className="rows-table tz-specs">
-                    <colgroup>
-                      <col style={{ width: '5%' }} />
-                      <col style={{ width: '54%' }} />
-                      <col style={{ width: '29%' }} />
-                      <col style={{ width: '12%' }} />
-                    </colgroup>
-                    <thead>
-                      <tr>
-                        <th>№</th>
-                        <th>Наименование характеристики</th>
-                        <th>Значение / требование</th>
-                        <th>Ед. изм.</th>
+              <div className="rows-table-wrap">
+                <table className="rows-table tz-specs">
+                  <colgroup>
+                    <col style={{ width: '5%' }} />
+                    <col style={{ width: '54%' }} />
+                    <col style={{ width: '29%' }} />
+                    <col style={{ width: '12%' }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>№</th>
+                      <th>Наименование характеристики</th>
+                      <th>Значение / требование</th>
+                      <th>Ед. изм.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(specs.length > 0 ? specs : [{ group: '', name: 'Данные', value: fallback, unit: '' }]).map((spec, idx) => (
+                      <tr key={`${row.id}-${idx}-${spec.group}-${spec.name}`}>
+                        <td>{idx + 1}</td>
+                        <td>{spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name}</td>
+                        <td>{spec.value}</td>
+                        <td>{spec.unit || ''}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {specs.map((spec, idx) => (
-                        <tr key={`${row.id}-${idx}-${spec.group}-${spec.name}`}>
-                          <td>{idx + 1}</td>
-                          <td>{spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name}</td>
-                          <td>{spec.value}</td>
-                          <td>{spec.unit || ''}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <pre>{String(row.result || '')}</pre>
-              )}
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </article>
           ))}
         </div>

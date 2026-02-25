@@ -377,16 +377,14 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [autopilotRunning, setAutopilotRunning] = useState(false);
   const structuredRows = useMemo(
     () =>
-      rows
-        .filter((row) => String(row.model || '').trim().length > 0)
-        .map((row) => {
-          const parsed = parseResultObject(row.result);
-          const specs = Array.isArray(parsed?.specs) ? parsed!.specs! : [];
-          const fallback =
-            String(row.result || '').trim() ||
-            (row.error ? `Ошибка: ${row.error}` : 'Данные не сформированы');
-          return { row, parsed, specs, fallback };
-        }),
+      rows.map((row) => {
+        const parsed = parseResultObject(row.result);
+        const specs = Array.isArray(parsed?.specs) ? parsed!.specs! : [];
+        const fallback =
+          String(row.result || '').trim() ||
+          (row.error ? `Ошибка: ${row.error}` : row.model.trim() ? 'Данные не сформированы' : 'Заполните модель/описание');
+        return { row, parsed, specs, fallback };
+      }),
     [rows]
   );
 

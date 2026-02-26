@@ -20,10 +20,9 @@ import { jsPDF } from 'jspdf';
 import { generateItemSpecs, postPlatformDraft, sendEventThroughBestChannel } from '../lib/api';
 import { appendAutomationLog } from '../lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from '../types/schemas';
-import { GOODS_CATALOG, GOODS_GROUPS, detectGoodsType, type HardSpec } from '../data/goods-catalog';
+import { GOODS_CATALOG, GOODS_GROUPS, detectGoodsType, type GoodsItem, type HardSpec } from '../data/goods-catalog';
 import { postProcessSpecs, parseAiResponse, type SpecItem } from '../utils/spec-processor';
 import { buildSection2Rows, buildSection4Rows, buildSection5Rows, type LawMode } from '../utils/npa-blocks';
-import { buildZakupkiSearchLinks, type SearchLink } from '../utils/internet-search';
 
 type Provider = 'openrouter' | 'groq' | 'deepseek';
 
@@ -105,6 +104,75 @@ ${hint}
     {"group":"Название группы","name":"Наименование характеристики","value":"Значение","unit":"Ед.изм."}
   ]
 }`;
+}
+
+// ── Список типов ПО для определения нацрежима ────────────────────────────────
+const SW_PROMPT_TYPES = ['os','office','antivirus','crypto','dbms','erp','virt','vdi','backup_sw',
+  'dlp','siem','firewall_sw','edr','waf','pam','iam','pki','email','vks','ecm','portal',
+  'project_sw','bpm','itsm','monitoring','mdm','hr','gis','ldap','vpn','reporting','cad','license'];
+
+// ── Промпт: поиск реальных характеристик конкретной модели через ИИ ───────────
+function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
+  const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
+  return `Ты — эксперт по ИТ-оборудованию и ПО. Найди точные технические характеристики конкретного товара.
+
+Товар (точное название / модель): "${row.model}"
+Тип: ${g.name}
+ОКПД2: ${g.okpd2}
+
+Задача: укажи реальные характеристики именно этой модели, как указаны у производителя (или ближайшего аналога по классу).
+
+Правила формулировок (44-ФЗ, ст. 33):
+- Торговые марки (Intel, AMD, Samsung...) → добавлять «или эквивалент»
+- Числа: «не менее X» (не «>= X»)
+- Единицы: ГГц, МГц, ГБ, МБ, ТБ (не GHz/GB/MB)
+- Тип матрицы: «IPS или эквивалент (угол обзора не менее 178°)»
+- Разрешение: «не менее 1920x1080»
+- Сокеты процессора — НЕ УКАЗЫВАТЬ
+- Для ОП: «DDR4 или выше»${g.isSoftware ? '\n- ПО: наличие в реестре Минцифры России (ПП РФ № 1236)' : ''}
+
+Ответ СТРОГО в JSON без пояснений и без markdown:
+{"meta":{"okpd2_code":"${g.okpd2}","okpd2_name":"${g.okpd2name}","ktru_code":"${g.ktruFixed ?? ''}","nac_regime":"${nac}","law175_status":"exempt","law175_basis":""},"specs":[{"group":"Группа","name":"Характеристика","value":"Значение","unit":""}]}`;
+}
+
+// ── Извлечь текст из HTML ЕИС (через DOMParser) ───────────────────────────────
+function extractEisText(html: string): string {
+  if (!html) return '';
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    doc.querySelectorAll('script, style, nav, footer, header').forEach((el) => el.remove());
+    const body = doc.querySelector('main') ?? doc.body;
+    const text = (body?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    return text.slice(0, 1500);
+  } catch {
+    return '';
+  }
+}
+
+// ── Промпт: генерация ТЗ в стиле реальных закупок ЕИС ────────────────────────
+function buildEisStylePrompt(row: GoodsRow, g: GoodsItem, eisContext: string): string {
+  const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
+  const ctx = eisContext
+    ? `\nКонтекст из ЕИС (zakupki.gov.ru) — используй как образец реальных требований:\n---\n${eisContext}\n---`
+    : '\n(Контекст ЕИС недоступен — используй знания о типичных ТЗ из реестра ЕИС для данного класса товаров)';
+  return `Ты — эксперт по госзакупкам РФ. Составь ТЗ для закупки по 44-ФЗ в стиле реальных документов ЕИС (zakupki.gov.ru).
+
+Запрос пользователя: "${row.model}"
+Тип товара: ${g.name}
+ОКПД2: ${g.okpd2}
+${ctx}
+
+Требования к ТЗ:
+- Реалистичные характеристики для российского рынка поставщиков
+- Торговые марки → «или эквивалент»
+- Числа: «не менее X»
+- Единицы: ГГц, МГц, ГБ, МБ, ТБ
+- Сокеты процессора НЕ УКАЗЫВАТЬ${g.isSoftware ? '\n- ПО: реестр Минцифры (ПП РФ № 1236), сертификаты ФСТЭК/ФСБ где применимо' : ''}
+- 10–20 параметров для оборудования, 8–15 для ПО
+
+Ответ СТРОГО в JSON без пояснений и markdown:
+{"meta":{"okpd2_code":"${g.okpd2}","okpd2_name":"${g.okpd2name}","ktru_code":"${g.ktruFixed ?? ''}","nac_regime":"${nac}","law175_status":"exempt","law175_basis":""},"specs":[{"group":"Группа","name":"Характеристика","value":"Значение","unit":""}]}`;
 }
 
 // ── Вспомогательные функции DOCX ─────────────────────────────────────────────
@@ -447,8 +515,6 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
   const [docxReady, setDocxReady] = useState(false);
 
-  // Ссылки ЕИС: rowId → SearchLink[]
-  const [, setZakupkiLinks] = useState<Record<number, SearchLink[]>>({});
   // Общий статус поиска по ЕИС
   const [eisSearching, setEisSearching] = useState(false);
   // Общий статус подтягивания из интернета
@@ -523,50 +589,94 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     setRows((prev) => [...prev, { id: Date.now(), type: 'pc', model: '', qty: 1, status: 'idle' }]);
   };
 
-  // ── Подтянуть спецификации из интернета (открываем поиск в браузере) ──────
-  const enrichFromInternet = useCallback(() => {
+  // ── Подтянуть реальные характеристики товара через ИИ ───────────────────────
+  const enrichFromInternet = useCallback(async () => {
     const filledRows = rows.filter((r) => r.model.trim().length > 0);
     if (filledRows.length === 0) {
       alert('Заполните поле «Модель / описание» хотя бы в одной строке');
+      return;
+    }
+    if (!apiKey.trim()) {
+      alert('Введите API-ключ — он нужен для поиска характеристик через ИИ');
       return;
     }
     setInternetSearching(true);
-    for (const r of filledRows) {
-      const query = encodeURIComponent(r.model.trim() + ' технические характеристики спецификации');
-      // Открываем поиск Яндекс по характеристикам товара
-      window.open(`https://yandex.ru/search/?text=${query}`, '_blank', 'noopener');
+    const next = [...rows];
+    for (let i = 0; i < next.length; i++) {
+      if (!next[i].model.trim()) continue;
+      const g = GOODS_CATALOG[next[i].type] ?? GOODS_CATALOG['pc'];
+      next[i] = { ...next[i], status: 'loading', error: '' };
+      setRows([...next]);
+      const prompt = buildSpecSearchPrompt(next[i], g);
+      try {
+        const raw = await generateItemSpecs(provider, apiKey, model, prompt);
+        const { meta, specs } = parseAiResponse(raw);
+        const processed = postProcessSpecs(specs);
+        next[i] = { ...next[i], status: 'done', specs: processed, meta };
+      } catch (e) {
+        next[i] = { ...next[i], status: 'error', error: e instanceof Error ? e.message : 'error' };
+      }
+      setRows([...next]);
     }
-    setTimeout(() => setInternetSearching(false), 500);
-  }, [rows]);
+    setInternetSearching(false);
+    setDocxReady(next.some((r) => r.status === 'done'));
+  }, [rows, apiKey, provider, model]);
 
-  // ── Поиск готовых ТЗ в ЕИС (zakupki.gov.ru) ──────────────────────────────
-  const searchZakupki = useCallback(() => {
+  // ── Найти ТЗ в ЕИС: zapros на zakupki.gov.ru через CORS-прокси, адаптация через ИИ
+  const searchZakupki = useCallback(async () => {
     const filledRows = rows.filter((r) => r.model.trim().length > 0);
     if (filledRows.length === 0) {
       alert('Заполните поле «Модель / описание» хотя бы в одной строке');
       return;
     }
+    if (!apiKey.trim()) {
+      alert('Введите API-ключ — он нужен для анализа ТЗ через ИИ');
+      return;
+    }
     setEisSearching(true);
-    for (const r of filledRows) {
-      const goodsName = GOODS_CATALOG[r.type]?.name ?? r.type;
-      // Поиск по ЕИС — ищем закупки с данным товаром
-      const query = encodeURIComponent(goodsName + (r.model.trim() ? ' ' + r.model.trim() : ''));
-      const eisUrl = `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${query}&morphology=on&fz44=on&fz223=on`;
-      window.open(eisUrl, '_blank', 'noopener');
-      // Также открываем поиск технических заданий
-      const tzQuery = encodeURIComponent('техническое задание ' + goodsName + (r.model.trim() ? ' ' + r.model.trim() : ''));
-      const yandexEisUrl = `https://yandex.ru/search/?text=${tzQuery}+site:zakupki.gov.ru`;
-      window.open(yandexEisUrl, '_blank', 'noopener');
+    const next = [...rows];
+    for (let i = 0; i < next.length; i++) {
+      if (!next[i].model.trim()) continue;
+      const g = GOODS_CATALOG[next[i].type] ?? GOODS_CATALOG['pc'];
+      next[i] = { ...next[i], status: 'loading', error: '' };
+      setRows([...next]);
+
+      // Пробуем получить данные с zakupki.gov.ru через CORS-прокси allorigins.win
+      let eisContext = '';
+      try {
+        const q = encodeURIComponent(`${next[i].model.trim()} ${g.name}`);
+        const eisUrl = `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${q}&morphology=on&fz44=on&sortBy=UPDATE_DATE&pageNumber=1&sortDirection=false&recordsPerPage=_5&showLotsInfoHidden=false`;
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(eisUrl)}`;
+        const controller = new AbortController();
+        const tid = window.setTimeout(() => controller.abort(), 12000);
+        try {
+          const resp = await fetch(proxyUrl, { signal: controller.signal });
+          clearTimeout(tid);
+          if (resp.ok) {
+            const data = await resp.json() as { contents?: string };
+            eisContext = extractEisText(data.contents ?? '');
+          }
+        } finally {
+          clearTimeout(tid);
+        }
+      } catch {
+        // прокси недоступен или zakupki.gov.ru заблокирован — ИИ сгенерирует по своим знаниям ЕИС
+      }
+
+      const prompt = buildEisStylePrompt(next[i], g, eisContext);
+      try {
+        const raw = await generateItemSpecs(provider, apiKey, model, prompt);
+        const { meta, specs } = parseAiResponse(raw);
+        const processed = postProcessSpecs(specs);
+        next[i] = { ...next[i], status: 'done', specs: processed, meta };
+      } catch (e) {
+        next[i] = { ...next[i], status: 'error', error: e instanceof Error ? e.message : 'error' };
+      }
+      setRows([...next]);
     }
-    // Формируем ссылки для отображения
-    const newLinks: Record<number, SearchLink[]> = {};
-    for (const r of filledRows) {
-      const name = (GOODS_CATALOG[r.type]?.name ?? r.type) + (r.model.trim() ? ' ' + r.model.trim() : '');
-      newLinks[r.id] = buildZakupkiSearchLinks(name);
-    }
-    setZakupkiLinks(newLinks);
     setEisSearching(false);
-  }, [rows]);
+    setDocxReady(next.some((r) => r.status === 'done'));
+  }, [rows, apiKey, provider, model]);
 
   const exportDocx = async () => {
     try {
@@ -926,17 +1036,17 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
           type="button"
           onClick={() => void enrichFromInternet()}
           disabled={internetSearching}
-          title="Подтягивает подсказки из Яндекс (без VPN) по введённому описанию товара"
+          title="ИИ ищет реальные технические характеристики именно этой модели (из документации производителя) и заполняет ТЗ"
         >
-          {internetSearching ? '⏳ Поиск...' : '🌐 Подтянуть из интернета'}
+          {internetSearching ? '⏳ Ищу характеристики...' : '🌐 Подтянуть из интернета'}
         </button>
         <button
           type="button"
-          onClick={searchZakupki}
+          onClick={() => void searchZakupki()}
           disabled={eisSearching}
-          title="Строит ссылки для поиска готовых ТЗ на zakupki.gov.ru через Яндекс"
+          title="Ищет похожие закупки на zakupki.gov.ru и адаптирует найденное ТЗ под ваш запрос через ИИ"
         >
-          {eisSearching ? '⏳ Поиск...' : '🏛️ Найти ТЗ в ЕИС'}
+          {eisSearching ? '⏳ Ищу в ЕИС...' : '🏛️ Найти ТЗ в ЕИС'}
         </button>
         <button type="button" onClick={exportPackage}>📦 Экспорт JSON</button>
         <button

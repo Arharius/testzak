@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi import Request as FastAPIRequest
 from pydantic import BaseModel, EmailStr
 from typing import Optional, Dict, List, Any
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,7 @@ import json
 import os
 import base64
 import uuid
+import hmac
 from datetime import datetime, timedelta, timezone
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -32,6 +34,48 @@ YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "").strip()
 YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "").strip()
 YOOKASSA_RETURN_URL = os.getenv("YOOKASSA_RETURN_URL", "").strip() or "https://tz-generator-frontend.onrender.com"
 YOOKASSA_WEBHOOK_SECRET = os.getenv("YOOKASSA_WEBHOOK_SECRET", "").strip()
+INTEGRATION_API_TOKEN = (
+    os.getenv("INTEGRATION_API_TOKEN", "").strip()
+    or os.getenv("BACKEND_API_TOKEN", "").strip()
+    or os.getenv("TZ_BACKEND_API_TOKEN", "").strip()
+)
+AI_PROXY_API_TOKEN = (
+    os.getenv("AI_PROXY_API_TOKEN", "").strip()
+    or INTEGRATION_API_TOKEN
+)
+AI_PROXY_TIMEOUT = float(os.getenv("AI_PROXY_TIMEOUT", "45"))
+AI_PROXY_OPENROUTER_API_KEY = (
+    os.getenv("AI_PROXY_OPENROUTER_API_KEY", "").strip()
+    or os.getenv("OPENROUTER_API_KEY", "").strip()
+)
+AI_PROXY_GROQ_API_KEY = (
+    os.getenv("AI_PROXY_GROQ_API_KEY", "").strip()
+    or os.getenv("GROQ_API_KEY", "").strip()
+)
+AI_PROXY_DEEPSEEK_API_KEY = (
+    os.getenv("AI_PROXY_DEEPSEEK_API_KEY", "").strip()
+    or os.getenv("DEEPSEEK_API_KEY", "").strip()
+)
+OPENROUTER_REFERER = os.getenv("OPENROUTER_REFERER", "").strip() or "https://weerowoolf.pythonanywhere.com"
+OPENROUTER_TITLE = os.getenv("OPENROUTER_TITLE", "TZ Generator").strip()
+
+
+def _parse_cors_origins(raw: str) -> list[str]:
+    text = (raw or "").strip()
+    if text:
+        return [item.strip() for item in text.split(",") if item.strip()]
+    return [
+        "https://weerowoolf.pythonanywhere.com",
+        "https://tz-generator-frontend.onrender.com",
+        "https://tz-generator-frontend-new.onrender.com",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
+
+
+CORS_ALLOW_ORIGINS = _parse_cors_origins(os.getenv("CORS_ALLOW_ORIGINS", ""))
 
 PLAN_CATALOG: dict[str, dict[str, int]] = {
     "starter": {"price_cents": 19900, "users_limit": 3, "docs_month_limit": 100},
@@ -79,8 +123,8 @@ os.makedirs("temp", exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ALLOW_ORIGINS if CORS_ALLOW_ORIGINS else ["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -176,6 +220,23 @@ class BillingReadinessOut(BaseModel):
     webhook_path: str
     configured: Dict[str, bool]
     next_steps: List[str]
+
+
+class AIMessageIn(BaseModel):
+    role: str
+    content: Any
+    name: Optional[str] = None
+
+
+class AIChatIn(BaseModel):
+    provider: str
+    model: str
+    messages: List[AIMessageIn]
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    timeout_sec: Optional[float] = None
+    api_key: str = ""
+    extra: Dict[str, Any] = {}
 
 
 def _can_access_doc(user: User, doc: TZDocument) -> bool:
@@ -348,11 +409,97 @@ def _openrouter_models(api_key: str) -> list[dict[str, Any]]:
         raise HTTPException(status_code=502, detail=f"openrouter_error: {str(err)[:240]}")
 
 
+def _extract_machine_token(request: FastAPIRequest) -> str:
+    auth = str(request.headers.get("authorization", "")).strip()
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return str(request.headers.get("x-api-token", "")).strip()
+
+
+def _require_machine_token(request: FastAPIRequest) -> None:
+    if not AI_PROXY_API_TOKEN:
+        return
+    token = _extract_machine_token(request)
+    if token and hmac.compare_digest(token, AI_PROXY_API_TOKEN):
+        return
+    raise HTTPException(status_code=401, detail="ai_proxy_auth_required", headers={"WWW-Authenticate": "Bearer"})
+
+
+def _ai_provider_config(provider: str) -> tuple[str, str]:
+    p = str(provider or "").strip().lower()
+    if p == "openrouter":
+        return "https://openrouter.ai/api/v1/chat/completions", AI_PROXY_OPENROUTER_API_KEY
+    if p == "groq":
+        return "https://api.groq.com/openai/v1/chat/completions", AI_PROXY_GROQ_API_KEY
+    if p == "deepseek":
+        return "https://api.deepseek.com/chat/completions", AI_PROXY_DEEPSEEK_API_KEY
+    raise HTTPException(status_code=400, detail=f"unsupported_provider: {provider}")
+
+
+def _proxy_ai_chat_completion(provider: str, payload: Dict[str, Any], body_api_key: str = "", timeout_sec: Optional[float] = None) -> Dict[str, Any]:
+    upstream_url, env_key = _ai_provider_config(provider)
+    api_key = (body_api_key or "").strip() or env_key
+    if not api_key:
+        raise HTTPException(status_code=400, detail=f"{provider}_api_key_not_configured")
+
+    timeout = float(timeout_sec or AI_PROXY_TIMEOUT)
+    timeout = max(1.0, min(timeout, 120.0))
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if str(provider or "").strip().lower() == "openrouter":
+        headers["HTTP-Referer"] = OPENROUTER_REFERER
+        headers["X-Title"] = OPENROUTER_TITLE
+
+    req = Request(upstream_url, data=body, headers=headers, method="POST")
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            code = int(getattr(resp, "status", 200))
+            raw = resp.read().decode("utf-8", errors="replace")
+            data = json.loads(raw) if raw else {}
+            return {"ok": 200 <= code < 300, "status_code": code, "data": data}
+    except HTTPError as err:
+        detail = err.read().decode("utf-8", errors="ignore") if hasattr(err, "read") else str(err)
+        raise HTTPException(status_code=502, detail=f"ai_proxy_http_{err.code}: {detail[:400]}")
+    except URLError as err:
+        raise HTTPException(status_code=502, detail=f"ai_proxy_url_error: {err.reason}")
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"ai_proxy_error: {str(err)[:400]}")
+
+
 # ── Core Endpoints ──
 
 @app.get("/")
 def read_root():
     return {"message": "ТЗ Generator API is running"}
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "service": "tz-generator-backend",
+        "integration_auth_configured": bool(INTEGRATION_API_TOKEN),
+        "ai_proxy_auth_configured": bool(AI_PROXY_API_TOKEN),
+        "ai_proxy_configured_providers": [
+            name
+            for name, ready in (
+                ("openrouter", bool(AI_PROXY_OPENROUTER_API_KEY)),
+                ("groq", bool(AI_PROXY_GROQ_API_KEY)),
+                ("deepseek", bool(AI_PROXY_DEEPSEEK_API_KEY)),
+            )
+            if ready
+        ],
+        "cors_allow_origins": CORS_ALLOW_ORIGINS,
+    }
+
+
+@app.get("/api/v1/ping")
+def api_ping():
+    return {"message": "pong"}
 
 
 @app.post("/api/scrape", response_model=ProductResponse)
@@ -736,6 +883,55 @@ def tenant_plan_limits(user: User = Depends(get_current_user), db: Session = Dep
         "usage": {"users_total": users_total, "docs_month_total": docs_month},
         "unlimited": _is_superadmin(user),
     }
+
+
+@app.get("/api/v1/ai/providers")
+def ai_providers(request: FastAPIRequest):
+    _require_machine_token(request)
+    return {
+        "ok": True,
+        "providers": {
+            "openrouter": {"configured": bool(AI_PROXY_OPENROUTER_API_KEY)},
+            "groq": {"configured": bool(AI_PROXY_GROQ_API_KEY)},
+            "deepseek": {"configured": bool(AI_PROXY_DEEPSEEK_API_KEY)},
+        },
+        "auth_required": bool(AI_PROXY_API_TOKEN),
+        "timeout_sec_default": AI_PROXY_TIMEOUT,
+    }
+
+
+@app.post("/api/v1/ai/chat")
+def ai_chat(req: AIChatIn, request: FastAPIRequest):
+    _require_machine_token(request)
+    provider = (req.provider or "").strip().lower()
+    payload: Dict[str, Any] = {
+        "model": (req.model or "").strip(),
+        "messages": [
+            {k: v for k, v in {"role": m.role, "content": m.content, "name": m.name}.items() if v is not None}
+            for m in (req.messages or [])
+        ],
+        "stream": False,
+    }
+    if req.temperature is not None:
+        payload["temperature"] = req.temperature
+    if req.max_tokens is not None:
+        payload["max_tokens"] = req.max_tokens
+    for k, v in (req.extra or {}).items():
+        if not isinstance(k, str):
+            continue
+        key = k.strip()
+        if not key or key in {"provider", "model", "messages", "stream", "api_key"}:
+            continue
+        payload[key] = v
+
+    upstream = _proxy_ai_chat_completion(provider, payload, body_api_key=req.api_key, timeout_sec=req.timeout_sec)
+    logger.info(
+        "ai_proxy provider=%s model=%s status=%s",
+        provider,
+        (req.model or "")[:80],
+        upstream.get("status_code"),
+    )
+    return {"ok": True, "provider": provider, **upstream}
 
 @app.post("/api/public/openrouter/models")
 def public_openrouter_models(req: OpenRouterModelsIn):

@@ -36,6 +36,7 @@ from auth import (
     get_or_create_user,
     create_jwt,
     decode_jwt,
+    sync_user_entitlements,
 )
 
 # ── Search module ──────────────────────────────────────────────
@@ -52,8 +53,6 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 # ── Env config ─────────────────────────────────────────────────
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "arharius@yandex.ru").lower().strip()
-
 DEEPSEEK_API_KEY    = os.getenv("DEEPSEEK_API_KEY", "").strip()
 GROQ_API_KEY        = os.getenv("GROQ_API_KEY", "").strip()
 OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "").strip()
@@ -65,7 +64,7 @@ YOOKASSA_WEBHOOK_SECRET = os.getenv("YOOKASSA_WEBHOOK_SECRET", "").strip()
 
 AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "60"))
 
-FREE_TZ_LIMIT = int(os.getenv("FREE_TZ_LIMIT", "5"))
+FREE_TZ_LIMIT = int(os.getenv("FREE_TZ_LIMIT", "3"))
 
 _cors_raw = os.getenv("CORS_ALLOW_ORIGINS", "")
 CORS_ORIGINS = [s.strip() for s in _cors_raw.split(",") if s.strip()] if _cors_raw else [
@@ -139,6 +138,8 @@ def get_current_user(
     user = db.query(User).filter_by(email=email).first()
     if not user:
         raise HTTPException(status_code=401, detail="Пользователь не найден")
+    if sync_user_entitlements(user):
+        db.commit()
     return user
 
 def get_optional_user(
@@ -276,6 +277,7 @@ def root():
 def health():
     return {
         "status": "ok",
+        "free_tz_limit": FREE_TZ_LIMIT,
         "ai_providers": {
             "deepseek":   bool(DEEPSEEK_API_KEY),
             "groq":       bool(GROQ_API_KEY),

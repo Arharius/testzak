@@ -14,7 +14,50 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 APP_URL = os.getenv("APP_URL", "https://arharius.github.io/testzak")
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "Arharius@yandex.ru").lower().strip()
+
+def _safe_int(value: str, default: int) -> int:
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+FREE_TZ_LIMIT = _safe_int(os.getenv("FREE_TZ_LIMIT", "3"), 3)
+
+def _csv_emails(value: str) -> list[str]:
+    return [s.strip().lower() for s in str(value or "").split(",") if s.strip()]
+
+_legacy_admin = os.getenv("ADMIN_EMAIL", "Arharius@yandex.ru")
+ADMIN_EMAILS = set(
+    _csv_emails(_legacy_admin)
+    + _csv_emails(os.getenv("ADMIN_EMAILS", ""))
+    + _csv_emails(os.getenv("SUPERUSER_EMAILS", ""))
+)
+
+def is_admin_email(email: str) -> bool:
+    return email.lower().strip() in ADMIN_EMAILS
+
+def sync_user_entitlements(user: User) -> bool:
+    """Bring DB user role/limits in line with env-configured entitlements."""
+    changed = False
+    email = (user.email or "").lower().strip()
+
+    # Promote configured superusers/admins automatically.
+    if is_admin_email(email) and user.role != "admin":
+        user.role = "admin"
+        changed = True
+
+    # Keep unlimited for admin/pro, standardize free trial limit for free users.
+    if user.role in {"admin", "pro"}:
+        if user.tz_limit != -1:
+            user.tz_limit = -1
+            changed = True
+    else:
+        desired_limit = max(1, FREE_TZ_LIMIT)
+        if user.tz_limit != desired_limit:
+            user.tz_limit = desired_limit
+            changed = True
+
+    return changed
 
 def send_magic_link(email: str, token: str):
     """Send magic link email via Yandex SMTP"""
@@ -70,16 +113,17 @@ def get_or_create_user(email: str, db) -> User:
     email = email.lower().strip()
     user = db.query(User).filter_by(email=email).first()
     if not user:
-        role = "admin" if email == ADMIN_EMAIL else "free"
+        role = "admin" if is_admin_email(email) else "free"
         user = User(
             id=str(uuid.uuid4()),
             email=email,
             role=role,
-            tz_limit=-1 if role == "admin" else 3
+            tz_limit=-1 if role == "admin" else max(1, FREE_TZ_LIMIT)
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
+        db.flush()
+    if sync_user_entitlements(user):
+        db.flush()
     user.last_login = datetime.now(timezone.utc)
     db.commit()
     return user

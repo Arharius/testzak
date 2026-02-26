@@ -19,7 +19,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     role = Column(String, default="free")  # free | pro | admin
     tz_count = Column(Integer, default=0)
-    tz_limit = Column(Integer, default=5)  # free = 5/month, pro = -1 (unlimited)
+    tz_limit = Column(Integer, default=3)  # free = 3/month, pro/admin = -1 (unlimited)
     tz_month_start = Column(DateTime, nullable=True)  # track monthly reset
     subscription_id = Column(String, nullable=True)
     subscription_until = Column(DateTime, nullable=True)

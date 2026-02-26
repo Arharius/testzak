@@ -1,0 +1,11 @@
+node_modules/
+frontend-react/node_modules/
+frontend-react/dist/
+backend/__pycache__/
+*.pyc
+.env
+.env.*
+index.backup.*.html
+tests/e2e_artifacts/
+tests/autodetect_report.*
+backups/

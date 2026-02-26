@@ -1,0 +1,62 @@
+name: tz-generator-ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: JS tests
+        run: make test
+
+      - name: Backend unit tests
+        run: python -m pytest -q backend/tests
+
+      - name: Backend smoke
+        run: make backend-smoke
+
+      - name: React build
+        run: |
+          cd frontend-react
+          npm ci
+          npm run build
+
+      - name: Playwright e2e (mock API)
+        run: bash tests/run_e2e.sh
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tz-generator-test-reports
+          path: |
+            tests/autodetect_report.md
+            tests/autodetect_report.json
+            /tmp/tz_browser_report.md
+          if-no-files-found: ignore

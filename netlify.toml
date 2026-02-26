@@ -1,0 +1,26 @@
+[build]
+  base    = "frontend-react"
+  publish = "dist"
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Unified API on the same Netlify domain (frontend -> backend service).
+[[redirects]]
+  from   = "/api/*"
+  to     = "https://tz-generator-backend.onrender.com/api/:splat"
+  status = 200
+  force  = true
+
+# Proxy to zakupki.gov.ru for React EIS context fetcher (same-origin from browser).
+[[redirects]]
+  from   = "/proxy/zakupki/*"
+  to     = "https://zakupki.gov.ru/:splat"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200

@@ -18,6 +18,7 @@ import {
 import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
 import { generateItemSpecs, postPlatformDraft, sendEventThroughBestChannel } from '../lib/api';
+import { generateWithBackend, searchInternetSpecs, searchEisSpecs, BACKEND_URL } from '../lib/backendApi';
 import { appendAutomationLog } from '../lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from '../types/schemas';
 import { GOODS_CATALOG, GOODS_GROUPS, detectGoodsType, type GoodsItem, type HardSpec } from '../data/goods-catalog';
@@ -573,9 +574,12 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
 type Props = {
   automationSettings: AutomationSettings;
   platformSettings: PlatformIntegrationSettings;
+  backendUser?: { email: string; role: string; tz_count: number; tz_limit: number } | null;
 };
 
-export function Workspace({ automationSettings, platformSettings }: Props) {
+export function Workspace({ automationSettings, platformSettings, backendUser }: Props) {
+  // Whether to use backend (logged in + backend URL configured)
+  const useBackend = !!(backendUser && BACKEND_URL);
   const [lawMode, setLawMode] = useState<LawMode>('44');
   const [provider, setProvider] = useState<Provider>('deepseek');
   const [apiKey, setApiKey] = useState('');
@@ -602,8 +606,8 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   }, []);
 
   const canGenerate = useMemo(
-    () => apiKey.trim().length > 6 && rows.every((r) => r.model.trim().length > 0),
-    [apiKey, rows]
+    () => (useBackend || apiKey.trim().length > 6) && rows.every((r) => r.model.trim().length > 0),
+    [useBackend, apiKey, rows]
   );
 
   const mutation = useMutation({
@@ -629,7 +633,12 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         }
         const prompt = buildPrompt(next[i], lawMode);
         try {
-          const raw = await generateItemSpecs(provider, apiKey, model, prompt);
+          let raw: string;
+          if (useBackend) {
+            raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
+          } else {
+            raw = await generateItemSpecs(provider, apiKey, model, prompt);
+          }
           const { meta, specs } = parseAiResponse(raw);
           const processed = postProcessSpecs(specs);
           next[i] = { ...next[i], status: 'done', specs: processed, meta };
@@ -676,15 +685,15 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     setRows((prev) => [...prev, { id: Date.now(), type: 'pc', model: '', qty: 1, status: 'idle' }]);
   };
 
-  // ── Подтянуть реальные характеристики товара через ИИ ───────────────────────
+  // ── Подтянуть реальные характеристики товара ────────────────────────────────
   const enrichFromInternet = useCallback(async () => {
     const filledRows = rows.filter((r) => r.model.trim().length > 0);
     if (filledRows.length === 0) {
       alert('Заполните поле «Модель / описание» хотя бы в одной строке');
       return;
     }
-    if (!apiKey.trim()) {
-      alert('Введите API-ключ — он нужен для поиска характеристик через ИИ');
+    if (!useBackend && !apiKey.trim()) {
+      alert('Войдите в систему для поиска через интернет, или введите API-ключ');
       return;
     }
     setInternetSearching(true);
@@ -694,12 +703,37 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       const g = GOODS_CATALOG[next[i].type] ?? GOODS_CATALOG['pc'];
       next[i] = { ...next[i], status: 'loading', error: '' };
       setRows([...next]);
-      const prompt = buildSpecSearchPrompt(next[i], g);
       try {
-        const raw = await generateItemSpecs(provider, apiKey, model, prompt);
-        const { meta, specs } = parseAiResponse(raw);
-        const processed = postProcessSpecs(specs);
-        next[i] = { ...next[i], status: 'done', specs: processed, meta };
+        let newSpecs: SpecItem[] | undefined;
+        let newMeta: Record<string, string> | undefined;
+
+        if (useBackend) {
+          // Use Serper.dev backend search — real internet product specs
+          const backendSpecs = await searchInternetSpecs(next[i].model.trim(), next[i].type);
+          if (backendSpecs.length > 0) {
+            newSpecs = backendSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' }));
+            newMeta = {
+              okpd2_code: g.okpd2, okpd2_name: g.okpd2name,
+              ktru_code: g.ktruFixed ?? '', nac_regime: 'pp878',
+            };
+          }
+        }
+
+        if (!newSpecs || newSpecs.length === 0) {
+          // Fallback: use AI prompt (direct or backend)
+          const prompt = buildSpecSearchPrompt(next[i], g);
+          let raw: string;
+          if (useBackend) {
+            raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
+          } else {
+            raw = await generateItemSpecs(provider, apiKey, model, prompt);
+          }
+          const { meta, specs } = parseAiResponse(raw);
+          newSpecs = postProcessSpecs(specs);
+          newMeta = meta;
+        }
+
+        next[i] = { ...next[i], status: 'done', specs: newSpecs, meta: newMeta };
       } catch (e) {
         next[i] = { ...next[i], status: 'error', error: e instanceof Error ? e.message : 'error' };
       }
@@ -713,19 +747,19 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       showToast(`✅ Характеристики добавлены в ТЗ: ${totalSpecs} параметров`);
       scrollToPreview();
     } else {
-      showToast('❌ Не удалось получить характеристики — проверьте API-ключ', false);
+      showToast('❌ Не удалось получить характеристики', false);
     }
-  }, [rows, apiKey, provider, model, showToast, scrollToPreview]);
+  }, [useBackend, rows, apiKey, provider, model, showToast, scrollToPreview]);
 
-  // ── Найти ТЗ в ЕИС: zapros на zakupki.gov.ru через nginx-proxy, адаптация через ИИ
+  // ── Найти ТЗ в ЕИС (zakupki.gov.ru) ─────────────────────────────────────────
   const searchZakupki = useCallback(async () => {
     const filledRows = rows.filter((r) => r.model.trim().length > 0);
     if (filledRows.length === 0) {
       alert('Заполните поле «Модель / описание» хотя бы в одной строке');
       return;
     }
-    if (!apiKey.trim()) {
-      alert('Введите API-ключ — он нужен для анализа ТЗ через ИИ');
+    if (!useBackend && !apiKey.trim()) {
+      alert('Войдите в систему для поиска в ЕИС, или введите API-ключ');
       return;
     }
     setEisSearching(true);
@@ -736,26 +770,49 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       next[i] = { ...next[i], status: 'loading', error: '' };
       setRows([...next]);
 
-      // Получаем данные через наш nginx-proxy к zakupki.gov.ru (same-origin, без CORS)
-      let eisContext = '';
       try {
-        const controller = new AbortController();
-        const tid = window.setTimeout(() => controller.abort(), 20000);
-        try {
-          eisContext = await fetchEisContext(g, next[i].model.trim(), controller.signal);
-        } finally {
-          clearTimeout(tid);
-        }
-      } catch {
-        // proxy недоступен — AI сгенерирует по знаниям ЕИС
-      }
+        let newSpecs: SpecItem[] | undefined;
+        let newMeta: Record<string, string> | undefined;
 
-      const prompt = buildEisStylePrompt(next[i], g, eisContext);
-      try {
-        const raw = await generateItemSpecs(provider, apiKey, model, prompt);
-        const { meta, specs } = parseAiResponse(raw);
-        const processed = postProcessSpecs(specs);
-        next[i] = { ...next[i], status: 'done', specs: processed, meta };
+        if (useBackend) {
+          // Use backend EIS search — zakupki.gov.ru + AI extraction
+          const eisSpecs = await searchEisSpecs(next[i].model.trim(), next[i].type);
+          if (eisSpecs.length > 0) {
+            newSpecs = eisSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' }));
+            newMeta = {
+              okpd2_code: g.okpd2, okpd2_name: g.okpd2name,
+              ktru_code: g.ktruFixed ?? '', nac_regime: 'pp878',
+            };
+          }
+        }
+
+        if (!newSpecs || newSpecs.length === 0) {
+          // Fallback: nginx proxy + AI
+          let eisContext = '';
+          try {
+            const controller = new AbortController();
+            const tid = window.setTimeout(() => controller.abort(), 20000);
+            try {
+              eisContext = await fetchEisContext(g, next[i].model.trim(), controller.signal);
+            } finally {
+              clearTimeout(tid);
+            }
+          } catch {
+            // proxy недоступен
+          }
+          const prompt = buildEisStylePrompt(next[i], g, eisContext);
+          let raw: string;
+          if (useBackend) {
+            raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
+          } else {
+            raw = await generateItemSpecs(provider, apiKey, model, prompt);
+          }
+          const { meta, specs } = parseAiResponse(raw);
+          newSpecs = postProcessSpecs(specs);
+          newMeta = meta;
+        }
+
+        next[i] = { ...next[i], status: 'done', specs: newSpecs, meta: newMeta };
       } catch (e) {
         next[i] = { ...next[i], status: 'error', error: e instanceof Error ? e.message : 'error' };
       }
@@ -766,13 +823,12 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     const totalSpecs2 = done2.reduce((s, r) => s + (r.specs?.length ?? 0), 0);
     if (done2.length > 0) {
       setDocxReady(true);
-      const hadEis = next.some((r) => r.status === 'done');
-      showToast(`✅ Данные из ЕИС добавлены в ТЗ: ${totalSpecs2} характеристик${hadEis ? '' : ''}`);
+      showToast(`✅ Данные из ЕИС добавлены в ТЗ: ${totalSpecs2} характеристик`);
       scrollToPreview();
     } else {
-      showToast('❌ Не удалось получить данные из ЕИС — проверьте API-ключ', false);
+      showToast('❌ Не удалось получить данные из ЕИС', false);
     }
-  }, [rows, apiKey, provider, model, showToast, scrollToPreview]);
+  }, [useBackend, rows, apiKey, provider, model, showToast, scrollToPreview]);
 
   const exportDocx = async () => {
     try {
@@ -1104,25 +1160,49 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         <label><input type="radio" checked={lawMode === '223'} onChange={() => setLawMode('223')} /> 223-ФЗ</label>
       </div>
 
-      {/* Провайдер и ключ */}
-      <div className="grid two">
-        <label>
-          Провайдер
-          <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
-            <option value="deepseek">DeepSeek</option>
-            <option value="openrouter">OpenRouter</option>
-            <option value="groq">Groq</option>
-          </select>
-        </label>
-        <label>
-          Модель
-          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
-        </label>
-        <label>
-          API-ключ
-          <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." />
-        </label>
-      </div>
+      {/* Провайдер, модель и ключ */}
+      {useBackend ? (
+        <div style={{ background: '#0F3B1E', border: '1px solid #166534', borderRadius: 8, padding: '10px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, fontSize: 13 }}>
+          <span style={{ color: '#86EFAC' }}>✅ Сервер подключён — API-ключ не нужен</span>
+          <span style={{ color: '#4ADE80', fontSize: 12 }}>
+            {backendUser?.role === 'admin' ? 'Безлимит (Admin)' : backendUser?.role === 'pro' ? '∞ Pro' : `${backendUser?.tz_count ?? 0}/${backendUser?.tz_limit ?? 5} ТЗ`}
+          </span>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', color: '#94A3B8', fontSize: 12 }}>
+            Провайдер:
+            <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)} style={{ fontSize: 12, padding: '2px 6px', background: '#1E293B', color: '#E2E8F0', border: '1px solid #334155', borderRadius: 4 }}>
+              <option value="deepseek">DeepSeek</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="groq">Groq</option>
+            </select>
+          </label>
+        </div>
+      ) : (
+        <>
+          <div className="grid two">
+            <label>
+              Провайдер
+              <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
+                <option value="deepseek">DeepSeek</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="groq">Groq</option>
+              </select>
+            </label>
+            <label>
+              Модель
+              <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
+            </label>
+            <label>
+              API-ключ
+              <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." />
+            </label>
+          </div>
+          {BACKEND_URL && (
+            <div style={{ fontSize: 12, color: '#94A3B8', padding: '6px 10px', background: '#1E293B', borderRadius: 6, marginBottom: 8 }}>
+              💡 <strong style={{ color: '#CBD5E1' }}>Войдите</strong> (кнопка «Войти» вверху справа) — без API-ключа, реальный поиск в интернете и ЕИС.
+            </div>
+          )}
+        </>
+      )}
 
       {/* Таблица позиций */}
       <div className="rows-table-wrap">

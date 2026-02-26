@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import {
   AlignmentType,
@@ -587,6 +587,19 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [eisSearching, setEisSearching] = useState(false);
   // Общий статус подтягивания из интернета
   const [internetSearching, setInternetSearching] = useState(false);
+  // Toast-уведомление
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  // Ref для скролла к превью
+  const previewRef = useRef<HTMLDivElement>(null);
+
+  const showToast = useCallback((msg: string, ok = true) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  const scrollToPreview = useCallback(() => {
+    setTimeout(() => previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+  }, []);
 
   const canGenerate = useMemo(
     () => apiKey.trim().length > 6 && rows.every((r) => r.model.trim().length > 0),
@@ -649,7 +662,13 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         await postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload);
       }
       appendAutomationLog({ at: new Date().toISOString(), event: 'react.generate', ok: true, note: `rows=${next.length}` });
-      setDocxReady(next.some((r) => r.status === 'done'));
+      const doneRows = next.filter((r) => r.status === 'done');
+      const totalSpecs = doneRows.reduce((s, r) => s + (r.specs?.length ?? 0), 0);
+      setDocxReady(doneRows.length > 0);
+      if (doneRows.length > 0) {
+        showToast(`✅ ТЗ сформировано: ${doneRows.length} позиц., ${totalSpecs} характеристик`);
+        scrollToPreview();
+      }
     },
   });
 
@@ -687,10 +706,18 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       setRows([...next]);
     }
     setInternetSearching(false);
-    setDocxReady(next.some((r) => r.status === 'done'));
-  }, [rows, apiKey, provider, model]);
+    const done = next.filter((r) => r.status === 'done');
+    const totalSpecs = done.reduce((s, r) => s + (r.specs?.length ?? 0), 0);
+    if (done.length > 0) {
+      setDocxReady(true);
+      showToast(`✅ Характеристики добавлены в ТЗ: ${totalSpecs} параметров`);
+      scrollToPreview();
+    } else {
+      showToast('❌ Не удалось получить характеристики — проверьте API-ключ', false);
+    }
+  }, [rows, apiKey, provider, model, showToast, scrollToPreview]);
 
-  // ── Найти ТЗ в ЕИС: zapros на zakupki.gov.ru через CORS-прокси, адаптация через ИИ
+  // ── Найти ТЗ в ЕИС: zapros на zakupki.gov.ru через nginx-proxy, адаптация через ИИ
   const searchZakupki = useCallback(async () => {
     const filledRows = rows.filter((r) => r.model.trim().length > 0);
     if (filledRows.length === 0) {
@@ -735,8 +762,17 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       setRows([...next]);
     }
     setEisSearching(false);
-    setDocxReady(next.some((r) => r.status === 'done'));
-  }, [rows, apiKey, provider, model]);
+    const done2 = next.filter((r) => r.status === 'done');
+    const totalSpecs2 = done2.reduce((s, r) => s + (r.specs?.length ?? 0), 0);
+    if (done2.length > 0) {
+      setDocxReady(true);
+      const hadEis = next.some((r) => r.status === 'done');
+      showToast(`✅ Данные из ЕИС добавлены в ТЗ: ${totalSpecs2} характеристик${hadEis ? '' : ''}`);
+      scrollToPreview();
+    } else {
+      showToast('❌ Не удалось получить данные из ЕИС — проверьте API-ключ', false);
+    }
+  }, [rows, apiKey, provider, model, showToast, scrollToPreview]);
 
   const exportDocx = async () => {
     try {
@@ -1047,6 +1083,19 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
 
   return (
     <section className="panel">
+      {/* Toast-уведомление */}
+      {toast && (
+        <div style={{
+          position: 'fixed', top: 16, right: 16, zIndex: 9999,
+          background: toast.ok ? '#065F46' : '#7F1D1D',
+          color: '#fff', padding: '12px 20px', borderRadius: 8,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.25)', fontSize: 14, maxWidth: 360,
+          animation: 'fadeIn 0.2s ease',
+        }}>
+          {toast.msg}
+        </div>
+      )}
+
       <h2>Рабочая область</h2>
 
       {/* Режим закона */}
@@ -1215,7 +1264,7 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       )}
 
       {/* Предварительный просмотр */}
-      {renderPreview()}
+      <div ref={previewRef}>{renderPreview()}</div>
     </section>
   );
 }

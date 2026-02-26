@@ -13,12 +13,18 @@ set -euo pipefail
 #                      or <username>.eu.pythonanywhere.com for EU host
 #   PA_PYTHON_VERSION- python312 (default) used only on webapp creation
 #   PA_SITE_PATH     - /home/<username>/tz_generator_site (default)
+#   PA_PASSWORD_PROTECTION_ENABLED - true/false to enable/disable webapp password protection
+#   PA_PASSWORD_PROTECTION_USERNAME - username for PythonAnywhere webapp password protection
+#   PA_PASSWORD_PROTECTION_PASSWORD - password for PythonAnywhere webapp password protection
 
 PA_USERNAME="${PA_USERNAME:-}"
 PA_API_TOKEN="${PA_API_TOKEN:-}"
 PA_HOST="${PA_HOST:-www.pythonanywhere.com}"
 PA_PYTHON_VERSION="${PA_PYTHON_VERSION:-python312}"
 PA_REACT_MODE="${PA_REACT_MODE:-react}"
+PA_PASSWORD_PROTECTION_ENABLED="${PA_PASSWORD_PROTECTION_ENABLED:-}"
+PA_PASSWORD_PROTECTION_USERNAME="${PA_PASSWORD_PROTECTION_USERNAME:-}"
+PA_PASSWORD_PROTECTION_PASSWORD="${PA_PASSWORD_PROTECTION_PASSWORD:-}"
 
 if [[ -z "$PA_USERNAME" || -z "$PA_API_TOKEN" ]]; then
   echo "ERROR: PA_USERNAME and PA_API_TOKEN are required."
@@ -59,7 +65,14 @@ request() {
   local url="$2"
   shift 2
   local response
-  response="$(curl -sS -w $'\n%{http_code}' -X "$method" -H "$AUTH_HEADER" "$@" "$url")"
+  response="$(curl -sS \
+    --retry 4 \
+    --retry-delay 1 \
+    --retry-all-errors \
+    -w $'\n%{http_code}' \
+    -X "$method" \
+    -H "$AUTH_HEADER" \
+    "$@" "$url")"
   local status="${response##*$'\n'}"
   local body="${response%$'\n'*}"
   printf '%s\n' "$status"
@@ -102,6 +115,14 @@ urlencode() {
 import sys, urllib.parse
 print(urllib.parse.quote(sys.argv[1], safe=''))
 PY
+}
+
+is_truthy() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    0|false|FALSE|no|NO|off|OFF) return 1 ;;
+    *) return 2 ;;
+  esac
 }
 
 echo "==> Checking webapp list for ${PA_DOMAIN}"
@@ -233,6 +254,32 @@ else
   post_static_status="$API_STATUS"
   post_static_body="$API_BODY"
   assert_status "$post_static_status" "201,200" "$post_static_body"
+fi
+
+if [[ -n "$PA_PASSWORD_PROTECTION_ENABLED" ]]; then
+  if is_truthy "$PA_PASSWORD_PROTECTION_ENABLED"; then
+    if [[ -z "$PA_PASSWORD_PROTECTION_USERNAME" || -z "$PA_PASSWORD_PROTECTION_PASSWORD" ]]; then
+      echo "ERROR: PA_PASSWORD_PROTECTION_USERNAME and PA_PASSWORD_PROTECTION_PASSWORD are required when enabling password protection."
+      exit 1
+    fi
+    echo "==> Enabling webapp password protection"
+    call_request PATCH "${BASE_URL}/webapps/${domain_enc}/" \
+      --data-urlencode "password_protection_enabled=true" \
+      --data-urlencode "password_protection_username=${PA_PASSWORD_PROTECTION_USERNAME}" \
+      --data-urlencode "password_protection_password=${PA_PASSWORD_PROTECTION_PASSWORD}"
+    assert_status "$API_STATUS" "200" "$API_BODY"
+  else
+    truthy_rc=$?
+    if [[ "$truthy_rc" -eq 1 ]]; then
+      echo "==> Disabling webapp password protection"
+      call_request PATCH "${BASE_URL}/webapps/${domain_enc}/" \
+        --data-urlencode "password_protection_enabled=false"
+      assert_status "$API_STATUS" "200" "$API_BODY"
+    else
+      echo "ERROR: Invalid PA_PASSWORD_PROTECTION_ENABLED='${PA_PASSWORD_PROTECTION_ENABLED}' (use true/false)."
+      exit 1
+    fi
+  fi
 fi
 
 echo "==> Reloading webapp ${PA_DOMAIN}"

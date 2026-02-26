@@ -881,7 +881,7 @@
   (function () {
     const ADMIN_LOGIN = 'weerowoolf';
     const ADMIN_PASS_SALT = 'tzg-admin-pass-v1';
-    const ADMIN_PASS_HASH = '3829c3c05a44f35dc720cfbf0c021567b73332a4a659255cf3b6f4bbc6c5e484';
+    const ADMIN_PASS_HASH = 'a9e57c11c7d4d21f6161dcbdc2e64a8028cae494d604dae0fc0988b532882472';
     const ADMIN_SESSION_KEY = 'tzg_admin_auth_v1';
     // Прод закрывается server-side password protection (PythonAnywhere).
     // Client-side gate оставлен в коде как резерв, но по умолчанию отключен.
@@ -3907,19 +3907,22 @@ async function runEliteProcurementAutomation() {
     logAutomationAction('elite.automation.start', true);
     await enrichRowsFromInternet();
     autoResolveTopSuggestions();
-    const hasApiKey = !!document.getElementById('apiKey')?.value?.trim();
+    const apiKey = document.getElementById('apiKey')?.value?.trim();
+    const provider = document.getElementById('apiProvider')?.value;
+    const aiModel = document.getElementById('modelSelect')?.value;
+    const hasAiTransport = canUseAITransport(apiKey, provider, aiModel);
     const rows = Array.from(document.querySelectorAll('#goods-rows tr'));
     const allModelsFilled = rows.every(tr => {
       const id = tr.dataset.rowId;
       return !!document.getElementById('goods-model-' + id)?.value?.trim();
     });
     const canNoApiTemplate = canRunTemplateGenerationWithoutApiForCurrentRows();
-    if ((hasApiKey || canNoApiTemplate) && allModelsFilled) {
+    if ((hasAiTransport || canNoApiTemplate) && allModelsFilled) {
       setLoading(false);
       await generateTZ(automationSettings.autopilotPreferTemplate !== false ? 'template' : 'classic');
     } else {
       setLoading(false);
-      showError('Экстра-автоматизация: нет API-ключа (и не все позиции подходят под жёсткий шаблон мелочёвки) или заполнены не все модели.');
+      showError('Экстра-автоматизация: нет доступа к ИИ (API-ключ или Backend AI proxy), и не все позиции подходят под жёсткий шаблон мелочёвки, либо заполнены не все модели.');
     }
     const draft = makeProcurementDraft();
     if (platformIntegrationSettings.autoExport) exportProcurementPackage();
@@ -3985,7 +3988,7 @@ async function autoDetectGoodsTypeViaAI(rowId, rawVal, normalizedVal, seq) {
   const apiKey = document.getElementById('apiKey')?.value?.trim();
   const provider = document.getElementById('apiProvider')?.value;
   const aiModel = document.getElementById('modelSelect')?.value;
-  if (!apiKey || !provider || !aiModel) return;
+  if (!canUseAITransport(apiKey, provider, aiModel)) return;
 
   const catalogHint = Object.entries(GOODS_CATALOG)
     .map(([k, v]) => `${k}: ${v.name}`)
@@ -4669,7 +4672,7 @@ async function buildAICandidates(query, hints) {
   const apiKey = document.getElementById('apiKey')?.value?.trim();
   const provider = document.getElementById('apiProvider')?.value;
   const aiModel = document.getElementById('modelSelect')?.value;
-  if (!apiKey || !provider || !aiModel) return [];
+  if (!canUseAITransport(apiKey, provider, aiModel)) return [];
 
   const catalogHint = Object.entries(GOODS_CATALOG)
     .map(([k, v]) => `${k}: ${v.name}`)
@@ -4898,15 +4901,18 @@ async function runFullAutopilot() {
       const model = document.getElementById('goods-model-' + id)?.value?.trim();
       if (!model) missingModel += 1;
     }
-    const hasApiKey = !!document.getElementById('apiKey')?.value?.trim();
+    const apiKey = document.getElementById('apiKey')?.value?.trim();
+    const provider = document.getElementById('apiProvider')?.value;
+    const aiModel = document.getElementById('modelSelect')?.value;
+    const hasAiTransport = canUseAITransport(apiKey, provider, aiModel);
     const canNoApiTemplate = canRunTemplateGenerationWithoutApiForCurrentRows();
-    if (missingModel === 0 && (hasApiKey || canNoApiTemplate)) {
+    if (missingModel === 0 && (hasAiTransport || canNoApiTemplate)) {
       setLoading(false);
       await generateTZ(automationSettings.autopilotPreferTemplate !== false ? 'template' : 'classic');
     } else {
       setLoading(false);
       logAutomationAction('autopilot.partial', false, `missing=${missingModel}`);
-      showError(`Автопилот завершён частично. Автовыборов: ${autoPicked}. Проверьте строки без модели и/или добавьте API-ключ (если есть позиции вне жёсткого шаблона мелочёвки).`);
+      showError(`Автопилот завершён частично. Автовыборов: ${autoPicked}. Проверьте строки без модели и/или настройте ИИ (API-ключ либо Backend AI proxy), если есть позиции вне жёсткого шаблона мелочёвки.`);
     }
     await sendAutomationEvent('autopilot.completed', {
       autoPicked,
@@ -5085,7 +5091,7 @@ let platformQueue = [];
 let automationSettings = {
   webhookUrl: '',
   webhookSecret: '',
-  backendApiBase: '',
+  backendApiBase: 'https://tz-generator-backend.onrender.com',
   backendApiToken: '',
   useBackendQueueApi: false,
   autoSend: false,
@@ -5135,12 +5141,103 @@ const API_ENDPOINTS = {
   deepseek:   'https://api.deepseek.com/chat/completions'
 };
 
+function getBackendAIProxyConfig() {
+  const doc = (typeof document !== 'undefined') ? document : null;
+  const settings = (typeof automationSettings !== 'undefined' && automationSettings) ? automationSettings : {};
+  const baseFromInput = doc?.getElementById('automationBackendApiBase')?.value || '';
+  const tokenFromInput = doc?.getElementById('automationBackendApiToken')?.value || '';
+  const baseFromSettings = settings.backendApiBase || '';
+  const tokenFromSettings = settings.backendApiToken || '';
+  const base = String(baseFromInput || baseFromSettings || '').trim().replace(/\/+$/, '');
+  const token = String(tokenFromInput || tokenFromSettings || '').trim();
+  return {
+    enabled: !!base,
+    base,
+    token,
+    endpoint: base ? `${base}/api/v1/ai/chat` : ''
+  };
+}
+
+function canUseAITransport(apiKey, provider, aiModel) {
+  if (!provider || !aiModel) return false;
+  if (String(apiKey || '').trim()) return true;
+  return getBackendAIProxyConfig().enabled;
+}
+
+function extractAIAssistantText(data) {
+  return String(
+    data?.choices?.[0]?.message?.content ??
+    data?.choices?.[0]?.text ??
+    ''
+  );
+}
+
 // =====================
 //  ГЕНЕРАЦИЯ ТЗ (мульти-товар)
 // =====================
 
 // Вспомогательная функция: один вызов API для одного товара
-async function callAI(prompt, apiKey, provider, aiModel) {
+async function callAIThroughBackendProxy(prompt, apiKey, provider, aiModel) {
+  const proxy = getBackendAIProxyConfig();
+  if (!proxy.enabled || !proxy.endpoint) {
+    throw new Error('Backend AI proxy не настроен');
+  }
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (proxy.token) headers['Authorization'] = 'Bearer ' + proxy.token;
+
+  const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 70000) : null;
+
+  try {
+    const response = await fetch(proxy.endpoint, {
+      method: 'POST',
+      headers,
+      signal: controller?.signal,
+      body: JSON.stringify({
+        provider,
+        model: aiModel,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.1,
+        max_tokens: 2000,
+        api_key: String(apiKey || '').trim()
+      })
+    });
+    let payload = null;
+    let rawText = '';
+    try {
+      rawText = await response.text();
+      payload = rawText ? JSON.parse(rawText) : {};
+    } catch (_) {
+      payload = rawText ? { raw_text: rawText } : {};
+    }
+    if (!response.ok) {
+      const detail = payload?.detail;
+      let msg = `Backend AI proxy HTTP ${response.status}`;
+      if (typeof detail === 'string' && detail) msg += ': ' + detail;
+      else if (detail && typeof detail === 'object') {
+        const parts = [];
+        if (detail.error) parts.push(String(detail.error));
+        if (detail.upstream_status) parts.push('upstream ' + detail.upstream_status);
+        if (detail.provider) parts.push(String(detail.provider));
+        if (parts.length) msg += ': ' + parts.join(', ');
+      }
+      throw new Error(msg);
+    }
+    const text = extractAIAssistantText(payload?.data || payload);
+    if (!text) throw new Error('Backend AI proxy вернул пустой ответ модели');
+    return text;
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      throw new Error('Backend AI proxy: превышено время ожидания ответа.');
+    }
+    throw e;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+function callAIDirect(prompt, apiKey, provider, aiModel) {
   const body = JSON.stringify({
     model: aiModel,
     messages: [{ role: 'user', content: prompt }],
@@ -5148,6 +5245,10 @@ async function callAI(prompt, apiKey, provider, aiModel) {
     max_tokens: 2000
   });
   return new Promise((resolve, reject) => {
+    if (!API_ENDPOINTS[provider]) {
+      reject(new Error('Неизвестный AI-провайдер: ' + provider));
+      return;
+    }
     const xhr = new XMLHttpRequest();
     xhr.open('POST', API_ENDPOINTS[provider], true);
     xhr.setRequestHeader('Content-Type', 'application/json');
@@ -5173,6 +5274,20 @@ async function callAI(prompt, apiKey, provider, aiModel) {
     xhr.onerror = () => reject(new Error('Сетевая ошибка. Проверьте подключение к интернету.'));
     xhr.send(body);
   });
+}
+
+async function callAI(prompt, apiKey, provider, aiModel) {
+  const proxy = getBackendAIProxyConfig();
+  const hasLocalKey = !!String(apiKey || '').trim();
+  if (proxy.enabled) {
+    try {
+      return await callAIThroughBackendProxy(prompt, apiKey, provider, aiModel);
+    } catch (e) {
+      if (!hasLocalKey) throw e;
+      console.warn('Backend AI proxy failed, fallback to direct provider:', e?.message || e);
+    }
+  }
+  return callAIDirect(prompt, apiKey, provider, aiModel);
 }
 
 async function generateTZ(renderMode) {
@@ -5221,10 +5336,14 @@ async function generateTZ(renderMode) {
       return isHardTemplateMinorType(type);
     });
 
-  if (!apiKey && !canRunWithoutAI) {
-    document.getElementById('apiKey').focus();
-    document.getElementById('apiKey').style.borderColor = '#ef4444';
-    showError('Введите API ключ в поле "API Ключ" (или используйте шаблонный режим только для мелочёвки с жёстким шаблоном).');
+  const hasAiTransport = canUseAITransport(apiKey, provider, aiModel);
+  if (!hasAiTransport && !canRunWithoutAI) {
+    const hasBackendProxy = getBackendAIProxyConfig().enabled;
+    if (!hasBackendProxy) {
+      document.getElementById('apiKey').focus();
+      document.getElementById('apiKey').style.borderColor = '#ef4444';
+    }
+    showError('Укажите API ключ или настройте Backend Connector API (server-side AI proxy). Либо используйте шаблонный режим только для мелочёвки с жёстким шаблоном.');
     return;
   }
 

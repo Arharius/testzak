@@ -1,14 +1,16 @@
 import json
+import hmac
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi import Request as FastAPIRequest
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -21,12 +23,52 @@ STORE_FILE = Path(os.getenv("INTEGRATION_STORE_FILE", "/tmp/tz_integration_store
 AUDIT_DB_FILE = Path(os.getenv("INTEGRATION_AUDIT_DB", "/tmp/tz_integration_audit.db"))
 TARGET_WEBHOOK_URL = os.getenv("INTEGRATION_TARGET_WEBHOOK_URL", "").strip()
 TARGET_WEBHOOK_TIMEOUT = float(os.getenv("INTEGRATION_TARGET_TIMEOUT", "12"))
-INTEGRATION_API_TOKEN = os.getenv("INTEGRATION_API_TOKEN", "").strip()
-INTEGRATION_MAX_ATTEMPTS = max(1, int(os.getenv("INTEGRATION_MAX_ATTEMPTS", "5")))
+INTEGRATION_API_TOKEN = (
+    os.getenv("INTEGRATION_API_TOKEN", "").strip()
+    or os.getenv("BACKEND_API_TOKEN", "").strip()
+    or os.getenv("TZ_BACKEND_API_TOKEN", "").strip()
+)
+AI_PROXY_API_TOKEN = (
+    os.getenv("AI_PROXY_API_TOKEN", "").strip()
+    or INTEGRATION_API_TOKEN
+)
+AI_PROXY_TIMEOUT = float(os.getenv("AI_PROXY_TIMEOUT", "45"))
+AI_PROXY_OPENROUTER_API_KEY = (
+    os.getenv("AI_PROXY_OPENROUTER_API_KEY", "").strip()
+    or os.getenv("OPENROUTER_API_KEY", "").strip()
+)
+AI_PROXY_GROQ_API_KEY = (
+    os.getenv("AI_PROXY_GROQ_API_KEY", "").strip()
+    or os.getenv("GROQ_API_KEY", "").strip()
+)
+AI_PROXY_DEEPSEEK_API_KEY = (
+    os.getenv("AI_PROXY_DEEPSEEK_API_KEY", "").strip()
+    or os.getenv("DEEPSEEK_API_KEY", "").strip()
+)
+OPENROUTER_REFERER = os.getenv("OPENROUTER_REFERER", "").strip()
+OPENROUTER_TITLE = os.getenv("OPENROUTER_TITLE", "TZ Generator").strip()
+
+
+def parse_cors_origins(raw: str) -> list[str]:
+    text = (raw or "").strip()
+    if text:
+        return [item.strip() for item in text.split(",") if item.strip()]
+    return [
+        "https://weerowoolf.pythonanywhere.com",
+        "https://tz-generator-frontend.onrender.com",
+        "https://tz-generator-frontend-new.onrender.com",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
+
+
+CORS_ALLOW_ORIGINS = parse_cors_origins(os.getenv("CORS_ALLOW_ORIGINS", ""))
 
 
 def _default_store() -> dict[str, Any]:
-    return {"queue": [], "history": [], "dead_letter": []}
+    return {"queue": [], "history": []}
 
 
 def load_store() -> dict[str, Any]:
@@ -38,7 +80,6 @@ def load_store() -> dict[str, Any]:
             return _default_store()
         raw.setdefault("queue", [])
         raw.setdefault("history", [])
-        raw.setdefault("dead_letter", [])
         return raw
     except Exception:
         return _default_store()
@@ -166,6 +207,100 @@ def push_to_target(event: dict[str, Any]) -> tuple[bool, str]:
         return False, f"error: {err}"
 
 
+def _extract_request_token(request: FastAPIRequest) -> str:
+    auth = str(request.headers.get("authorization", "")).strip()
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return str(request.headers.get("x-api-token", "")).strip()
+
+
+def require_api_token(request: FastAPIRequest, expected_token: str, scope: str) -> None:
+    if not expected_token:
+        return
+    got = _extract_request_token(request)
+    if got and hmac.compare_digest(got, expected_token):
+        return
+    raise HTTPException(
+        status_code=401,
+        detail=f"{scope}_auth_required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _ai_provider_config(provider: str) -> tuple[str, str]:
+    p = provider.strip().lower()
+    if p == "openrouter":
+        return "https://openrouter.ai/api/v1/chat/completions", AI_PROXY_OPENROUTER_API_KEY
+    if p == "groq":
+        return "https://api.groq.com/openai/v1/chat/completions", AI_PROXY_GROQ_API_KEY
+    if p == "deepseek":
+        # DeepSeek OpenAI-compatible API path.
+        return "https://api.deepseek.com/chat/completions", AI_PROXY_DEEPSEEK_API_KEY
+    raise HTTPException(status_code=400, detail=f"unsupported_provider: {provider}")
+
+
+def proxy_ai_chat_completion(
+    provider: str,
+    payload: dict[str, Any],
+    body_api_key: str = "",
+    timeout_sec: float | None = None,
+) -> dict[str, Any]:
+    url, env_api_key = _ai_provider_config(provider)
+    api_key = (body_api_key or "").strip() or env_api_key
+    if not api_key:
+        raise HTTPException(status_code=400, detail=f"{provider}_api_key_not_configured")
+
+    timeout = float(timeout_sec or AI_PROXY_TIMEOUT)
+    timeout = max(1.0, min(timeout, 120.0))
+    raw_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if provider.strip().lower() == "openrouter":
+        if OPENROUTER_REFERER:
+            headers["HTTP-Referer"] = OPENROUTER_REFERER
+        if OPENROUTER_TITLE:
+            headers["X-Title"] = OPENROUTER_TITLE
+
+    req = Request(url, data=raw_body, headers=headers, method="POST")
+    try:
+        with urlopen(req, timeout=timeout) as response:
+            code = int(getattr(response, "status", 200))
+            text = response.read().decode("utf-8", errors="replace")
+            try:
+                data = json.loads(text) if text else {}
+            except json.JSONDecodeError:
+                data = {"raw_text": text[:4000]}
+            return {"ok": 200 <= code < 300, "status_code": code, "data": data}
+    except HTTPError as err:
+        try:
+            text = err.read().decode("utf-8", errors="replace")
+        except Exception:
+            text = str(err)
+        try:
+            parsed = json.loads(text) if text else {}
+        except json.JSONDecodeError:
+            parsed = {"raw_text": text[:4000]}
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "error": "upstream_http_error",
+                "provider": provider,
+                "upstream_status": err.code,
+                "upstream_body": parsed,
+            },
+        )
+    except URLError as err:
+        raise HTTPException(status_code=502, detail=f"upstream_url_error: {err.reason}")
+    except HTTPException:
+        raise
+    except Exception as err:
+        raise HTTPException(status_code=502, detail=f"ai_proxy_error: {err}")
+
+
 def flush_queue(limit: int = 100) -> dict[str, Any]:
     store = load_store()
     queue = store.get("queue", [])
@@ -173,7 +308,6 @@ def flush_queue(limit: int = 100) -> dict[str, Any]:
     success = 0
     failed = 0
     remained: list[dict[str, Any]] = []
-    dead_letter_count = 0
 
     for idx, item in enumerate(queue):
         if idx >= limit:
@@ -199,110 +333,24 @@ def flush_queue(limit: int = 100) -> dict[str, Any]:
             log_audit("queue.flush_item", "sent", record_id=item.get("id", ""), note=note)
         else:
             failed += 1
-            attempts = int(item.get("attempts", 0))
+            item["status"] = "queued"
             item["last_result"] = note
-            if attempts >= INTEGRATION_MAX_ATTEMPTS:
-                item["status"] = "dead_letter"
-                item["dead_letter_at"] = utc_now()
-                store["dead_letter"].append(item)
-                dead_letter_count += 1
-                log_audit("queue.flush_item", "dead_letter", record_id=item.get("id", ""), note=note)
-            else:
-                item["status"] = "queued"
-                remained.append(item)
-                log_audit("queue.flush_item", "queued", record_id=item.get("id", ""), note=note)
+            remained.append(item)
+            log_audit("queue.flush_item", "queued", record_id=item.get("id", ""), note=note)
 
     if len(remained) > 2000:
         remained = remained[-2000:]
     store["queue"] = remained
     if len(store["history"]) > 5000:
         store["history"] = store["history"][-5000:]
-    if len(store["dead_letter"]) > 5000:
-        store["dead_letter"] = store["dead_letter"][-5000:]
     save_store(store)
     return {
         "processed": processed,
         "success": success,
         "failed": failed,
-        "dead_lettered": dead_letter_count,
         "queue_remaining": len(remained),
         "target_configured": bool(TARGET_WEBHOOK_URL),
     }
-
-
-def parse_iso_at(value: str) -> datetime | None:
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except Exception:
-        return None
-
-
-def query_audit_status_counts(hours: int = 24) -> dict[str, int]:
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
-    counts: dict[str, int] = {"sent": 0, "queued": 0, "dead_letter": 0}
-    try:
-        with sqlite3.connect(AUDIT_DB_FILE) as conn:
-            rows = conn.execute(
-                """
-                SELECT status, COUNT(*)
-                FROM audit_log
-                WHERE action = 'queue.flush_item' AND at >= ?
-                GROUP BY status
-                """,
-                (cutoff,),
-            ).fetchall()
-        for status, cnt in rows:
-            key = str(status or "")
-            if key in counts:
-                counts[key] = int(cnt or 0)
-    except Exception:
-        pass
-    return counts
-
-
-def integration_health_snapshot() -> dict[str, Any]:
-    store = load_store()
-    queue = store.get("queue", [])
-    history = store.get("history", [])
-    dead_letter = store.get("dead_letter", [])
-    now = datetime.now(timezone.utc)
-
-    oldest_queued_seconds = 0
-    if queue:
-        created_times = [parse_iso_at(str(item.get("created_at", ""))) for item in queue]
-        created_times = [t for t in created_times if t is not None]
-        if created_times:
-            oldest = min(created_times)
-            oldest_queued_seconds = max(0, int((now - oldest).total_seconds()))
-
-    counts_24h = query_audit_status_counts(24)
-    status = "ok"
-    if dead_letter:
-        status = "degraded"
-    if oldest_queued_seconds > 3600:
-        status = "degraded"
-
-    return {
-        "status": status,
-        "queue_total": len(queue),
-        "history_total": len(history),
-        "dead_letter_total": len(dead_letter),
-        "oldest_queued_seconds": oldest_queued_seconds,
-        "flush_24h": counts_24h,
-        "target_webhook_configured": bool(TARGET_WEBHOOK_URL),
-        "integration_auth_enabled": bool(INTEGRATION_API_TOKEN),
-        "integration_max_attempts": INTEGRATION_MAX_ATTEMPTS,
-    }
-
-
-def require_integration_auth(authorization: str | None = Header(default=None)) -> None:
-    if not INTEGRATION_API_TOKEN:
-        return
-    token = (authorization or "").strip()
-    if token.startswith("Bearer "):
-        token = token[7:].strip()
-    if token != INTEGRATION_API_TOKEN:
-        raise HTTPException(status_code=401, detail="unauthorized")
 
 
 class IntegrationEventIn(BaseModel):
@@ -320,11 +368,28 @@ class AuditQueryIn(BaseModel):
     limit: int = Field(default=100, ge=1, le=1000)
 
 
+class AIMessageIn(BaseModel):
+    role: str = Field(min_length=1, max_length=40)
+    content: Any
+    name: str | None = Field(default=None, max_length=120)
+
+
+class AIChatIn(BaseModel):
+    provider: str = Field(min_length=3, max_length=40)
+    model: str = Field(min_length=1, max_length=160)
+    messages: list[AIMessageIn] = Field(min_length=1, max_length=100)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    max_tokens: int | None = Field(default=None, ge=1, le=65536)
+    timeout_sec: float | None = Field(default=None, ge=1, le=120)
+    api_key: str = Field(default="", max_length=500)
+    extra: dict[str, Any] = Field(default_factory=dict)
+
+
 app = FastAPI(title="TZ Generator Backend", version="1.2.0", docs_url="/docs")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ALLOW_ORIGINS if CORS_ALLOW_ORIGINS else ["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -333,14 +398,24 @@ init_audit_db()
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    snap = integration_health_snapshot()
+    store = load_store()
     return {
         "status": "ok",
-        "queue": snap["queue_total"],
-        "history": snap["history_total"],
-        "dead_letter": snap["dead_letter_total"],
-        "target_configured": snap["target_webhook_configured"],
-        "integration_status": snap["status"],
+        "queue": len(store.get("queue", [])),
+        "history": len(store.get("history", [])),
+        "target_configured": bool(TARGET_WEBHOOK_URL),
+        "integration_auth_configured": bool(INTEGRATION_API_TOKEN),
+        "ai_proxy_auth_configured": bool(AI_PROXY_API_TOKEN),
+        "ai_proxy_configured_providers": [
+            name
+            for name, is_ready in (
+                ("openrouter", bool(AI_PROXY_OPENROUTER_API_KEY)),
+                ("groq", bool(AI_PROXY_GROQ_API_KEY)),
+                ("deepseek", bool(AI_PROXY_DEEPSEEK_API_KEY)),
+            )
+            if is_ready
+        ],
+        "cors_allow_origins": CORS_ALLOW_ORIGINS,
     }
 
 
@@ -350,8 +425,8 @@ def ping() -> dict[str, str]:
 
 
 @app.post("/api/v1/integration/event")
-def integration_event(body: IntegrationEventIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    require_integration_auth(authorization)
+def integration_event(body: IntegrationEventIn, request: FastAPIRequest) -> dict[str, Any]:
+    require_api_token(request, INTEGRATION_API_TOKEN, "integration")
     idem = (body.idempotency_key or "").strip()
     if idem:
         prev = get_idempotency_response(idem)
@@ -366,8 +441,8 @@ def integration_event(body: IntegrationEventIn, authorization: str | None = Head
 
 
 @app.post("/api/v1/integration/draft")
-def integration_draft(payload: dict[str, Any], authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    require_integration_auth(authorization)
+def integration_draft(payload: dict[str, Any], request: FastAPIRequest) -> dict[str, Any]:
+    require_api_token(request, INTEGRATION_API_TOKEN, "integration")
     idem = str(payload.get("idempotency_key", "")).strip() if isinstance(payload, dict) else ""
     if idem:
         prev = get_idempotency_response(idem)
@@ -382,27 +457,24 @@ def integration_draft(payload: dict[str, Any], authorization: str | None = Heade
 
 
 @app.get("/api/v1/integration/queue")
-def integration_queue(authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    require_integration_auth(authorization)
+def integration_queue(request: FastAPIRequest) -> dict[str, Any]:
+    require_api_token(request, INTEGRATION_API_TOKEN, "integration")
     store = load_store()
     queue = store.get("queue", [])
     history = store.get("history", [])
-    dead_letter = store.get("dead_letter", [])
     return {
         "ok": True,
         "queue_total": len(queue),
         "history_total": len(history),
-        "dead_letter_total": len(dead_letter),
         "latest_queue": queue[-20:],
         "latest_history": history[-20:],
-        "latest_dead_letter": dead_letter[-20:],
         "target_webhook_configured": bool(TARGET_WEBHOOK_URL),
     }
 
 
 @app.post("/api/v1/integration/audit")
-def integration_audit(body: AuditQueryIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    require_integration_auth(authorization)
+def integration_audit(body: AuditQueryIn, request: FastAPIRequest) -> dict[str, Any]:
+    require_api_token(request, INTEGRATION_API_TOKEN, "integration")
     limit = body.limit
     try:
         with sqlite3.connect(AUDIT_DB_FILE) as conn:
@@ -430,8 +502,8 @@ def integration_audit(body: AuditQueryIn, authorization: str | None = Header(def
 
 
 @app.post("/api/v1/integration/flush")
-def integration_flush(body: FlushIn, authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    require_integration_auth(authorization)
+def integration_flush(body: FlushIn, request: FastAPIRequest) -> dict[str, Any]:
+    require_api_token(request, INTEGRATION_API_TOKEN, "integration")
     result = flush_queue(body.limit)
     if not result["target_configured"]:
         raise HTTPException(status_code=400, detail="INTEGRATION_TARGET_WEBHOOK_URL is not configured")
@@ -439,7 +511,74 @@ def integration_flush(body: FlushIn, authorization: str | None = Header(default=
     return {"ok": True, **result}
 
 
-@app.get("/api/v1/integration/metrics")
-def integration_metrics(authorization: str | None = Header(default=None)) -> dict[str, Any]:
-    require_integration_auth(authorization)
-    return {"ok": True, "metrics": integration_health_snapshot(), "at": utc_now()}
+@app.get("/api/v1/ai/providers")
+def ai_providers(request: FastAPIRequest) -> dict[str, Any]:
+    require_api_token(request, AI_PROXY_API_TOKEN, "ai_proxy")
+    return {
+        "ok": True,
+        "providers": {
+            "openrouter": {"configured": bool(AI_PROXY_OPENROUTER_API_KEY)},
+            "groq": {"configured": bool(AI_PROXY_GROQ_API_KEY)},
+            "deepseek": {"configured": bool(AI_PROXY_DEEPSEEK_API_KEY)},
+        },
+        "auth_required": bool(AI_PROXY_API_TOKEN),
+        "timeout_sec_default": AI_PROXY_TIMEOUT,
+    }
+
+
+@app.post("/api/v1/ai/chat")
+def ai_chat(body: AIChatIn, request: FastAPIRequest) -> dict[str, Any]:
+    require_api_token(request, AI_PROXY_API_TOKEN, "ai_proxy")
+    provider = body.provider.strip().lower()
+    payload: dict[str, Any] = {
+        "model": body.model.strip(),
+        "messages": [
+            {
+                key: value
+                for key, value in {
+                    "role": msg.role.strip(),
+                    "content": msg.content,
+                    "name": (msg.name or "").strip() or None,
+                }.items()
+                if value is not None
+            }
+            for msg in body.messages
+        ],
+        # Streaming is intentionally disabled for the first stable proxy version.
+        "stream": False,
+    }
+    if body.temperature is not None:
+        payload["temperature"] = body.temperature
+    if body.max_tokens is not None:
+        payload["max_tokens"] = body.max_tokens
+
+    blocked_extra = {"model", "messages", "stream", "api_key", "provider"}
+    for key, value in (body.extra or {}).items():
+        if not isinstance(key, str):
+            continue
+        k = key.strip()
+        if not k or k in blocked_extra:
+            continue
+        payload[k] = value
+
+    upstream = proxy_ai_chat_completion(
+        provider=provider,
+        payload=payload,
+        body_api_key=body.api_key,
+        timeout_sec=body.timeout_sec,
+    )
+    usage = {}
+    if isinstance(upstream.get("data"), dict):
+        usage = upstream["data"].get("usage", {}) or {}
+    log_audit(
+        "ai.chat",
+        "ok" if upstream.get("ok") else "upstream_error",
+        note=f"{provider}:{body.model[:80]}",
+        payload={
+            "provider": provider,
+            "model": body.model[:120],
+            "messages_count": len(body.messages),
+            "usage": usage if isinstance(usage, dict) else {},
+        },
+    )
+    return {"ok": True, "provider": provider, **upstream}

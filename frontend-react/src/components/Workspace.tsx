@@ -135,19 +135,63 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
 {"meta":{"okpd2_code":"${g.okpd2}","okpd2_name":"${g.okpd2name}","ktru_code":"${g.ktruFixed ?? ''}","nac_regime":"${nac}","law175_status":"exempt","law175_basis":""},"specs":[{"group":"Группа","name":"Характеристика","value":"Значение","unit":""}]}`;
 }
 
-// ── Извлечь текст из HTML ЕИС (через DOMParser) ───────────────────────────────
+// ── Извлечь текст из HTML ЕИС/КТРУ (DOMParser) ────────────────────────────────
 function extractEisText(html: string): string {
   if (!html) return '';
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
-    doc.querySelectorAll('script, style, nav, footer, header').forEach((el) => el.remove());
-    const body = doc.querySelector('main') ?? doc.body;
-    const text = (body?.textContent ?? '').replace(/\s+/g, ' ').trim();
-    return text.slice(0, 1500);
+    doc.querySelectorAll('script, style, nav, footer, header, .search-bar, .page-header').forEach((el) => el.remove());
+    // Пробуем вытащить таблицу характеристик КТРУ
+    const tables = Array.from(doc.querySelectorAll('table'));
+    const tableParts: string[] = [];
+    for (const tbl of tables) {
+      const rows = Array.from(tbl.querySelectorAll('tr'));
+      for (const tr of rows) {
+        const cells = Array.from(tr.querySelectorAll('td, th')).map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim());
+        if (cells.length >= 2 && cells.some((c) => c.length > 2)) {
+          tableParts.push(cells.join(' | '));
+        }
+      }
+      if (tableParts.length > 30) break;
+    }
+    if (tableParts.length > 0) return tableParts.join('\n').slice(0, 2500);
+    // Фолбэк — весь текст страницы
+    const body = doc.querySelector('main') ?? doc.querySelector('.search-results') ?? doc.body;
+    return (body?.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 2000);
   } catch {
     return '';
   }
+}
+
+// ── Получить контекст из zakupki.gov.ru через наш nginx-proxy ──────────────────
+async function fetchEisContext(g: GoodsItem, searchQuery: string, signal: AbortSignal): Promise<string> {
+  const parts: string[] = [];
+  // 1. Поиск по КТРУ-каталогу zakupki.gov.ru
+  const ktruQ = encodeURIComponent(`${searchQuery} ${g.name}`);
+  const ktruPath = `/proxy/zakupki/epz/ktru/ws/search/common/?searchString=${ktruQ}&morphology=on&pageNumber=1&recordsPerPage=5`;
+  try {
+    const r = await fetch(ktruPath, { signal });
+    if (r.ok) {
+      const html = await r.text();
+      const extracted = extractEisText(html);
+      if (extracted.length > 50) parts.push('=== КТРУ-каталог ===\n' + extracted);
+    }
+  } catch { /* proxy недоступен — продолжаем */ }
+
+  // 2. Поиск закупок по 44-ФЗ с данным товаром
+  const eiQ = encodeURIComponent(`${searchQuery} ${g.name}`);
+  const eisPath = `/proxy/zakupki/epz/order/extendedsearch/results.html?searchString=${eiQ}&morphology=on&fz44=on&sortBy=UPDATE_DATE&pageNumber=1&recordsPerPage=_5&showLotsInfoHidden=false`;
+  try {
+    const r2 = await fetch(eisPath, { signal });
+    if (r2.ok) {
+      const html2 = await r2.text();
+      const extracted2 = extractEisText(html2);
+      if (extracted2.length > 50) parts.push('=== Результаты поиска ЕИС ===\n' + extracted2);
+    }
+  } catch { /* продолжаем без контекста ЕИС */ }
+
+  return parts.join('\n\n').slice(0, 3000);
 }
 
 // ── Промпт: генерация ТЗ в стиле реальных закупок ЕИС ────────────────────────
@@ -665,26 +709,18 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       next[i] = { ...next[i], status: 'loading', error: '' };
       setRows([...next]);
 
-      // Пробуем получить данные с zakupki.gov.ru через CORS-прокси allorigins.win
+      // Получаем данные через наш nginx-proxy к zakupki.gov.ru (same-origin, без CORS)
       let eisContext = '';
       try {
-        const q = encodeURIComponent(`${next[i].model.trim()} ${g.name}`);
-        const eisUrl = `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${q}&morphology=on&fz44=on&sortBy=UPDATE_DATE&pageNumber=1&sortDirection=false&recordsPerPage=_5&showLotsInfoHidden=false`;
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(eisUrl)}`;
         const controller = new AbortController();
-        const tid = window.setTimeout(() => controller.abort(), 12000);
+        const tid = window.setTimeout(() => controller.abort(), 20000);
         try {
-          const resp = await fetch(proxyUrl, { signal: controller.signal });
-          clearTimeout(tid);
-          if (resp.ok) {
-            const data = await resp.json() as { contents?: string };
-            eisContext = extractEisText(data.contents ?? '');
-          }
+          eisContext = await fetchEisContext(g, next[i].model.trim(), controller.signal);
         } finally {
           clearTimeout(tid);
         }
       } catch {
-        // прокси недоступен или zakupki.gov.ru заблокирован — ИИ сгенерирует по своим знаниям ЕИС
+        // proxy недоступен — AI сгенерирует по знаниям ЕИС
       }
 
       const prompt = buildEisStylePrompt(next[i], g, eisContext);

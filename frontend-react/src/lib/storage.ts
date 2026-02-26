@@ -38,13 +38,7 @@ export function getAutomationSettings(): AutomationSettings {
 }
 
 export function setAutomationSettings(value: AutomationSettings): void {
-  // Never persist secret values in local storage.
-  const safe: AutomationSettings = {
-    ...value,
-    webhookSecret: '',
-    backendApiToken: ''
-  };
-  writeJson(KEYS.automationSettings, safe);
+  writeJson(KEYS.automationSettings, value);
 }
 
 export function getPlatformSettings(): PlatformIntegrationSettings {
@@ -55,12 +49,7 @@ export function getPlatformSettings(): PlatformIntegrationSettings {
 }
 
 export function setPlatformSettings(value: PlatformIntegrationSettings): void {
-  // Never persist provider tokens in local storage.
-  const safe: PlatformIntegrationSettings = {
-    ...value,
-    apiToken: ''
-  };
-  writeJson(KEYS.platformSettings, safe);
+  writeJson(KEYS.platformSettings, value);
 }
 
 export function getAutomationLog(): AutomationEvent[] {
@@ -76,30 +65,6 @@ export function appendAutomationLog(entry: AutomationEvent): void {
 
 export function clearAutomationLog(): void {
   writeJson(KEYS.automationLog, []);
-}
-
-function csvEscape(value: string): string {
-  const s = String(value ?? '');
-  if (s.includes('"') || s.includes(',') || s.includes('\n')) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
-export function exportAutomationLogCsv(): string {
-  const rows = getAutomationLog();
-  const header = 'at,event,ok,note';
-  const body = rows.map((row) => [
-    csvEscape(row.at),
-    csvEscape(row.event),
-    csvEscape(row.ok ? 'true' : 'false'),
-    csvEscape(row.note || '')
-  ].join(','));
-  return [header, ...body].join('\n');
-}
-
-export function exportAutomationLogJson(): string {
-  return JSON.stringify(getAutomationLog(), null, 2);
 }
 
 export function exportLearningMap(): string {

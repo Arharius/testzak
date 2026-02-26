@@ -1,365 +1,442 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { AlignmentType, Document, Packer, Paragraph, Table, TableCell, TableRow, TextRun, WidthType } from 'docx';
+import {
+  AlignmentType,
+  BorderStyle,
+  Document,
+  HeightRule,
+  Packer,
+  Paragraph,
+  ShadingType,
+  Table,
+  TableCell,
+  TableRow,
+  TextRun,
+  VerticalAlign,
+  WidthType,
+} from 'docx';
 import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
-import {
-  fetchOpenRouterModels,
-  fetchOpenRouterModelsViaBackend,
-  generateItemSpecs,
-  postPlatformDraft,
-  sendEventThroughBestChannel
-} from '../lib/api';
+import { generateItemSpecs, postPlatformDraft, sendEventThroughBestChannel } from '../lib/api';
 import { appendAutomationLog } from '../lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from '../types/schemas';
-import { buildTypeCandidates, detectTypeDetailed, type GoodsType } from '../lib/autodetect';
+import { GOODS_CATALOG, GOODS_GROUPS, detectGoodsType, type HardSpec } from '../data/goods-catalog';
+import { postProcessSpecs, parseAiResponse, type SpecItem } from '../utils/spec-processor';
+import { buildSection2Rows, buildSection4Rows, buildSection5Rows, type LawMode } from '../utils/npa-blocks';
+import { buildZakupkiSearchLinks, type SearchLink } from '../utils/internet-search';
 
 type Provider = 'openrouter' | 'groq' | 'deepseek';
-type LawMode = '44' | '223';
-const DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'] as const;
-const GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'] as const;
 
-type Row = {
+interface GoodsRow {
   id: number;
-  type: GoodsType;
-  typeLocked?: boolean;
+  type: string;
   model: string;
   qty: number;
   status: 'idle' | 'loading' | 'done' | 'error';
   error?: string;
-  result?: string;
-  okpd2?: string;
-  ktru?: string;
-  candidates?: Array<{ type: GoodsType; score: number; reason: string }>;
-  lookupState?: 'idle' | 'loading' | 'done' | 'error' | 'choose';
-  lookupNote?: string;
-  internetHints?: string;
-};
-
-type ParsedSpec = { group: string; name: string; value: string; unit?: string };
-type ParsedResult = {
-  meta?: { okpd2_code?: string; ktru_code?: string; law175_status?: string; law175_basis?: string };
-  specs?: ParsedSpec[];
-};
-
-const GOODS_LABELS: Record<GoodsType, string> = {
-  pc: 'Системный блок',
-  laptop: 'Ноутбук',
-  monitor: 'Монитор',
-  printer: 'Принтер',
-  mfu: 'МФУ',
-  server: 'Сервер',
-  switch: 'Коммутатор',
-  router: 'Маршрутизатор',
-  cable: 'Кабель/витая пара',
-  dvd: 'Оптический диск',
-  software: 'Программное обеспечение'
-};
-
-function normalizeText(value: string): string {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/ё/g, 'е')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/[\s\n\r\t]+/g, ' ')
-    .trim();
+  specs?: SpecItem[];
+  meta?: Record<string, string>;
+  // Яндекс-подсказки и ссылки ЕИС (хранятся в отдельном state, не здесь)
 }
 
-function cutText(text: string, maxLen: number): string {
-  const s = String(text || '').trim();
-  return s.length <= maxLen ? s : `${s.slice(0, maxLen)}...`;
-}
-
-function escapeHtml(value: string): string {
-  return String(value || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function looksLikeUrl(value: string): boolean {
-  return /^https?:\/\/\S+/i.test(String(value || '').trim());
-}
-
-function isInsecureExternalHttp(url: string): boolean {
-  try {
-    const parsed = new URL(String(url || '').trim());
-    if (parsed.protocol !== 'http:') return false;
-    const host = parsed.hostname.toLowerCase();
-    return !(host === 'localhost' || host === '127.0.0.1' || host === '::1');
-  } catch {
-    return false;
-  }
-}
-
-function parseJsonArrayFromText(text: string): Array<{ type: GoodsType; model?: string; reason?: string }> {
-  const raw = String(text || '').trim();
-  if (!raw) return [];
-  const start = raw.indexOf('[');
-  const end = raw.lastIndexOf(']');
-  if (start === -1 || end === -1 || end <= start) return [];
-  try {
-    const parsed = JSON.parse(raw.slice(start, end + 1));
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((x) => x && typeof x === 'object' && typeof x.type === 'string' && x.type in GOODS_LABELS)
-      .map((x) => ({
-        type: x.type as GoodsType,
-        model: typeof x.model === 'string' ? x.model : '',
-        reason: typeof x.reason === 'string' ? x.reason : ''
-      }));
-  } catch {
-    return [];
-  }
-}
-
-function extractJsonObject(text: string): unknown | null {
-  const raw = String(text || '').trim();
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    // continue
-  }
-  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fenceMatch?.[1]) {
-    try {
-      return JSON.parse(fenceMatch[1].trim());
-    } catch {
-      // continue
-    }
-  }
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start !== -1 && end !== -1 && end > start) {
-    try {
-      return JSON.parse(raw.slice(start, end + 1));
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-function modelTokensForExactMatch(query: string): string[] {
-  const parts = normalizeText(query)
-    .split(' ')
-    .map((x) => x.trim())
-    .filter(Boolean);
-  const strong = parts.filter((t) => t.length >= 3 && /[a-zа-я]/i.test(t));
-  strong.sort((a, b) => {
-    const aScore = (/\d/.test(a) ? 2 : 0) + a.length / 10;
-    const bScore = (/\d/.test(b) ? 2 : 0) + b.length / 10;
-    return bScore - aScore;
-  });
-  return strong.slice(0, 6);
-}
-
-function extractExactModelHints(query: string, rawText: string): string {
-  const text = normalizeText(rawText);
-  if (!text) return '';
-  const tokens = modelTokensForExactMatch(query);
-  if (!tokens.length) return cutText(text, 2500);
-
-  const chunks = text
-    .split(/[\n.;:!?]+/g)
-    .map((x) => x.trim())
-    .filter((x) => x.length >= 24);
-
-  const scored = chunks.map((chunk) => {
-    const matched = tokens.filter((t) => chunk.includes(t)).length;
-    return { chunk, matched };
-  });
-
-  const strong = scored
-    .filter((x) => x.matched >= Math.min(2, Math.max(1, Math.floor(tokens.length / 2))))
-    .sort((a, b) => b.matched - a.matched)
-    .slice(0, 14)
-    .map((x) => x.chunk);
-
-  if (strong.length) return cutText(strong.join(' ; '), 2500);
-  return cutText(text, 2500);
-}
-
-async function fetchInternetHints(query: string): Promise<string> {
-  const q = String(query || '').trim();
-  if (!q) return '';
-
-  if (looksLikeUrl(q)) {
-    try {
-      const target = q.replace(/^https?:\/\//i, '');
-      const resp = await fetch(`https://r.jina.ai/http://${target}`, { method: 'GET' });
-      if (resp.ok) {
-        const raw = await resp.text();
-        return extractExactModelHints(q, raw);
-      }
-    } catch {
-      // ignore and fallback
-    }
-  }
-
-  try {
-    const ddg = `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_redirect=1&no_html=1`;
-    const resp = await fetch(ddg, { method: 'GET' });
-    if (!resp.ok) return '';
-    const data = (await resp.json()) as {
-      Heading?: string;
-      AbstractText?: string;
-      RelatedTopics?: Array<{ Text?: string }>;
-    };
-    const parts: string[] = [];
-    if (data?.Heading) parts.push(data.Heading);
-    if (data?.AbstractText) parts.push(data.AbstractText);
-    if (Array.isArray(data?.RelatedTopics)) {
-      for (const topic of data.RelatedTopics.slice(0, 4)) {
-        if (topic?.Text) parts.push(topic.Text);
-      }
-    }
-    return extractExactModelHints(q, parts.join(' ; '));
-  } catch {
-    return '';
-  }
-}
-
-function buildPrompt(row: Row, lawMode: LawMode): string {
-  const goodsName = GOODS_LABELS[row.type];
+// ── Промпты по типу товара ────────────────────────────────────────────────────
+function buildPrompt(row: GoodsRow, lawMode: LawMode): string {
+  const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+  const goodsName = g.name;
+  const okpd2 = g.okpd2;
+  const ktru = g.ktruFixed ?? '';
   const law = lawMode === '223' ? '223-ФЗ' : '44-ФЗ';
-  const hints = cutText(row.internetHints || '', 2500);
-  return `Ты эксперт по госзакупкам РФ (${law}).\n` +
-    `Сформируй технические характеристики для товара.\n` +
-    `Тип: ${goodsName}\n` +
-    `Модель/описание: ${row.model}\n` +
-    `Количество: ${row.qty}\n` +
-    (hints ? `Интернет-подсказки по КОНКРЕТНОЙ модели: ${hints}\n` : '') +
-    `\n` +
-    `Критично: не давай обобщенные характеристики категории. Используй именно данные этой модели.` +
-    ` Если точного параметра нет, не выдумывай, укажи "не указано в источнике".\n\n` +
-    `Ответ строго JSON:\n` +
-    `{\n` +
-    `  "meta": {\n` +
-    `    "okpd2_code": "...",\n` +
-    `    "okpd2_name": "...",\n` +
-    `    "ktru_code": "...",\n` +
-    `    "law175_status": "forbidden|exempt|allowed",\n` +
-    `    "law175_basis": "ПП РФ № 1875 ..."\n` +
-    `  },\n` +
-    `  "specs": [\n` +
-    `    {"group":"...","name":"...","value":"...","unit":"..."}\n` +
-    `  ]\n` +
-    `}`;
+  const isSW = !!g.isSoftware;
+
+  const specHints: Record<string, string> = {
+    pc:         '- Корпус (тип, цвет)\n- Процессор (тип, кол-во ядер, частота, кэш)\n- Оперативная память (тип, объём, частота)\n- Накопитель (тип SSD/HDD, объём)\n- Видеокарта (тип, видеопамять)\n- Интерфейсы (USB, HDMI, Ethernet, аудио)\n- Сетевые интерфейсы (Ethernet, Wi-Fi, Bluetooth)\n- Блок питания (мощность)',
+    laptop:     '- Экран (диагональ, разрешение, тип матрицы)\n- Процессор (модель, кол-во ядер, частота)\n- Оперативная память (тип, объём)\n- Накопитель (тип SSD, объём)\n- Видеокарта (тип)\n- Аккумулятор (ёмкость, время работы)\n- Интерфейсы (USB, HDMI, Wi-Fi, Bluetooth)\n- Вес, габариты',
+    server:     '- Форм-фактор (Tower/1U/2U)\n- Процессор (кол-во сокетов, модель)\n- Оперативная память (тип, объём, слоты)\n- Накопители (тип, объём, кол-во)\n- RAID-контроллер\n- Сетевые интерфейсы (кол-во, скорость)\n- Блок питания (мощность, резервирование)\n- Управление (IPMI/Redfish)',
+    monitor:    '- Диагональ (дюймы)\n- Разрешение\n- Тип матрицы\n- Яркость (кд/м²)\n- Контрастность\n- Время отклика (мс)\n- Угол обзора\n- Интерфейсы (HDMI, DisplayPort, VGA)\n- Потребляемая мощность',
+    printer:    '- Тип печати (лазерный/струйный)\n- Цветность\n- Формат бумаги\n- Скорость печати (стр/мин)\n- Разрешение печати (dpi)\n- Ресурс картриджа\n- Интерфейсы (USB, Ethernet, Wi-Fi)\n- Память (МБ)',
+    mfu:        '- Функции (печать, копирование, сканирование, факс)\n- Формат бумаги\n- Скорость печати (стр/мин)\n- Разрешение печати (dpi)\n- Разрешение сканирования (dpi)\n- Интерфейсы (USB, Ethernet, Wi-Fi)\n- Объём памяти (МБ)',
+    switch:     '- Кол-во портов Ethernet (скорость)\n- Кол-во uplink-портов SFP\n- Управляемость (managed/unmanaged)\n- Поддержка PoE (мощность)\n- Пропускная способность\n- Таблица MAC-адресов\n- Протоколы (VLAN, STP, SNMP)\n- Монтаж (rack/desktop)',
+    router:     '- Кол-во WAN-портов\n- Кол-во LAN-портов\n- Пропускная способность\n- Поддерживаемые протоколы маршрутизации\n- NAT, VPN (IPsec, PPTP, L2TP)\n- QoS\n- Процессор, память',
+    firewall:   '- Пропускная способность межсетевого экрана (Гбит/с)\n- Кол-во портов Ethernet\n- Функциональность NGFW (IPS, DPI, URL-фильтрация)\n- VPN-туннели\n- Производительность IPS\n- Возможности управления\n- Сертификат ФСТЭК',
+    os:         '- Тип ОС (десктоп/серверная)\n- Версия / релиз\n- Поддерживаемые платформы (x86_64, ARM)\n- Тип ядра\n- Наличие в реестре Минцифры\n- Тип лицензии\n- Срок поддержки\n- Поставка (количество лицензий / серверов)',
+    office:     '- Состав пакета (текстовый редактор, таблицы, презентации, почта)\n- Форматы файлов (OOXML, ODF)\n- Наличие в реестре Минцифры\n- Тип лицензии (perpetual/подписка)\n- Кол-во рабочих мест\n- Платформы (Windows, Linux)',
+    antivirus:  '- Тип защиты (файловый антивирус, проактивная защита, EDR)\n- Количество защищаемых устройств\n- ОС (Windows, Linux, macOS)\n- Тип управления (централизованное/локальное)\n- Наличие в реестре Минцифры\n- Наличие сертификата ФСТЭК\n- Срок лицензии',
+    dbms:       '- Тип СУБД (реляционная, NoSQL)\n- Поддерживаемые ОС\n- Тип лицензии\n- Кол-во ядер / серверов\n- Поддержка PostgreSQL-синтаксиса\n- Наличие в реестре Минцифры\n- Функции резервного копирования\n- SLA поддержки',
+    crypto:     '- Класс СКЗИ (КС1/КС2/КС3)\n- Поддерживаемые алгоритмы (ГОСТ Р 34.10-2012, ГОСТ Р 34.11-2012)\n- Тип поставки (ПО / аппаратный токен)\n- Количество лицензий\n- Поддерживаемые ОС\n- Наличие сертификата ФСБ России\n- Наличие в реестре Минцифры',
+    vdi:        '- Количество виртуальных рабочих мест (лицензий)\n- Поддерживаемые гипервизоры\n- Поддерживаемые гостевые ОС\n- Протоколы доступа (RDP, PCoIP, Blast)\n- Функции управления профилями пользователей\n- Наличие в реестре Минцифры\n- Наличие сертификата ФСТЭК\n- Тип лицензии',
+  };
+
+  const hint = specHints[row.type]
+    ?? (isSW ? '- Тип и версия ПО\n- Количество лицензий\n- Поддерживаемые ОС\n- Тип лицензии\n- Наличие в реестре Минцифры\n- Срок технической поддержки'
+             : '- Основные технические характеристики (5–10 параметров)\n- Интерфейсы и совместимость\n- Потребляемая мощность и массогабаритные параметры');
+
+  return `Ты — эксперт по госзакупкам РФ (${law}, ст. 33 44-ФЗ).
+Сформируй технические характеристики для товара по ${law}.
+
+Тип товара: ${goodsName}
+Модель/описание: ${row.model}
+Количество: ${row.qty} шт.
+ОКПД2: ${okpd2}${ktru ? '\nКТРУ: ' + ktru : ''}
+
+Требования к ответу:
+- Все технические марки (Intel, AMD, Samsung и т.д.) сопровождать «или эквивалент»
+- Числовые значения с операторами: писать «не менее X» (а не ">= X")
+- Тип матрицы: «IPS или эквивалент (угол обзора не менее 178°)»
+- Разрешение: «не менее 1920x1080» (не точное значение)
+- Единицы измерения: ГГц, МГц, ГБ, МБ, ТБ (не GHz/GB/MB)
+- Сокеты процессора НЕ УКАЗЫВАТЬ (нарушает ст. 33 44-ФЗ)
+- Для ОП: «DDR4 или выше» (не просто DDR4)
+${isSW ? '- ПО должно быть в реестре Минцифры России (ПП РФ № 1236)\n- Указать класс ФСТЭК/ФСБ где применимо' : ''}
+
+Характеристики для включения:
+${hint}
+
+Ответ СТРОГО в JSON (без пояснений, без markdown):
+{
+  "meta": {
+    "okpd2_code": "${okpd2}",
+    "okpd2_name": "${g.okpd2name}",
+    "ktru_code": "${ktru}",
+    "nac_regime": "${(['os','office','antivirus','crypto','dbms','erp','virt','vdi','backup_sw','dlp','siem','firewall_sw','edr','waf','pam','iam','pki','email','vks','ecm','portal','project_sw','bpm','itsm','monitoring','mdm','hr','gis','ldap','vpn','reporting','cad','license']).includes(row.type) ? 'pp1236' : 'pp878'}",
+    "law175_status": "exempt",
+    "law175_basis": ""
+  },
+  "specs": [
+    {"group":"Название группы","name":"Наименование характеристики","value":"Значение","unit":"Ед.изм."}
+  ]
+}`;
 }
 
-function parseMaybeJson(text: string): { pretty: string; okpd2: string; ktru: string } {
-  const obj = extractJsonObject(text) as Record<string, any> | null;
-  if (obj && typeof obj === 'object') {
-    const pretty = JSON.stringify(obj, null, 2);
-    return {
-      pretty,
-      okpd2: obj?.meta?.okpd2_code || '',
-      ktru: obj?.meta?.ktru_code || ''
-    };
-  }
-  return { pretty: text, okpd2: '', ktru: '' };
+// ── Вспомогательные функции DOCX ─────────────────────────────────────────────
+const FONT = 'Times New Roman';
+const FONT_SIZE = 22; // half-points → 11pt
+
+function cellShade(fill: string) {
+  return { fill, type: ShadingType.CLEAR, color: 'auto' };
 }
 
-function parseResultObject(text?: string): ParsedResult | null {
-  if (!text) return null;
-  try {
-    const parsed = extractJsonObject(text);
-    const obj = parsed as ParsedResult | null;
-    return obj && typeof obj === 'object' ? obj : null;
-  } catch {
-    return null;
-  }
-}
-
-function buildReadableResultBlock(jsonText: string): string {
-  try {
-    const parsed = extractJsonObject(jsonText);
-    if (!parsed || typeof parsed !== 'object') return jsonText;
-    const obj = parsed as ParsedResult;
-    const specs = Array.isArray(obj?.specs) ? obj.specs : [];
-    const meta = obj?.meta || {};
-    const lines: string[] = [];
-    lines.push(`ОКПД2: ${meta.okpd2_code || 'не указано'}`);
-    lines.push(`КТРУ: ${meta.ktru_code || 'не указано'}`);
-    lines.push(`ПП 1875: ${meta.law175_status || 'не указано'}${meta.law175_basis ? ` (${meta.law175_basis})` : ''}`);
-    if (specs.length) {
-      lines.push('Характеристики:');
-      for (const s of specs.slice(0, 40)) {
-        lines.push(`- ${s.group} / ${s.name}: ${s.value}${s.unit ? ` ${s.unit}` : ''}`);
-      }
-    }
-    return lines.join('\n');
-  } catch {
-    return jsonText;
-  }
-}
-
-function buildNormativeBlock(lawMode: LawMode): string {
-  if (lawMode === '223') {
-    return [
-      'Закупка по 223-ФЗ.',
-      'Проверка соответствия Положению о закупке заказчика обязательна.',
-      'Нацрежим: ПП РФ № 1875 (актуальная редакция на дату публикации).',
-      'Для ПО: учитывать правила реестров Минцифры/ЕАЭС.'
-    ].join('\n');
-  }
-  return [
-    'Закупка по 44-ФЗ.',
-    'Ст. 33 44-ФЗ: при указании ТМ использовать формулировку «или эквивалент».',
-    'Нацрежим: ПП РФ № 1875 (актуальная редакция на дату публикации).',
-    'КТРУ/ОКПД2 подлежат проверке перед размещением в ЕИС.'
-  ].join('\n');
-}
-
-function buildGeneralRequirements(lawMode: LawMode): Array<{ name: string; value: string }> {
-  return [
-    {
-      name: 'Состояние товара',
-      value: 'Новый, заводской сборки, серийный, не бывший в эксплуатации, не восстановленный.'
-    },
-    {
-      name: 'Соответствие стандартам',
-      value: 'Товар должен отвечать требованиям качества, безопасности и иным обязательным требованиям законодательства РФ.'
-    },
-    {
-      name: 'Гарантия производителя',
-      value: 'Не менее 12 (двенадцати) месяцев с даты поставки.'
-    },
-    {
-      name: 'Гарантия поставщика',
-      value: 'Не менее срока гарантии производителя.'
-    },
-    {
-      name: 'Товарный знак',
-      value: lawMode === '44'
-        ? 'При указании товарного знака применять формулировку «или эквивалент» (ст. 33 44-ФЗ).'
-        : 'Допускается указание товарного знака в соответствии с положением о закупке заказчика.'
-    }
-  ];
-}
-
-function makeCell(text: string, bold = false): TableCell {
+function hCell(text: string, opts: { span?: number; w?: number } = {}) {
   return new TableCell({
-    children: [
-      new Paragraph({
-        children: [new TextRun({ text: text || '', bold })]
-      })
-    ]
+    children: [new Paragraph({
+      children: [new TextRun({ text, bold: true, font: FONT, size: FONT_SIZE, color: 'FFFFFF' })],
+      alignment: AlignmentType.CENTER,
+    })],
+    columnSpan: opts.span,
+    width: opts.w ? { size: opts.w, type: WidthType.DXA } : undefined,
+    shading: cellShade('1F5C8B'),
+    verticalAlign: VerticalAlign.CENTER,
+    borders: allBorders(),
   });
 }
 
+function dataCell(text: string, opts: { bold?: boolean; shade?: string; span?: number; w?: number } = {}) {
+  return new TableCell({
+    children: [new Paragraph({
+      children: [new TextRun({ text, bold: opts.bold, font: FONT, size: FONT_SIZE })],
+    })],
+    columnSpan: opts.span,
+    width: opts.w ? { size: opts.w, type: WidthType.DXA } : undefined,
+    shading: opts.shade ? cellShade(opts.shade) : undefined,
+    borders: allBorders(),
+    margins: { top: 60, bottom: 60, left: 80, right: 80 },
+  });
+}
+
+function labelCell(text: string, isLaw = false) {
+  return new TableCell({
+    children: [new Paragraph({
+      children: [new TextRun({ text, bold: true, font: FONT, size: FONT_SIZE, color: isLaw ? 'B45309' : '1F2937' })],
+    })],
+    width: { size: 35, type: WidthType.PERCENTAGE },
+    shading: isLaw ? cellShade('FFFBEB') : undefined,
+    borders: allBorders(),
+    margins: { top: 60, bottom: 60, left: 80, right: 80 },
+  });
+}
+
+// Ячейка левой колонки раздела 1 (синяя заливка EEF2FF, как в образце)
+function s1LabelCell(text: string) {
+  return new TableCell({
+    children: [new Paragraph({
+      children: [new TextRun({ text, bold: true, font: FONT, size: FONT_SIZE, color: '1F2937' })],
+    })],
+    width: { size: 35, type: WidthType.PERCENTAGE },
+    shading: cellShade('EEF2FF'),
+    borders: allBorders(),
+    margins: { top: 60, bottom: 60, left: 80, right: 80 },
+  });
+}
+
+function valueCell(text: string, isLaw = false) {
+  return new TableCell({
+    children: [new Paragraph({
+      children: [new TextRun({ text, font: FONT, size: FONT_SIZE })],
+    })],
+    shading: isLaw ? cellShade('FFFBEB') : undefined,
+    borders: allBorders(),
+    margins: { top: 60, bottom: 60, left: 80, right: 80 },
+  });
+}
+
+function allBorders() {
+  const b = { style: BorderStyle.SINGLE, size: 4, color: 'A0AEC0' };
+  return { top: b, bottom: b, left: b, right: b, insideHorizontal: b, insideVertical: b };
+}
+
+function sectionTitle(text: string) {
+  return new Paragraph({
+    children: [new TextRun({ text, bold: true, font: FONT, size: 26 })],
+    spacing: { before: 240, after: 120 },
+  });
+}
+
+function numText(n: number): string {
+  const ones = ['','один','два','три','четыре','пять','шесть','семь','восемь','девять',
+                 'десять','одиннадцать','двенадцать','тринадцать','четырнадцать','пятнадцать',
+                 'шестнадцать','семнадцать','восемнадцать','девятнадцать'];
+  const tens = ['','','двадцать','тридцать','сорок','пятьдесят','шестьдесят','семьдесят','восемьдесят','девяносто'];
+  if (n === 0) return 'ноль';
+  if (n < 20) return ones[n];
+  const t = Math.floor(n / 10);
+  const o = n % 10;
+  return tens[t] + (o ? ' ' + ones[o] : '');
+}
+
+// ── Функция генерации DOCX ────────────────────────────────────────────────────
+async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
+  const doneRows = rows.filter((r) => r.status === 'done' && r.specs);
+  if (doneRows.length === 0) throw new Error('Нет готовых позиций для экспорта');
+
+  const children: (Paragraph | Table)[] = [];
+
+  const goodsNames = doneRows.length === 1
+    ? (GOODS_CATALOG[doneRows[0].type]?.name ?? doneRows[0].type)
+    : doneRows.map((r) => GOODS_CATALOG[r.type]?.name ?? r.type).join(', ');
+
+  // ── Заголовок (по образцу) ──
+  children.push(
+    new Paragraph({
+      children: [new TextRun({ text: 'Приложение к документации о закупке', font: FONT, size: 18, color: '6B7280' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 40 },
+    }),
+    new Paragraph({ children: [], spacing: { after: 80 } }),
+    new Paragraph({
+      children: [new TextRun({ text: 'ТЕХНИЧЕСКОЕ ЗАДАНИЕ', bold: true, font: FONT, size: 28, color: '1F2937' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 40 },
+    }),
+    new Paragraph({
+      children: [new TextRun({ text: `на поставку товара: ${goodsNames}`, font: FONT, size: 20, color: '6B7280' })],
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+    }),
+  );
+
+  // ── Раздел 1 ──
+  children.push(sectionTitle('1. Наименование объекта закупки'));
+
+  const currentYear = new Date().getFullYear();
+
+  if (doneRows.length === 1) {
+    const row = doneRows[0];
+    const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+    const meta = row.meta ?? {};
+    const okpd2Code = meta.okpd2_code || g.okpd2;
+    const okpd2Name = meta.okpd2_name || g.okpd2name;
+    const ktru = meta.ktru_code || g.ktruFixed || '';
+    const isSW = !!g.isSoftware;
+    const okeiStr = isSW ? '2805 — экземпляр' : '796 — штука';
+    const dateRow = isSW
+      ? `Не ранее ${currentYear} года (текущая актуальная версия на дату поставки)`
+      : `Не ранее 1 января ${currentYear} г.`;
+
+    children.push(new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({ children: [s1LabelCell('Наименование объекта поставки'), valueCell(g.name)] }),
+        ...(row.model ? [new TableRow({ children: [s1LabelCell('Модель / описание'), valueCell(row.model)] })] : []),
+        new TableRow({ children: [s1LabelCell('Код ОКПД2'), valueCell(`${okpd2Code} — ${okpd2Name}`)] }),
+        new TableRow({ children: [s1LabelCell('Код КТРУ'), valueCell(ktru || 'Уточняется при размещении в ЕИС')] }),
+        new TableRow({ children: [s1LabelCell('Единица измерения (ОКЕИ)'), valueCell(okeiStr)] }),
+        new TableRow({ children: [s1LabelCell('Количество'), valueCell(`${row.qty} (${numText(row.qty)}) ${isSW ? 'лицензий' : 'штук'}`)] }),
+        new TableRow({ children: [s1LabelCell(isSW ? 'Дата версии / поставки' : 'Дата выпуска товара'), valueCell(dateRow)] }),
+      ],
+    }));
+  } else {
+    // Сводная таблица для нескольких позиций
+    children.push(new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [
+        new TableRow({ children: [
+          hCell('№', { w: 500 }),
+          hCell('Наименование товара'),
+          hCell('Модель / описание'),
+          hCell('ОКПД2', { w: 1800 }),
+          hCell('КТРУ', { w: 2400 }),
+          hCell('Кол-во', { w: 800 }),
+        ]}),
+        ...doneRows.map((row, idx) => {
+          const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+          const meta = row.meta ?? {};
+          return new TableRow({ children: [
+            dataCell(String(idx + 1), { w: 500 }),
+            dataCell(g.name),
+            dataCell(row.model),
+            dataCell(meta.okpd2_code || g.okpd2, { w: 1800 }),
+            dataCell(meta.ktru_code || g.ktruFixed || '—', { w: 2400 }),
+            dataCell(String(row.qty), { w: 800 }),
+          ]});
+        }),
+      ],
+    }));
+  }
+
+  // ── Разделы 2, 3, 4, 5 — для каждой позиции ──
+  for (let i = 0; i < doneRows.length; i++) {
+    const row = doneRows[i];
+    const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+    const meta = row.meta ?? {};
+    const prefix = doneRows.length > 1 ? ` — позиция ${i + 1}: ${g.name}` : '';
+
+    // ── Раздел 2 ──
+    const sec2rows = buildSection2Rows(row.type, meta, lawMode);
+    children.push(sectionTitle(`2. Требования к качеству, безопасности и поставке${prefix}`));
+    children.push(new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: sec2rows.map(([k, v]) => {
+        const isLaw = k.includes('⚖️');
+        return new TableRow({ children: [labelCell(k, isLaw), valueCell(v, isLaw)] });
+      }),
+    }));
+
+    // ── Раздел 3: характеристики ──
+    children.push(sectionTitle(`3. Технические и функциональные характеристики${prefix}`));
+    const okpd2Code = meta.okpd2_code || g.okpd2;
+    const okpd2Name = meta.okpd2_name || g.okpd2name;
+    const ktru = meta.ktru_code || g.ktruFixed || '';
+    children.push(new Paragraph({
+      children: [new TextRun({
+        text: `ОКПД2: ${okpd2Code} — ${okpd2Name}${ktru ? '  |  КТРУ: ' + ktru : ''}`,
+        font: FONT, size: 20, italics: true,
+      })],
+      spacing: { after: 80 },
+    }));
+
+    const specs = row.specs ?? [];
+    if (specs.length > 0) {
+      let rowNum = 0;
+      let curGroup = '';
+      const specTableRows: TableRow[] = [
+        new TableRow({
+          tableHeader: true,
+          height: { value: 400, rule: HeightRule.ATLEAST },
+          children: [
+            hCell('№', { w: 400 }),
+            hCell('Наименование характеристики', { w: 3200 }),
+            hCell('Значение / требование', { w: 3800 }),
+            hCell('Ед. изм.', { w: 1000 }),
+          ],
+        }),
+      ];
+
+      for (const spec of specs) {
+        // Групповой заголовок
+        if (spec.group && spec.group !== curGroup) {
+          curGroup = spec.group;
+          specTableRows.push(new TableRow({
+            children: [new TableCell({
+              columnSpan: 4,
+              children: [new Paragraph({
+                children: [new TextRun({ text: curGroup, bold: true, font: FONT, size: FONT_SIZE })],
+                alignment: AlignmentType.CENTER,
+              })],
+              shading: cellShade('C7D2FE'),
+              borders: allBorders(),
+              margins: { top: 40, bottom: 40, left: 80, right: 80 },
+            })],
+          }));
+        }
+        rowNum++;
+        const hasWarning = !!spec._warning;
+        const valText = String(spec.value ?? '') + (hasWarning ? ' ⚠️ ' + String(spec._warning) : '');
+        specTableRows.push(new TableRow({
+          children: [
+            dataCell(String(rowNum), { w: 400 }),
+            dataCell(String(spec.name ?? ''), { w: 3200 }),
+            dataCell(valText, { w: 3800 }),
+            dataCell(String(spec.unit ?? ''), { w: 1000 }),
+          ],
+        }));
+      }
+
+      children.push(new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        rows: specTableRows,
+      }));
+    }
+
+    // ── Раздел 4 ──
+    const sec4rows = buildSection4Rows(row.type, lawMode);
+    const sec4title = g.isSoftware
+      ? `4. Требования к поставке и технической поддержке${prefix}`
+      : `4. Требования к гарантийному обслуживанию и поставке${prefix}`;
+    children.push(sectionTitle(sec4title));
+    children.push(new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: sec4rows.map(([k, v]) => new TableRow({
+        children: [labelCell(k), valueCell(v)],
+      })),
+    }));
+
+    // ── Раздел 5 ──
+    const sec5rows = buildSection5Rows(row.type, lawMode);
+    children.push(sectionTitle(`5. Иные требования${prefix}`));
+    children.push(new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: sec5rows.map(([k, v]) => new TableRow({
+        children: [labelCell(k), valueCell(v)],
+      })),
+    }));
+  }
+
+  // ── Подписи ──
+  children.push(
+    new Paragraph({ children: [], spacing: { before: 480 } }),
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [new TableRow({ children: [
+        dataCell('Заказчик:  _________________________ / _________________________', { w: 6000 }),
+        dataCell('Дата:  «____» ________________ 20__ г.', { w: 3400 }),
+      ]})],
+    }),
+  );
+
+  const doc = new Document({
+    styles: {
+      default: {
+        document: {
+          run: { font: FONT, size: FONT_SIZE },
+        },
+      },
+    },
+    sections: [{
+      properties: {
+        page: {
+          margin: { top: 1134, bottom: 1134, left: 1800, right: 850 },
+        },
+      },
+      children,
+    }],
+  });
+
+  return Packer.toBlob(doc);
+}
+
+// ── Компонент ─────────────────────────────────────────────────────────────────
 type Props = {
   automationSettings: AutomationSettings;
   platformSettings: PlatformIntegrationSettings;
-};
-
-type PreflightIssue = {
-  level: 'critical' | 'warn';
-  message: string;
 };
 
 export function Workspace({ automationSettings, platformSettings }: Props) {
@@ -367,155 +444,54 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
   const [provider, setProvider] = useState<Provider>('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('deepseek-chat');
-  const [openRouterModels, setOpenRouterModels] = useState<Array<{ id: string; name?: string; context_length?: number }>>([]);
-  const [openRouterLoadedForKey, setOpenRouterLoadedForKey] = useState('');
-  const [openRouterLoading, setOpenRouterLoading] = useState(false);
-  const [openRouterError, setOpenRouterError] = useState('');
-  const [rows, setRows] = useState<Row[]>([{ id: 1, type: 'pc', typeLocked: false, model: '', qty: 1, status: 'idle' }]);
-  const [tzText, setTzText] = useState('');
-  const [bulkLookup, setBulkLookup] = useState(false);
-  const [autopilotRunning, setAutopilotRunning] = useState(false);
-  const structuredRows = useMemo(
-    () =>
-      rows.map((row) => {
-        const parsed = parseResultObject(row.result);
-        const specs = Array.isArray(parsed?.specs) ? parsed!.specs! : [];
-        const fallback =
-          String(row.result || '').trim() ||
-          (row.error ? `Ошибка: ${row.error}` : row.model.trim() ? 'Данные не сформированы' : 'Заполните модель/описание');
-        return { row, parsed, specs, fallback };
-      }),
-    [rows]
+  const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
+  const [docxReady, setDocxReady] = useState(false);
+
+  // Ссылки ЕИС: rowId → SearchLink[]
+  const [, setZakupkiLinks] = useState<Record<number, SearchLink[]>>({});
+  // Общий статус поиска по ЕИС
+  const [eisSearching, setEisSearching] = useState(false);
+  // Общий статус подтягивания из интернета
+  const [internetSearching, setInternetSearching] = useState(false);
+
+  const canGenerate = useMemo(
+    () => apiKey.trim().length > 6 && rows.every((r) => r.model.trim().length > 0),
+    [apiKey, rows]
   );
-
-  const preflight = useMemo(() => {
-    const issues: PreflightIssue[] = [];
-    if (apiKey.trim().length <= 6) {
-      issues.push({ level: 'critical', message: 'Не задан API-ключ для генерации.' });
-    }
-    rows.forEach((row, idx) => {
-      if (!row.model.trim()) {
-        issues.push({ level: 'critical', message: `Строка #${idx + 1}: не указана модель/описание.` });
-      }
-      if (!Number.isFinite(row.qty) || row.qty < 1) {
-        issues.push({ level: 'critical', message: `Строка #${idx + 1}: количество должно быть не менее 1.` });
-      }
-    });
-    if (lawMode === '223' && !platformSettings.orgName.trim()) {
-      issues.push({ level: 'warn', message: '223-ФЗ: заполните организацию заказчика.' });
-    }
-    if (automationSettings.billingEnabled && !automationSettings.tenantId.trim()) {
-      issues.push({ level: 'warn', message: 'Billing telemetry: заполните Tenant ID.' });
-    }
-    if (platformSettings.autoSendDraft && !platformSettings.endpoint.trim()) {
-      issues.push({ level: 'warn', message: 'Не задан endpoint коннектора ЕИС/ЭТП.' });
-    }
-    if (automationSettings.requireHttpsForIntegrations && isInsecureExternalHttp(platformSettings.endpoint)) {
-      issues.push({ level: 'critical', message: 'Endpoint коннектора должен быть HTTPS (кроме localhost).' });
-    }
-    const critical = issues.filter((x) => x.level === 'critical').length;
-    const warn = issues.filter((x) => x.level === 'warn').length;
-    const score = Math.max(0, 100 - critical * 25 - warn * 8);
-    return { issues, critical, warn, score };
-  }, [
-    apiKey,
-    rows,
-    lawMode,
-    platformSettings.orgName,
-    platformSettings.endpoint,
-    automationSettings.requireHttpsForIntegrations,
-    automationSettings.billingEnabled,
-    automationSettings.tenantId
-  ]);
-
-  const canGenerate = preflight.critical === 0;
-  const openRouterKeySig = useMemo(() => {
-    const clean = String(apiKey || '').trim().replace(/^Bearer\s+/i, '');
-    if (!clean) return '';
-    return `${clean.length}:${clean.slice(0, 4)}:${clean.slice(-4)}`;
-  }, [apiKey]);
-
-  const loadOpenRouterModels = async (): Promise<void> => {
-    if (openRouterLoading) return;
-    if (provider !== 'openrouter') return;
-    setOpenRouterLoading(true);
-    setOpenRouterError('');
-    try {
-      let items = await fetchOpenRouterModels(apiKey);
-      if (!items.length) {
-        const backendBase = automationSettings.backendApiBase.trim() || 'https://tz-generator-backend.onrender.com';
-        items = await fetchOpenRouterModelsViaBackend(backendBase, apiKey);
-      }
-      setOpenRouterModels(items);
-      setOpenRouterLoadedForKey(openRouterKeySig);
-      if (items.length > 0 && (!model.trim() || !items.some((x) => x.id === model))) {
-        setModel(items[0].id);
-      }
-    } catch (firstErr) {
-      try {
-        const backendBase = automationSettings.backendApiBase.trim() || 'https://tz-generator-backend.onrender.com';
-        const items = await fetchOpenRouterModelsViaBackend(backendBase, apiKey);
-        setOpenRouterModels(items);
-        setOpenRouterLoadedForKey(openRouterKeySig);
-        if (items.length > 0 && (!model.trim() || !items.some((x) => x.id === model))) {
-          setModel(items[0].id);
-        }
-      } catch (secondErr) {
-        const msg1 = firstErr instanceof Error ? firstErr.message : 'openrouter_models_load_failed';
-        const msg2 = secondErr instanceof Error ? secondErr.message : '';
-        setOpenRouterError(msg2 ? `${msg1} | backend: ${msg2}` : msg1);
-      }
-    } finally {
-      setOpenRouterLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (provider !== 'openrouter') return;
-    if (apiKey.trim().length < 6) return;
-    if (openRouterLoadedForKey === openRouterKeySig && openRouterModels.length > 0) return;
-    void loadOpenRouterModels();
-  }, [provider, apiKey, openRouterModels.length, openRouterLoadedForKey, openRouterKeySig]);
 
   const mutation = useMutation({
     mutationFn: async () => {
       const next = [...rows];
-      const pieces: string[] = [];
-      for (let i = 0; i < next.length; i += 1) {
+      setDocxReady(false);
+      for (let i = 0; i < next.length; i++) {
         next[i] = { ...next[i], status: 'loading', error: '' };
         setRows([...next]);
-        if (!String(next[i].internetHints || '').trim() && String(next[i].model || '').trim().length >= 3) {
-          try {
-            // Before generation, pull model-specific hints so AI does not fallback to generic specs.
-            const hints = await fetchInternetHints(next[i].model);
-            if (hints) next[i] = { ...next[i], internetHints: hints, lookupState: 'done', lookupNote: 'Интернет-данные применены' };
-          } catch {
-            // keep generation flow even if web hints fail
-          }
+        const g = GOODS_CATALOG[next[i].type] ?? GOODS_CATALOG['pc'];
+        // Если для типа товара есть жёсткий шаблон — пропускаем AI
+        if (g.hardTemplate && g.hardTemplate.length > 0) {
+          const specs = (g.hardTemplate as HardSpec[]).map((s) => ({ group: s.group, name: s.name, value: s.value, unit: s.unit ?? '' }));
+          const meta: Record<string, string> = {
+            okpd2_code: g.okpd2,
+            okpd2_name: g.okpd2name,
+            ktru_code: g.ktruFixed ?? '',
+            nac_regime: 'pp616',
+          };
+          next[i] = { ...next[i], status: 'done', specs, meta };
+          setRows([...next]);
+          continue;
         }
         const prompt = buildPrompt(next[i], lawMode);
         try {
           const raw = await generateItemSpecs(provider, apiKey, model, prompt);
-          const parsed = parseMaybeJson(raw);
-          next[i] = { ...next[i], status: 'done', result: parsed.pretty, okpd2: parsed.okpd2, ktru: parsed.ktru };
-          pieces.push(`### ${GOODS_LABELS[next[i].type]} / ${next[i].model}\n${buildReadableResultBlock(parsed.pretty)}`);
+          const { meta, specs } = parseAiResponse(raw);
+          const processed = postProcessSpecs(specs);
+          next[i] = { ...next[i], status: 'done', specs: processed, meta };
         } catch (e) {
           const msg = e instanceof Error ? e.message : 'generation_error';
           next[i] = { ...next[i], status: 'error', error: msg };
-          pieces.push(`### ${GOODS_LABELS[next[i].type]} / ${next[i].model}\n\nОшибка: ${msg}`);
         }
         setRows([...next]);
       }
-
-      const full = [
-        `ТЕХНИЧЕСКОЕ ЗАДАНИЕ (${lawMode === '223' ? '223-ФЗ' : '44-ФЗ'})`,
-        '',
-        buildNormativeBlock(lawMode),
-        '',
-        pieces.join('\n\n')
-      ].join('\n');
-
-      setTzText(full);
 
       const payload = {
         law: lawMode === '223' ? '223-FZ' : '44-FZ',
@@ -527,192 +503,137 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
           model: r.model,
           qty: r.qty,
           status: r.status,
-          okpd2: r.okpd2 || '',
-          ktru: r.ktru || ''
-        }))
+          okpd2: r.meta?.okpd2_code || GOODS_CATALOG[r.type]?.okpd2 || '',
+          ktru: r.meta?.ktru_code || GOODS_CATALOG[r.type]?.ktruFixed || '',
+        })),
       };
 
       if (automationSettings.autoSend) {
         await sendEventThroughBestChannel(automationSettings, 'tz.generated.react', payload);
       }
       if (platformSettings.autoSendDraft) {
-        await postPlatformDraft(platformSettings, payload, undefined, {
-          retries: automationSettings.deliveryRetries,
-          baseBackoffMs: automationSettings.deliveryBackoffMs,
-          requireHttps: automationSettings.requireHttpsForIntegrations
-        });
+        await postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload);
       }
-      if (automationSettings.billingEnabled) {
-        const billPayload = {
-          tenantId: automationSettings.tenantId || 'default',
-          currency: automationSettings.billingCurrency,
-          documents: 1,
-          rows: next.length,
-          amountCents: automationSettings.billingPricePerDocCents,
-          generatedAt: new Date().toISOString()
-        };
-        await sendEventThroughBestChannel(automationSettings, 'billing.usage', billPayload);
-      }
-
       appendAutomationLog({ at: new Date().toISOString(), event: 'react.generate', ok: true, note: `rows=${next.length}` });
-      return full;
-    }
+      setDocxReady(next.some((r) => r.status === 'done'));
+    },
   });
 
   const addRow = () => {
-    setRows((prev) => [...prev, { id: Date.now(), type: 'pc', typeLocked: false, model: '', qty: 1, status: 'idle' }]);
-  };
-  const removeRow = (rowId: number) => {
-    setRows((prev) => (prev.length <= 1 ? prev : prev.filter((x) => x.id !== rowId)));
+    setRows((prev) => [...prev, { id: Date.now(), type: 'pc', model: '', qty: 1, status: 'idle' }]);
   };
 
-  const applyCandidate = (rowId: number, candidateType: GoodsType) => {
-    setRows((prev) =>
-      prev.map((x) => (x.id === rowId ? { ...x, type: candidateType, typeLocked: true, candidates: [], lookupState: 'done', lookupNote: 'Тип выбран' } : x))
-    );
-  };
-
-  const enrichRowFromInternet = async (rowId: number): Promise<void> => {
-    const row = rows.find((x) => x.id === rowId);
-    if (!row) return;
-    const query = String(row.model || '').trim();
-    if (!query) {
-      setRows((prev) => prev.map((x) => (x.id === rowId ? { ...x, lookupState: 'error', lookupNote: 'Введите модель/описание' } : x)));
+  // ── Подтянуть спецификации из интернета (открываем поиск в браузере) ──────
+  const enrichFromInternet = useCallback(() => {
+    const filledRows = rows.filter((r) => r.model.trim().length > 0);
+    if (filledRows.length === 0) {
+      alert('Заполните поле «Модель / описание» хотя бы в одной строке');
       return;
     }
-
-    setRows((prev) =>
-      prev.map((x) => (x.id === rowId ? { ...x, lookupState: 'loading', lookupNote: 'Ищу в интернете...', candidates: [] } : x))
-    );
-
-    const hints = await fetchInternetHints(query);
-    const combined = normalizeText(`${query} ${hints}`.trim());
-
-    let candidates = buildTypeCandidates(combined || query, row.type);
-
-    if (apiKey.trim().length > 6) {
-      try {
-        const catalogHint = Object.entries(GOODS_LABELS)
-          .map(([k, v]) => `${k}: ${v}`)
-          .join('; ');
-        const aiPrompt =
-          `Ты классификатор ИТ-товаров для госзакупок.\n` +
-          `Запрос: "${query}".\n` +
-          `Подсказки из интернета: "${cutText(hints, 1300)}".\n` +
-          `Каталог типов: ${catalogHint}\n` +
-          `Верни только JSON-массив 1..6 элементов вида {"type":"<ключ>","model":"<модель>","reason":"<кратко>"}.`;
-        const aiRaw = await generateItemSpecs(provider, apiKey, model, aiPrompt);
-        const aiList = parseJsonArrayFromText(aiRaw);
-        if (aiList.length) {
-          const fromAi = aiList.map((x, index) => ({
-            type: x.type,
-            score: 100 - index,
-            reason: x.reason || 'Подбор по интернет-данным'
-          }));
-          const merged = new Map<GoodsType, { type: GoodsType; score: number; reason: string }>();
-          for (const c of [...fromAi, ...candidates]) {
-            const prev = merged.get(c.type);
-            if (!prev || c.score > prev.score) merged.set(c.type, c);
-          }
-          candidates = Array.from(merged.values()).sort((a, b) => b.score - a.score).slice(0, 8);
-        }
-      } catch {
-        // AI fallback is optional
-      }
+    setInternetSearching(true);
+    for (const r of filledRows) {
+      const query = encodeURIComponent(r.model.trim() + ' технические характеристики спецификации');
+      // Открываем поиск Яндекс по характеристикам товара
+      window.open(`https://yandex.ru/search/?text=${query}`, '_blank', 'noopener');
     }
+    setTimeout(() => setInternetSearching(false), 500);
+  }, [rows]);
 
-    if (!candidates.length) {
-      setRows((prev) =>
-        prev.map((x) => (x.id === rowId ? { ...x, lookupState: 'error', lookupNote: 'Не удалось найти подсказки' } : x))
-      );
+  // ── Поиск готовых ТЗ в ЕИС (zakupki.gov.ru) ──────────────────────────────
+  const searchZakupki = useCallback(() => {
+    const filledRows = rows.filter((r) => r.model.trim().length > 0);
+    if (filledRows.length === 0) {
+      alert('Заполните поле «Модель / описание» хотя бы в одной строке');
       return;
     }
-
-    if (row.typeLocked) {
-      setRows((prev) =>
-        prev.map((x) =>
-          x.id === rowId
-            ? {
-                ...x,
-                internetHints: hints || x.internetHints,
-                lookupState: 'done',
-                lookupNote: hints ? 'Интернет-данные модели загружены (тип зафиксирован)' : 'Тип зафиксирован'
-              }
-            : x
-        )
-      );
-      return;
+    setEisSearching(true);
+    for (const r of filledRows) {
+      const goodsName = GOODS_CATALOG[r.type]?.name ?? r.type;
+      // Поиск по ЕИС — ищем закупки с данным товаром
+      const query = encodeURIComponent(goodsName + (r.model.trim() ? ' ' + r.model.trim() : ''));
+      const eisUrl = `https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=${query}&morphology=on&fz44=on&fz223=on`;
+      window.open(eisUrl, '_blank', 'noopener');
+      // Также открываем поиск технических заданий
+      const tzQuery = encodeURIComponent('техническое задание ' + goodsName + (r.model.trim() ? ' ' + r.model.trim() : ''));
+      const yandexEisUrl = `https://yandex.ru/search/?text=${tzQuery}+site:zakupki.gov.ru`;
+      window.open(yandexEisUrl, '_blank', 'noopener');
     }
-
-    if (candidates.length === 1) {
-      const top = candidates[0];
-      setRows((prev) =>
-        prev.map((x) =>
-          x.id === rowId
-            ? {
-                ...x,
-                type: top.type,
-                candidates: [],
-                internetHints: hints || x.internetHints,
-                lookupState: 'done',
-                lookupNote: hints ? 'Интернет + автоподбор' : 'Автоподбор'
-              }
-            : x
-        )
-      );
-      return;
+    // Формируем ссылки для отображения
+    const newLinks: Record<number, SearchLink[]> = {};
+    for (const r of filledRows) {
+      const name = (GOODS_CATALOG[r.type]?.name ?? r.type) + (r.model.trim() ? ' ' + r.model.trim() : '');
+      newLinks[r.id] = buildZakupkiSearchLinks(name);
     }
+    setZakupkiLinks(newLinks);
+    setEisSearching(false);
+  }, [rows]);
 
-    setRows((prev) =>
-      prev.map((x) =>
-        x.id === rowId
-            ? {
-              ...x,
-              candidates,
-              internetHints: hints || x.internetHints,
-              lookupState: 'choose',
-              lookupNote: 'Найдено несколько вариантов'
-            }
-          : x
-      )
-    );
-  };
-
-  const enrichAllRowsFromInternet = async (): Promise<void> => {
-    setBulkLookup(true);
+  const exportDocx = async () => {
     try {
-      for (const row of rows) {
-        // eslint-disable-next-line no-await-in-loop
-        await enrichRowFromInternet(row.id);
-      }
-    } finally {
-      setBulkLookup(false);
-    }
-  };
-
-  const runAutopilotFlow = async (): Promise<void> => {
-    if (autopilotRunning || mutation.isPending) return;
-    setAutopilotRunning(true);
-    try {
-      await enrichAllRowsFromInternet();
-      await mutation.mutateAsync();
-      exportPackage();
-      appendAutomationLog({
-        at: new Date().toISOString(),
-        event: 'react.autopilot.full',
-        ok: true,
-        note: `rows=${rows.length}`
-      });
+      const blob = await buildDocx(rows, lawMode);
+      const date = new Date().toISOString().slice(0, 10);
+      saveAs(blob, `TZ_${date}.docx`);
+      appendAutomationLog({ at: new Date().toISOString(), event: 'react.export_docx', ok: true });
     } catch (e) {
-      appendAutomationLog({
-        at: new Date().toISOString(),
-        event: 'react.autopilot.full',
-        ok: false,
-        note: e instanceof Error ? e.message.slice(0, 120) : 'unknown_error'
-      });
-    } finally {
-      setAutopilotRunning(false);
+      alert(e instanceof Error ? e.message : 'Ошибка экспорта DOCX');
     }
+  };
+
+  const exportPdf = () => {
+    const doc = new jsPDF({ unit: 'pt', format: 'a4', putOnlyUsedFonts: true });
+    const margin = 40;
+    const maxWidth = doc.internal.pageSize.getWidth() - margin * 2;
+    let y = margin + 14;
+    doc.setFontSize(11);
+
+    const addLine = (text: string, bold = false) => {
+      if (y > doc.internal.pageSize.getHeight() - margin) { doc.addPage(); y = margin + 14; }
+      doc.setFont('helvetica', bold ? 'bold' : 'normal');
+      const lines = doc.splitTextToSize(text, maxWidth) as string[];
+      lines.forEach((line: string) => {
+        if (y > doc.internal.pageSize.getHeight() - margin) { doc.addPage(); y = margin + 14; }
+        doc.text(line, margin, y);
+        y += 14;
+      });
+    };
+
+    const law = lawMode === '223' ? '223-ФЗ' : '44-ФЗ';
+    addLine(`ТЕХНИЧЕСКОЕ ЗАДАНИЕ (${law})`, true);
+    addLine('');
+
+    for (const row of rows.filter((r) => r.status === 'done' && r.specs)) {
+      const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+      addLine(`\n=== ${g.name} — ${row.model} (${row.qty} шт.) ===`, true);
+
+      // Раздел 2
+      addLine('\n2. Требования к качеству и безопасности', true);
+      for (const [k, v] of buildSection2Rows(row.type, row.meta ?? {}, lawMode)) {
+        addLine(`${k}: ${v}`);
+      }
+
+      // Раздел 3
+      addLine('\n3. Технические характеристики', true);
+      for (const spec of row.specs ?? []) {
+        if (spec.group) addLine(`  [${spec.group}]`, true);
+        addLine(`  ${spec.name ?? ''}: ${spec.value ?? ''} ${spec.unit ?? ''}`);
+      }
+
+      // Раздел 4
+      addLine('\n4. Гарантия и поставка', true);
+      for (const [k, v] of buildSection4Rows(row.type, lawMode)) {
+        addLine(`${k}: ${v}`);
+      }
+
+      // Раздел 5
+      addLine('\n5. Иные требования', true);
+      for (const [k, v] of buildSection5Rows(row.type, lawMode)) {
+        addLine(`${k}: ${v}`);
+      }
+    }
+
+    const date = new Date().toISOString().slice(0, 10);
+    doc.save(`TZ_${date}.pdf`);
+    appendAutomationLog({ at: new Date().toISOString(), event: 'react.export_pdf', ok: true });
   };
 
   const exportPackage = () => {
@@ -720,346 +641,173 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
       exportedAt: new Date().toISOString(),
       law: lawMode === '223' ? '223-FZ' : '44-FZ',
       profile: platformSettings.profile,
-      items: rows.map((r) => ({ type: r.type, model: r.model, qty: r.qty, okpd2: r.okpd2 || '', ktru: r.ktru || '' }))
+      items: rows.map((r) => ({
+        type: r.type,
+        model: r.model,
+        qty: r.qty,
+        okpd2: r.meta?.okpd2_code || GOODS_CATALOG[r.type]?.okpd2 || '',
+        ktru: r.meta?.ktru_code || GOODS_CATALOG[r.type]?.ktruFixed || '',
+        specsCount: r.specs?.length ?? 0,
+      })),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `procurement_pack_react_${Date.now()}.json`;
+    a.download = `procurement_pack_${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const exportDocx = async () => {
-    const sections: Array<Paragraph | Table> = [];
-    sections.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        children: [new TextRun({ text: `ТЕХНИЧЕСКОЕ ЗАДАНИЕ (${lawMode === '223' ? '223-ФЗ' : '44-ФЗ'})`, bold: true })]
-      }),
-      new Paragraph({ text: '' }),
-      ...buildNormativeBlock(lawMode).split('\n').map((line) => new Paragraph({ text: line })),
-      new Paragraph({ text: '' })
-    );
+  // Предварительный просмотр в браузере
+  const renderPreview = () => {
+    const done = rows.filter((r) => r.status === 'done' && r.specs);
+    if (done.length === 0) return null;
+    const law = lawMode === '223' ? '223-ФЗ' : '44-ФЗ';
+    return (
+      <div className="tz-preview" style={{ marginTop: 24, fontSize: 13, fontFamily: 'Times New Roman, serif' }}>
+        <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 15, marginBottom: 8 }}>
+          ТЕХНИЧЕСКОЕ ЗАДАНИЕ ({law})
+        </div>
+        {done.map((row, idx) => {
+          const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+          const meta = row.meta ?? {};
+          const sec2 = buildSection2Rows(row.type, meta, lawMode);
+          const sec4 = buildSection4Rows(row.type, lawMode);
+          const sec5 = buildSection5Rows(row.type, lawMode);
+          return (
+            <div key={row.id} style={{ marginBottom: 24 }}>
+              {done.length > 1 && (
+                <div style={{ fontWeight: 700, color: '#1F5C8B', margin: '12px 0 4px' }}>
+                  Позиция {idx + 1}: {g.name} — {row.model}
+                </div>
+              )}
 
-    structuredRows.forEach(({ row, parsed, specs }, idx) => {
-      const meta = parsed?.meta || {};
-      sections.push(
-        new Paragraph({
-          children: [new TextRun({ text: `${idx + 1}. ${GOODS_LABELS[row.type]} (${row.model})`, bold: true })]
-        }),
-        new Paragraph({ text: '' })
-      );
+              {/* Раздел 1 */}
+              <div style={{ fontWeight: 700, margin: '8px 0 4px' }}>1. Наименование объекта закупки</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <tbody>
+                  {([
+                    ['Наименование объекта поставки', g.name],
+                    ...(row.model ? [['Модель / описание', row.model]] : []),
+                    ['Код ОКПД2', `${meta.okpd2_code || g.okpd2} — ${meta.okpd2_name || g.okpd2name}`],
+                    ['Код КТРУ', meta.ktru_code || g.ktruFixed || 'Уточняется при размещении в ЕИС'],
+                    ['Единица измерения (ОКЕИ)', g.isSoftware ? '2805 — экземпляр' : '796 — штука'],
+                    ['Количество', `${row.qty} (${numText(row.qty)}) ${g.isSoftware ? 'лицензий' : 'штук'}`],
+                    [g.isSoftware ? 'Дата версии / поставки' : 'Дата выпуска товара', g.isSoftware ? `Не ранее ${new Date().getFullYear()} года` : `Не ранее 1 января ${new Date().getFullYear()} г.`],
+                  ] as [string, string][]).map(([k, v]) => (
+                    <tr key={k}>
+                      <td style={{ border: '1px solid #ccc', padding: '4px 8px', fontWeight: 600, width: '35%', background: '#EEF2FF', color: '#1F2937' }}>{k}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '4px 8px', color: '#1F2937' }}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-      const metaTable = new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        rows: [
-          new TableRow({ children: [makeCell('Наименование объекта поставки', true), makeCell(GOODS_LABELS[row.type])] }),
-          new TableRow({ children: [makeCell('Код ОКПД2', true), makeCell(meta.okpd2_code || 'не указано')] }),
-          new TableRow({ children: [makeCell('Код КТРУ', true), makeCell(meta.ktru_code || 'не указано')] }),
-          new TableRow({ children: [makeCell('Нацрежим (ПП 1875)', true), makeCell(meta.law175_status || 'не указано')] }),
-          new TableRow({ children: [makeCell('Обоснование', true), makeCell(meta.law175_basis || 'не указано')] })
-        ]
-      });
-      sections.push(metaTable, new Paragraph({ text: '' }));
+              {/* Раздел 2 */}
+              <div style={{ fontWeight: 700, margin: '8px 0 4px' }}>2. Требования к качеству и безопасности</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <tbody>
+                  {sec2.map(([k, v]) => (
+                    <tr key={k} style={{ background: k.includes('⚖️') ? '#FFFBEB' : undefined }}>
+                      <td style={{ border: '1px solid #ccc', padding: '4px 8px', fontWeight: 600, width: '35%', color: k.includes('⚖️') ? '#B45309' : undefined }}>{k}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-      const reqTable = new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        rows: buildGeneralRequirements(lawMode).map((item) =>
-          new TableRow({ children: [makeCell(item.name, true), makeCell(item.value)] })
-        )
-      });
-      sections.push(reqTable, new Paragraph({ text: '' }));
+              {/* Раздел 3 */}
+              <div style={{ fontWeight: 700, margin: '8px 0 4px' }}>3. Технические характеристики</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: '#1F5C8B', color: '#fff' }}>
+                    <th style={{ border: '1px solid #ccc', padding: '4px 8px', width: 40 }}>№</th>
+                    <th style={{ border: '1px solid #ccc', padding: '4px 8px' }}>Наименование</th>
+                    <th style={{ border: '1px solid #ccc', padding: '4px 8px' }}>Значение</th>
+                    <th style={{ border: '1px solid #ccc', padding: '4px 8px', width: 80 }}>Ед.изм.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    let n = 0, g2 = '';
+                    return (row.specs ?? []).map((s, si) => {
+                      const rows2 = [];
+                      if (s.group && s.group !== g2) {
+                        g2 = s.group;
+                        rows2.push(
+                          <tr key={`g-${si}`}>
+                            <td colSpan={4} style={{ border: '1px solid #ccc', padding: '4px 8px', background: '#C7D2FE', fontWeight: 700, textAlign: 'center' }}>{g2}</td>
+                          </tr>
+                        );
+                      }
+                      n++;
+                      rows2.push(
+                        <tr key={si} style={{ background: s._warning ? '#FFF7ED' : undefined }}>
+                          <td style={{ border: '1px solid #ccc', padding: '4px 8px', textAlign: 'center' }}>{n}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{s.name ?? ''}</td>
+                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>
+                            {s.value ?? ''}
+                            {s._warning && <span style={{ color: '#D97706', fontSize: 11, display: 'block' }}>⚠️ {s._warning}</span>}
+                          </td>
+                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{s.unit ?? ''}</td>
+                        </tr>
+                      );
+                      return rows2;
+                    });
+                  })()}
+                </tbody>
+              </table>
 
-      const specRows: TableRow[] = [
-        new TableRow({
-          children: [
-            makeCell('№', true),
-            makeCell('Наименование характеристики', true),
-            makeCell('Значение / требование', true),
-            makeCell('Ед. изм.', true)
-          ]
-        })
-      ];
+              {/* Раздел 4 */}
+              <div style={{ fontWeight: 700, margin: '8px 0 4px' }}>
+                {g.isSoftware ? '4. Требования к поставке и технической поддержке' : '4. Требования к гарантийному обслуживанию и поставке'}
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <tbody>
+                  {sec4.map(([k, v]) => (
+                    <tr key={k}>
+                      <td style={{ border: '1px solid #ccc', padding: '4px 8px', fontWeight: 600, width: '35%' }}>{k}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
 
-      if (specs.length > 0) {
-        specs.forEach((spec, sIdx) => {
-          const name = spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name;
-          specRows.push(
-            new TableRow({
-              children: [makeCell(String(sIdx + 1)), makeCell(name), makeCell(spec.value || ''), makeCell(spec.unit || '')]
-            })
+              {/* Раздел 5 */}
+              <div style={{ fontWeight: 700, margin: '8px 0 4px' }}>5. Иные требования</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <tbody>
+                  {sec5.map(([k, v]) => (
+                    <tr key={k}>
+                      <td style={{ border: '1px solid #ccc', padding: '4px 8px', fontWeight: 600, width: '35%' }}>{k}</td>
+                      <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           );
-        });
-      } else {
-        specRows.push(
-          new TableRow({
-            children: [makeCell('1'), makeCell('Данные модели'), makeCell('Нет структурированных характеристик'), makeCell('')]
-          })
-        );
-      }
-
-      sections.push(
-        new Table({
-          width: { size: 100, type: WidthType.PERCENTAGE },
-          rows: specRows
-        }),
-        new Paragraph({ text: '' })
-      );
-    });
-
-    sections.push(
-      new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        rows: [
-          new TableRow({
-            children: [
-              makeCell('Заказчик:\n\n_________________________ / _________________________\n        (подпись)                 (ФИО)', false),
-              makeCell('Дата:\n\n«____» ________________ 2026 г.', false)
-            ]
-          })
-        ]
-      })
+        })}
+      </div>
     );
-
-    const doc = new Document({
-      sections: [
-        {
-          children: sections
-        }
-      ]
-    });
-    const blob = await Packer.toBlob(doc);
-    saveAs(blob, `TZ_react_${Date.now()}.docx`);
-  };
-
-  const exportPdf = () => {
-    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-    const margin = 36;
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const contentWidth = pageWidth - margin * 2;
-    const padding = 6;
-    const lineHeight = 12;
-    let y = margin;
-
-    const ensureSpace = (height: number) => {
-      if (y + height > pageHeight - margin) {
-        doc.addPage();
-        y = margin;
-      }
-    };
-
-    const drawTextBlock = (text: string) => {
-      const lines = doc.splitTextToSize(text || '', contentWidth);
-      lines.forEach((line: string) => {
-        ensureSpace(lineHeight);
-        doc.text(line, margin, y);
-        y += lineHeight;
-      });
-    };
-
-    const drawTable = (rows: string[][], colWidths: number[], header?: string[]) => {
-      const drawRow = (cells: string[], isHeader = false) => {
-        const cellLines = cells.map((cell, idx) =>
-          doc.splitTextToSize(String(cell ?? ''), colWidths[idx] - padding * 2)
-        );
-        const rowHeight = Math.max(...cellLines.map((lines) => lines.length)) * lineHeight + padding * 2;
-        ensureSpace(rowHeight);
-
-        let x = margin;
-        if (isHeader) {
-          doc.setFillColor(235, 241, 248);
-          doc.rect(x, y, contentWidth, rowHeight, 'F');
-        }
-        cells.forEach((_, idx) => {
-          doc.rect(x, y, colWidths[idx], rowHeight);
-          x += colWidths[idx];
-        });
-
-        x = margin;
-        cellLines.forEach((lines, idx) => {
-          doc.text(lines, x + padding, y + padding + lineHeight - 2);
-          x += colWidths[idx];
-        });
-        y += rowHeight;
-      };
-
-      if (header) {
-        doc.setFontSize(11);
-        doc.setTextColor(30, 30, 30);
-        drawRow(header, true);
-      }
-      doc.setFontSize(10);
-      doc.setTextColor(20, 20, 20);
-      rows.forEach((row) => drawRow(row));
-      y += 10;
-    };
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text(`ТЕХНИЧЕСКОЕ ЗАДАНИЕ (${lawMode === '223' ? '223-ФЗ' : '44-ФЗ'})`, margin, y);
-    y += 18;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(40, 40, 40);
-    drawTextBlock(buildNormativeBlock(lawMode));
-    y += 8;
-
-    if (structuredRows.length === 0) {
-      doc.setTextColor(20, 20, 20);
-      drawTextBlock(tzText || 'Пустой документ');
-      doc.save(`TZ_react_${Date.now()}.pdf`);
-      return;
-    }
-
-    structuredRows.forEach(({ row, parsed, specs, fallback }) => {
-      const meta = parsed?.meta || {};
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.setTextColor(15, 15, 15);
-      ensureSpace(16);
-      doc.text(`${GOODS_LABELS[row.type]} / ${row.model}`, margin, y);
-      y += 16;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-
-      const twoColWidths = [contentWidth * 0.34, contentWidth * 0.66];
-      twoColWidths[1] = contentWidth - twoColWidths[0];
-
-      const metaRows = [
-        ['Наименование объекта поставки', GOODS_LABELS[row.type]],
-        ['Модель / описание', row.model],
-        ['Код ОКПД2', meta.okpd2_code || 'не указано'],
-        ['Код КТРУ', meta.ktru_code || 'не указано'],
-        ['ПП 1875', `${meta.law175_status || 'не указано'}${meta.law175_basis ? ` (${meta.law175_basis})` : ''}`]
-      ];
-      drawTable(metaRows, twoColWidths);
-
-      const reqRows = buildGeneralRequirements(lawMode).map((req) => [req.name, req.value]);
-      drawTable(reqRows, twoColWidths);
-
-      const specWidths = [
-        contentWidth * 0.06,
-        contentWidth * 0.54,
-        contentWidth * 0.28,
-        contentWidth * 0.12
-      ];
-      specWidths[3] = contentWidth - (specWidths[0] + specWidths[1] + specWidths[2]);
-      const baseSpecs = specs.length > 0 ? specs : [{ group: '', name: 'Данные', value: fallback, unit: '' }];
-      const specRows = baseSpecs.map((spec, idx) => {
-        const label = spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name;
-        return [String(idx + 1), label, spec.value, spec.unit || ''];
-      });
-      drawTable(specRows, specWidths, ['№', 'Наименование характеристики', 'Значение / требование', 'Ед. изм.']);
-    });
-
-    doc.save(`TZ_react_${Date.now()}.pdf`);
-  };
-
-  const printTz = () => {
-    if (!tzText.trim()) return;
-    const popup = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=900');
-    if (!popup) {
-      window.alert('Браузер заблокировал окно печати. Разрешите всплывающие окна для сайта.');
-      return;
-    }
-
-    const sectionsHtml = structuredRows
-      .map(({ row, parsed, specs }) => {
-        const meta = parsed?.meta || {};
-        const head = `<h3>${escapeHtml(GOODS_LABELS[row.type])} / ${escapeHtml(row.model)}</h3>`;
-        const metaRowsHtml = [
-          ['Наименование объекта поставки', GOODS_LABELS[row.type]],
-          ['Модель / описание', row.model],
-          ['Код ОКПД2', meta.okpd2_code || 'не указано'],
-          ['Код КТРУ', meta.ktru_code || 'не указано'],
-          ['ПП 1875', `${meta.law175_status || 'не указано'}${meta.law175_basis ? ` (${meta.law175_basis})` : ''}`]
-        ]
-          .map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(v)}</td></tr>`)
-          .join('');
-        const reqRowsHtml = buildGeneralRequirements(lawMode)
-          .map((item) => `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.value)}</td></tr>`)
-          .join('');
-        const rowsHtml = (specs.length > 0 ? specs : [{ group: '', name: 'Данные', value: fallback, unit: '' }])
-          .map(
-            (spec, idx) => {
-              const param = spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name;
-              return `<tr><td>${idx + 1}</td><td>${escapeHtml(param)}</td><td>${escapeHtml(spec.value)}</td><td>${escapeHtml(spec.unit || '')}</td></tr>`;
-            }
-          )
-          .join('');
-        return `${head}<table><tbody>${metaRowsHtml}</tbody></table><table><tbody>${reqRowsHtml}</tbody></table><table><thead><tr><th>№</th><th>Наименование характеристики</th><th>Значение / требование</th><th>Ед. изм.</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
-      })
-      .join('');
-
-    popup.document.write(`<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8" />
-  <title>Печать ТЗ</title>
-  <style>
-    body { font-family: Arial, sans-serif; color: #111; padding: 24px; }
-    h1 { margin: 0 0 8px; font-size: 22px; }
-    h3 { margin: 20px 0 10px; font-size: 16px; }
-    .muted { color: #444; white-space: pre-wrap; margin-bottom: 14px; }
-    .meta { display: grid; gap: 4px; margin-bottom: 8px; font-size: 13px; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-    th, td { border: 1px solid #bfc9d8; padding: 6px 8px; vertical-align: top; font-size: 12px; }
-    th { background: #eef2f8; text-align: left; }
-    pre { white-space: pre-wrap; border: 1px solid #bfc9d8; padding: 10px; font-size: 12px; }
-  </style>
-</head>
-<body>
-  <h1>ТЕХНИЧЕСКОЕ ЗАДАНИЕ (${lawMode === '223' ? '223-ФЗ' : '44-ФЗ'})</h1>
-  <div class="muted">${escapeHtml(buildNormativeBlock(lawMode))}</div>
-  ${sectionsHtml || `<pre>${escapeHtml(tzText)}</pre>`}
-</body>
-</html>`);
-    popup.document.close();
-    let printed = false;
-    const doPrint = () => {
-      if (printed) return;
-      printed = true;
-      try {
-        popup.focus();
-        popup.print();
-      } catch {
-        // no-op
-      }
-    };
-    popup.onload = () => {
-      doPrint();
-    };
-    window.setTimeout(doPrint, 350);
   };
 
   return (
     <section className="panel">
-      <h2>Рабочая область ТЗ</h2>
+      <h2>Рабочая область</h2>
+
+      {/* Режим закона */}
       <div className="checks">
         <label><input type="radio" checked={lawMode === '44'} onChange={() => setLawMode('44')} /> 44-ФЗ</label>
         <label><input type="radio" checked={lawMode === '223'} onChange={() => setLawMode('223')} /> 223-ФЗ</label>
       </div>
-      <div className="muted" style={{ whiteSpace: 'pre-wrap' }}>{buildNormativeBlock(lawMode)}</div>
 
+      {/* Провайдер и ключ */}
       <div className="grid two">
         <label>
           Провайдер
-          <select
-            value={provider}
-            onChange={(e) => {
-              const next = e.target.value as Provider;
-              setProvider(next);
-              if (next === 'deepseek' && !DEEPSEEK_MODELS.includes(model as (typeof DEEPSEEK_MODELS)[number])) {
-                setModel('deepseek-chat');
-              }
-              if (next === 'groq' && !GROQ_MODELS.includes(model as (typeof GROQ_MODELS)[number])) {
-                setModel('llama-3.3-70b-versatile');
-              }
-            }}
-          >
+          <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
             <option value="deepseek">DeepSeek</option>
             <option value="openrouter">OpenRouter</option>
             <option value="groq">Groq</option>
@@ -1067,80 +815,15 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         </label>
         <label>
           Модель
-          {provider === 'openrouter' && openRouterModels.length > 0 ? (
-            <select value={model} onChange={(e) => setModel(e.target.value)}>
-              {openRouterModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id}{m.name ? ` — ${m.name}` : ''}{m.context_length ? ` (${m.context_length})` : ''}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder={provider === 'openrouter' ? 'например: openai/gpt-4o-mini' : 'deepseek-chat'}
-              list={
-                provider === 'deepseek'
-                  ? 'deepseek-models'
-                  : provider === 'groq'
-                    ? 'groq-models'
-                    : undefined
-              }
-            />
-          )}
-          {provider === 'deepseek' && (
-            <datalist id="deepseek-models">
-              {DEEPSEEK_MODELS.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-          )}
-          {provider === 'groq' && (
-            <datalist id="groq-models">
-              {GROQ_MODELS.map((m) => (
-                <option key={m} value={m} />
-              ))}
-            </datalist>
-          )}
-          {provider === 'openrouter' && openRouterModels.length > 0 && (
-            <div className="muted" style={{ marginTop: 6 }}>
-              Загружено моделей: {openRouterModels.length}
-            </div>
-          )}
-          {provider === 'openrouter' && (
-            <div className="actions" style={{ marginTop: 8 }}>
-              <button type="button" onClick={() => void loadOpenRouterModels()} disabled={openRouterLoading}>
-                {openRouterLoading ? 'Загрузка моделей...' : `Загрузить модели OpenRouter (${openRouterModels.length || 0})`}
-              </button>
-            </div>
-          )}
-          {provider === 'openrouter' && openRouterError && (
-            <div className="warn" style={{ marginTop: 6 }}>
-              OpenRouter models: {openRouterError}
-            </div>
-          )}
+          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
         </label>
         <label>
           API-ключ
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={apiKey}
-            onChange={(e) => {
-              const next = e.target.value;
-              setApiKey(next);
-              if (provider === 'openrouter') {
-                setOpenRouterLoadedForKey('');
-                setOpenRouterModels([]);
-                setOpenRouterError('');
-              }
-            }}
-            placeholder="sk-... (не сохраняется в браузере)"
-          />
+          <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." />
         </label>
       </div>
 
+      {/* Таблица позиций */}
       <div className="rows-table-wrap">
         <table className="rows-table">
           <thead>
@@ -1156,110 +839,69 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
           <tbody>
             {rows.map((row, idx) => (
               <tr key={row.id}>
-                <td>{idx + 1}</td>
+                <td className="num-cell">{idx + 1}</td>
                 <td>
                   <select
                     value={row.type}
                     onChange={(e) => {
-                      const val = e.target.value as GoodsType;
-                      setRows((prev) =>
-                        prev.map((x) => (x.id === row.id ? { ...x, type: val, typeLocked: true, candidates: [] } : x))
-                      );
+                      const val = e.target.value;
+                      setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, type: val } : x)));
                     }}
+                    style={{ minWidth: 180 }}
                   >
-                    {Object.entries(GOODS_LABELS).map(([key, label]) => (
-                      <option key={key} value={key}>{label}</option>
+                    {GOODS_GROUPS.map((group) => (
+                      <optgroup key={group.label} label={group.label}>
+                        {group.items.map((key) => (
+                          <option key={key} value={key}>
+                            {GOODS_CATALOG[key]?.name ?? key}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                 </td>
                 <td>
                   <input
                     value={row.model}
-                    placeholder="Модель / описание"
+                    placeholder={GOODS_CATALOG[row.type]?.placeholder ?? 'Модель / описание...'}
                     onChange={(e) => {
                       const value = e.target.value;
                       setRows((prev) =>
-                        prev.map((x) => {
-                          if (x.id !== row.id) return x;
-                          if (x.typeLocked) {
-                            return {
-                              ...x,
-                              model: value,
-                              candidates: []
-                            };
-                          }
-                          const detected = detectTypeDetailed(value, x.type);
-                          const candidates = buildTypeCandidates(value, detected.type);
-                          return {
-                            ...x,
-                            model: value,
-                            type: detected.type,
-                            candidates: value.trim().length >= 3 ? candidates : []
-                          };
-                        })
+                        prev.map((x) =>
+                          x.id === row.id
+                            ? { ...x, model: value, type: detectGoodsType(value, x.type) }
+                            : x
+                        )
                       );
                     }}
                   />
-                  {Array.isArray(row.candidates) && row.candidates.length > 1 && (
-                    <div className="row-suggest-box">
-                      <div className="row-suggest-head">Найдено несколько вариантов — выберите</div>
-                      {row.candidates.map((candidate) => (
-                        <button
-                          key={`${row.id}-${candidate.type}-${candidate.reason}`}
-                          type="button"
-                          className="row-suggest-item"
-                          onClick={() => applyCandidate(row.id, candidate.type)}
-                        >
-                          <strong>{GOODS_LABELS[candidate.type]}</strong>
-                          <span>{candidate.reason}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {row.internetHints && (
-                    <div className="muted" style={{ marginTop: 6 }}>
-                      🌐 Данные модели загружены ({Math.min(row.internetHints.length, 9999)} симв.)
-                    </div>
-                  )}
                 </td>
-                <td>
+                <td className="qty-cell">
                   <input
                     type="number"
                     min={1}
                     value={row.qty}
                     onChange={(e) => {
-                      const qty = Number(e.target.value || 1);
+                      const qty = Math.max(1, Number(e.target.value || 1));
                       setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, qty } : x)));
                     }}
                   />
                 </td>
                 <td>
-                  <div className={row.status === 'done' ? 'ok' : row.status === 'error' ? 'warn' : 'muted'}>
-                    {row.status === 'idle' && 'Ожидание'}
-                    {row.status === 'loading' && 'Генерация...'}
-                    {row.status === 'done' && 'Готово'}
-                    {row.status === 'error' && `Ошибка: ${row.error || ''}`}
-                  </div>
-                  {row.lookupState && row.lookupState !== 'idle' && (
-                    <div className={row.lookupState === 'error' ? 'warn' : row.lookupState === 'done' ? 'ok' : 'muted'}>
-                      {row.lookupState === 'loading' && '🌐 Поиск...'}
-                      {row.lookupState === 'choose' && '🔎 Выбор'}
-                      {row.lookupState === 'done' && '✅ Интернет'}
-                      {row.lookupState === 'error' && '⚠️ Нет данных'}
-                      {row.lookupNote ? `: ${row.lookupNote}` : ''}
-                    </div>
-                  )}
+                  <span className={row.status === 'done' ? 'ok' : row.status === 'error' ? 'warn' : 'muted'}>
+                    {row.status === 'idle' && (GOODS_CATALOG[row.type]?.hardTemplate ? '📋 Шаблон готов' : 'Ожидание')}
+                    {row.status === 'loading' && '⏳ Генерация...'}
+                    {row.status === 'done' && `✅ Готово (${row.specs?.length ?? 0} хар-к)`}
+                    {row.status === 'error' && `❌ ${row.error ?? 'Ошибка'}`}
+                  </span>
                 </td>
                 <td>
                   <button
                     type="button"
-                    className="lookup-btn"
-                    disabled={row.lookupState === 'loading' || bulkLookup}
-                    onClick={() => void enrichRowFromInternet(row.id)}
+                    className="danger-btn"
+                    disabled={rows.length <= 1}
+                    onClick={() => setRows((prev) => prev.length > 1 ? prev.filter((x) => x.id !== row.id) : prev)}
                   >
-                    🌐 Подтянуть
-                  </button>
-                  <button type="button" className="danger-btn" onClick={() => removeRow(row.id)} disabled={rows.length <= 1}>
                     Удалить
                   </button>
                 </td>
@@ -1269,126 +911,59 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
         </table>
       </div>
 
-      <div className="preflight-box">
-        <div className="preflight-head">
-          <strong>Контроль качества перед генерацией</strong>
-          <span className={preflight.score >= 80 ? 'ok' : preflight.score >= 60 ? 'warn' : 'critical'}>
-            Индекс готовности: {preflight.score}%
-          </span>
-        </div>
-        {preflight.issues.length === 0 ? (
-          <div className="ok">Все проверки пройдены.</div>
-        ) : (
-          <ul className="preflight-list">
-            {preflight.issues.slice(0, 8).map((issue, idx) => (
-              <li key={`${issue.level}-${idx}`} className={issue.level === 'critical' ? 'critical' : 'warn'}>
-                {issue.level === 'critical' ? '⛔' : '⚠️'} {issue.message}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
+      {/* Кнопки действий */}
       <div className="actions">
-        <button type="button" onClick={addRow}>Добавить строку</button>
-        <button type="button" onClick={() => void enrichAllRowsFromInternet()} disabled={bulkLookup || rows.length === 0}>
-          {bulkLookup ? '🌐 Поиск...' : '🌐 Подтянуть из интернета'}
+        <button type="button" onClick={addRow}>+ Добавить строку</button>
+        <button
+          type="button"
+          disabled={!canGenerate || mutation.isPending}
+          onClick={() => mutation.mutate()}
+          style={{ background: canGenerate && !mutation.isPending ? '#1F5C8B' : undefined, color: canGenerate && !mutation.isPending ? '#fff' : undefined }}
+        >
+          {mutation.isPending ? '⏳ Генерация...' : '🚀 Сгенерировать ТЗ'}
         </button>
         <button
           type="button"
-          onClick={() => void runAutopilotFlow()}
-          disabled={autopilotRunning || mutation.isPending || rows.length === 0}
+          onClick={() => void enrichFromInternet()}
+          disabled={internetSearching}
+          title="Подтягивает подсказки из Яндекс (без VPN) по введённому описанию товара"
         >
-          {autopilotRunning ? '⚙️ Автопилот...' : '⚙️ Автопилот: интернет → ТЗ → пакет'}
+          {internetSearching ? '⏳ Поиск...' : '🌐 Подтянуть из интернета'}
         </button>
-        <button type="button" disabled={!canGenerate || mutation.isPending} onClick={() => mutation.mutate()}>
-          {mutation.isPending ? 'Генерация...' : 'Сгенерировать ТЗ'}
+        <button
+          type="button"
+          onClick={searchZakupki}
+          disabled={eisSearching}
+          title="Строит ссылки для поиска готовых ТЗ на zakupki.gov.ru через Яндекс"
+        >
+          {eisSearching ? '⏳ Поиск...' : '🏛️ Найти ТЗ в ЕИС'}
         </button>
-        <button type="button" onClick={exportPackage}>Экспорт пакета</button>
-        <button type="button" onClick={() => void exportDocx()} disabled={!tzText.trim()}>Скачать DOCX</button>
-        <button type="button" onClick={exportPdf} disabled={!tzText.trim()}>Скачать PDF</button>
-        <button type="button" onClick={printTz} disabled={!tzText.trim()}>Печать</button>
+        <button type="button" onClick={exportPackage}>📦 Экспорт JSON</button>
+        <button
+          type="button"
+          onClick={() => void exportDocx()}
+          disabled={!docxReady}
+          style={{ background: docxReady ? '#166534' : undefined, color: docxReady ? '#fff' : undefined }}
+        >
+          📄 Скачать DOCX
+        </button>
+        <button
+          type="button"
+          onClick={exportPdf}
+          disabled={!docxReady}
+        >
+          🖨️ Скачать PDF
+        </button>
       </div>
 
-      {(structuredRows.length > 0 || tzText.trim()) && (
-        <div id="tz-print-root" className="tz-output">
-          {structuredRows.map(({ row, parsed, specs, fallback }) => (
-            <article key={row.id} className="tz-item tz-html-block">
-              <h3 className="tz-section-title">{GOODS_LABELS[row.type]} / {row.model}</h3>
-              <div className="rows-table-wrap">
-                <table className="rows-table tz-two-col">
-                  <colgroup>
-                    <col style={{ width: '34%' }} />
-                    <col style={{ width: '66%' }} />
-                  </colgroup>
-                  <tbody>
-                    <tr><td>Наименование объекта поставки</td><td>{GOODS_LABELS[row.type]}</td></tr>
-                    <tr><td>Модель / описание</td><td>{row.model}</td></tr>
-                    <tr><td>Код ОКПД2</td><td>{parsed?.meta?.okpd2_code || 'не указано'}</td></tr>
-                    <tr><td>Код КТРУ</td><td>{parsed?.meta?.ktru_code || 'не указано'}</td></tr>
-                    <tr>
-                      <td>ПП 1875</td>
-                      <td>
-                        {parsed?.meta?.law175_status || 'не указано'}
-                        {parsed?.meta?.law175_basis ? ` (${parsed.meta.law175_basis})` : ''}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div className="rows-table-wrap">
-                <table className="rows-table tz-two-col">
-                  <colgroup>
-                    <col style={{ width: '34%' }} />
-                    <col style={{ width: '66%' }} />
-                  </colgroup>
-                  <tbody>
-                    {buildGeneralRequirements(lawMode).map((req) => (
-                      <tr key={`${row.id}-req-${req.name}`}>
-                        <td>{req.name}</td>
-                        <td>{req.value}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="rows-table-wrap">
-                <table className="rows-table tz-specs">
-                  <colgroup>
-                    <col style={{ width: '5%' }} />
-                    <col style={{ width: '54%' }} />
-                    <col style={{ width: '29%' }} />
-                    <col style={{ width: '12%' }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th>№</th>
-                      <th>Наименование характеристики</th>
-                      <th>Значение / требование</th>
-                      <th>Ед. изм.</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(specs.length > 0 ? specs : [{ group: '', name: 'Данные', value: fallback, unit: '' }]).map((spec, idx) => (
-                      <tr key={`${row.id}-${idx}-${spec.group}-${spec.name}`}>
-                        <td>{idx + 1}</td>
-                        <td>{spec.group && spec.group !== spec.name ? `${spec.group} / ${spec.name}` : spec.name}</td>
-                        <td>{spec.value}</td>
-                        <td>{spec.unit || ''}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </article>
-          ))}
+      {mutation.isError && (
+        <div className="warn" style={{ marginTop: 8 }}>
+          Ошибка: {mutation.error instanceof Error ? mutation.error.message : 'Неизвестная ошибка'}
         </div>
       )}
 
-      <details className="raw-result-box">
-        <summary>Сырой текст ТЗ</summary>
-        <textarea value={tzText} readOnly rows={18} style={{ width: '100%', fontFamily: 'monospace' }} />
-      </details>
+      {/* Предварительный просмотр */}
+      {renderPreview()}
     </section>
   );
 }

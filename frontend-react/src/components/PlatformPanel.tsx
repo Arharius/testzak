@@ -21,21 +21,21 @@ export function PlatformPanel({ value, onSave, onSendDraft, onExportPack }: Prop
 
   return (
     <section className="panel">
-      <h2>ЕИС и торговые площадки</h2>
+      <h2>ЕИС и электронные площадки</h2>
       <div className="grid two">
         <label>
           Профиль
           <select {...form.register('profile')}>
-            <option value="eis">EIS 44-FZ</option>
-            <option value="eis_223">EIS 223-FZ</option>
+            <option value="eis">ЕИС 44-ФЗ</option>
+            <option value="eis_223">ЕИС 223-ФЗ</option>
             <option value="sber_ast">Sber AST</option>
-            <option value="rts_tender">RTS Tender</option>
+            <option value="rts_tender">РТС-Тендер</option>
             <option value="roseltorg">Roseltorg</option>
-            <option value="etp_gpb">ETP GPB</option>
-            <option value="tek_torg">TEK Torg</option>
+            <option value="etp_gpb">ЭТП ГПБ</option>
+            <option value="tek_torg">ТЭК-Торг</option>
             <option value="fabrikant">Fabrikant</option>
             <option value="b2b_center">B2B-Center</option>
-            <option value="custom">Custom</option>
+            <option value="custom">Пользовательский</option>
           </select>
         </label>
         <label>
@@ -43,11 +43,11 @@ export function PlatformPanel({ value, onSave, onSendDraft, onExportPack }: Prop
           <input {...form.register('endpoint')} placeholder="https://connector.example/api/eis/drafts" />
         </label>
         <label>
-          API-токен
-          <input type="password" autoComplete="new-password" {...form.register('apiToken')} placeholder="Bearer token (не хранится в браузере)" />
+          API токен
+          <input {...form.register('apiToken')} placeholder="Bearer token" />
         </label>
         <label>
-          INN
+          ИНН
           <input {...form.register('customerInn')} placeholder="7700000000" />
         </label>
       </div>
@@ -60,7 +60,7 @@ export function PlatformPanel({ value, onSave, onSendDraft, onExportPack }: Prop
         <label><input type="checkbox" {...form.register('autoSendDraft')} /> Автоотправка черновика в коннектор</label>
       </div>
       <div className="actions">
-        <button onClick={form.handleSubmit(onSave)} type="button">Сохранить профиль площадки</button>
+        <button onClick={form.handleSubmit(onSave)} type="button">Сохранить профиль</button>
         <button onClick={onExportPack} type="button">Экспорт пакета</button>
         <button onClick={() => void onSendDraft()} type="button">Отправить черновик</button>
       </div>

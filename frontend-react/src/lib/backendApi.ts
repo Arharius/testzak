@@ -14,6 +14,13 @@ function buildApiUrl(path: string): string {
   return `${BACKEND_URL}${path}`;
 }
 
+export function isBackendApiAvailable(): boolean {
+  if (BACKEND_URL) return true;
+  if (typeof window === 'undefined') return false;
+  const host = String(window.location.hostname || '').toLowerCase();
+  return /\.netlify\.app$/.test(host);
+}
+
 const AUTH_TOKEN_KEY = 'tz_backend_jwt';
 const USER_KEY = 'tz_backend_user';
 
@@ -45,12 +52,15 @@ export function isLoggedIn(): boolean {
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 
-async function apiPost<T>(path: string, body: object, auth = false): Promise<T> {
+async function apiPost<T>(path: string, body: object, auth: boolean | 'optional' = false): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (auth) {
     const token = getStoredToken();
-    if (!token) throw new Error('Требуется авторизация');
-    headers['Authorization'] = `Bearer ${token}`;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    } else if (auth !== 'optional') {
+      throw new Error('Требуется авторизация');
+    }
   }
   const resp = await fetch(buildApiUrl(path), { method: 'POST', headers, body: JSON.stringify(body) });
   const data = await resp.json();
@@ -103,7 +113,7 @@ export async function generateWithBackend(
   const result = await apiPost<{ ok: boolean; data: { choices?: { message?: { content?: string } }[] } }>(
     '/api/ai/generate',
     { provider, model, messages, temperature, max_tokens: maxTokens },
-    true,
+    'optional',
   );
   return result.data?.choices?.[0]?.message?.content || '';
 }
@@ -120,7 +130,7 @@ export async function searchInternetSpecs(product: string, goodsType: string): P
   const result = await apiPost<{ ok: boolean; specs: SpecFromSearch[] }>(
     '/api/search/specs',
     { product, goods_type: goodsType },
-    true,
+    'optional',
   );
   return result.specs || [];
 }
@@ -131,7 +141,7 @@ export async function searchEisSpecs(query: string, goodsType: string): Promise<
   const result = await apiPost<{ ok: boolean; specs: SpecFromSearch[] }>(
     '/api/search/eis',
     { query, goods_type: goodsType },
-    true,
+    'optional',
   );
   return result.specs || [];
 }

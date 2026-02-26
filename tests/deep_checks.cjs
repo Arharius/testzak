@@ -230,11 +230,196 @@ function runLegalTextChecks() {
   );
 }
 
+function runInternetAndZakupkiHelperChecks() {
+  const block = extractBetween(
+    html,
+    'function looksLikeUrl(value) {',
+    'function hideRowSuggestions(rowId) {'
+  );
+
+  const context = {
+    normalizeDetectText(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/[-_/.,+()]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${block}
+this.pickRelevantHintParts = pickRelevantHintParts;
+this.parseZakupkiLinksFromProxyText = parseZakupkiLinksFromProxyText;
+this.buildZakupkiSearchUrl = buildZakupkiSearchUrl;
+this.buildZakupkiEisSearchUrl = buildZakupkiEisSearchUrl;
+this.buildZakupkiYandexSearchVariants = buildZakupkiYandexSearchVariants;`,
+    context
+  );
+
+  const noisy = context.pickRelevantHintParts('Xerox B210', [
+    'Mars rover geology mission and astronomy encyclopedia',
+    'Planet science and space exploration',
+  ]);
+  assert.strictEqual(noisy, '', 'Noisy unrelated hints should be filtered');
+
+  const relevant = context.pickRelevantHintParts('Xerox B210', [
+    'Xerox B210 laser printer for office monochrome printing',
+  ]);
+  assert.ok(/xerox/i.test(relevant) && /b210/i.test(relevant), 'Relevant product hints must be preserved');
+
+  const parsed = context.parseZakupkiLinksFromProxyText(
+    [
+      '[Извещение на поставку ноутбуков](https://zakupki.gov.ru/epz/order/notice/ea44/view/common-info.html?regNumber=1)',
+      '[Документация закупки](https://zakupki.gov.ru/epz/order/notice/ea44/view/documents.html?regNumber=1)',
+      'https://zakupki.gov.ru/epz/order/extendedsearch/results.html?searchString=%D0%BD%D0%BE%D1%83%D1%82',
+    ].join('\n'),
+    'ноутбук'
+  );
+  assert.ok(Array.isArray(parsed) && parsed.length >= 2, 'Expected parsed zakupki links');
+  assert.ok(
+    parsed.some((x) => /\/epz\/order\/notice\//i.test(x.url)),
+    'Parsed links should include notice/document pages'
+  );
+
+  const yandexUrl = context.buildZakupkiSearchUrl('ноутбук');
+  assert.ok(/yandex\.ru\/search\/\?text=/i.test(yandexUrl), 'Expected Yandex search URL');
+  assert.ok(decodeURIComponent(yandexUrl).includes('site:zakupki.gov.ru'), 'Yandex search must target zakupki.gov.ru');
+  assert.ok(decodeURIComponent(yandexUrl).includes('техническое задание'), 'Yandex search URL should include TZ keyword');
+
+  const eisUrl = context.buildZakupkiEisSearchUrl('ноутбук');
+  assert.ok(/zakupki\.gov\.ru\/epz\/order\/extendedsearch\/results\.html/i.test(eisUrl), 'Expected direct EIS search URL');
+
+  const variants = context.buildZakupkiYandexSearchVariants('ноутбук');
+  assert.ok(Array.isArray(variants) && variants.length >= 2, 'Expected multiple Yandex search variants');
+  assert.ok(variants.every((v) => /yandex\.ru\/search/i.test(v.url)), 'All variants must point to Yandex search');
+}
+
+function runTemplateTableRendererChecks() {
+  const block = extractBetween(
+    html,
+    'function buildSpecTableHTML(specs) {',
+    '// =====================\n//  ОСНОВНОЙ РЕНДЕР ВСЕХ РЕЗУЛЬТАТОВ'
+  );
+
+  const context = {
+    GOODS_CATALOG: {
+      pc: { name: 'Системный блок' },
+      os: { name: 'ОС', isSoftware: true },
+    },
+    goodsItems: [],
+    currentTzRenderMode: 'template',
+    normalizeDetectText(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/[-_/.,+()]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    },
+    escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    },
+    document: {
+      getElementById() { return null; },
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${block}
+this.inferSpecRequirementKind = inferSpecRequirementKind;
+this.inferSpecConfirmationHint = inferSpecConfirmationHint;
+this.buildSpecTemplateTableHTML = buildSpecTemplateTableHTML;`,
+    context
+  );
+
+  assert.strictEqual(
+    context.inferSpecRequirementKind({ name: 'Объем ОЗУ', value: 'не менее 16', unit: 'ГБ' }),
+    'Минимум',
+    'Expected "не менее" to map to minimum requirement kind'
+  );
+
+  const htmlOut = context.buildSpecTemplateTableHTML([
+    { group: 'ОЗУ', name: 'Объем ОЗУ', value: 'не менее 16', unit: 'ГБ' },
+    { group: 'Совместимость', name: 'Совместимость с Astra Linux', value: 'Наличие', unit: '' },
+  ], 'pc');
+  assert.ok(/Тип требования/.test(htmlOut), 'Template table must contain "Тип требования" column');
+  assert.ok(/Подтверждение/.test(htmlOut), 'Template table must contain "Подтверждение" column');
+  assert.ok(/data-spec-field="value"/.test(htmlOut), 'Template table must preserve editable value cells');
+  assert.ok(/data-spec-field="unit"/.test(htmlOut), 'Template table must preserve editable unit cells');
+}
+
+function runHardMinorTemplateChecks() {
+  const block = extractBetween(
+    html,
+    'const HARD_TEMPLATE_MINOR_TYPES = [',
+    '// =====================\n//  РЕНДЕР ТАБЛИЦЫ'
+  );
+
+  const context = {
+    GOODS_CATALOG: {
+      dvd: { name: 'Оптический диск (CD/DVD/BD)' },
+      patchCord: { name: 'Патч-корд (кабель витая пара)' },
+      laptop: { name: 'Ноутбук' },
+    },
+    automationSettings: { hardTemplateMinorGoods: true },
+    normalizeDetectText(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/[-_/.,+()]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    },
+  };
+  vm.createContext(context);
+  vm.runInContext(
+    `${block}
+this.isHardTemplateMinorType = isHardTemplateMinorType;
+this.buildHardTemplateMinorSpecs = buildHardTemplateMinorSpecs;
+this.getRenderableSpecsForItem = getRenderableSpecsForItem;`,
+    context
+  );
+
+  assert.strictEqual(context.isHardTemplateMinorType('dvd'), true, 'dvd must be hard-template minor type');
+  assert.strictEqual(context.isHardTemplateMinorType('laptop'), false, 'laptop must not be hard-template minor type');
+
+  const dvdSpecs = context.buildHardTemplateMinorSpecs('dvd', 'DVD-R Verbatim 4.7GB', 20);
+  assert.ok(Array.isArray(dvdSpecs) && dvdSpecs.length >= 5, 'DVD hard template should produce multiple rows');
+  assert.ok(
+    dvdSpecs.some((x) => /Тип оптического носителя/i.test(x.name || '')),
+    'DVD hard template must include optical disc type row'
+  );
+  const dvdCapacity = dvdSpecs.find((x) => /Емкость носителя/i.test(x.name || ''));
+  assert.ok(dvdCapacity, 'DVD hard template must include capacity row');
+  assert.ok(/4,7/.test(String(dvdCapacity.value || '')), 'DVD capacity row should infer 4.7 GB from model');
+
+  const cableSpecs = context.buildHardTemplateMinorSpecs('patchCord', 'Патч-корд UTP Cat6 2 м', 5);
+  const catRow = cableSpecs.find((x) => /Категория кабеля/i.test(x.name || ''));
+  assert.ok(catRow && /Cat6/i.test(String(catRow.value || '')), 'Patch cord hard template should infer Cat6');
+  const lenRow = cableSpecs.find((x) => /Длина кабеля/i.test(x.name || ''));
+  assert.ok(lenRow && /2/.test(String(lenRow.value || '')), 'Patch cord hard template should infer cable length');
+
+  const item = { type: 'dvd', model: 'DVD-R Verbatim 4.7GB', qty: 10, specs: [{ group: 'AI', name: 'foo', value: 'bar', unit: '' }] };
+  const templateRenderSpecs = context.getRenderableSpecsForItem(item, 'template');
+  assert.ok(Array.isArray(templateRenderSpecs) && templateRenderSpecs.length > 1, 'Template mode should return hard-template specs for dvd');
+  const classicRenderSpecs = context.getRenderableSpecsForItem(item, 'classic');
+  assert.strictEqual(classicRenderSpecs.length, 1, 'Classic mode must keep original AI specs');
+}
+
 function main() {
   runAutoDetectChecks();
   runDictionaryConsistencyChecks();
   runLaw1875PolicyChecks();
   runLegalTextChecks();
+  runInternetAndZakupkiHelperChecks();
+  runTemplateTableRendererChecks();
+  runHardMinorTemplateChecks();
   console.log('Deep checks passed: autodetect, catalog consistency, legal text.');
 }
 

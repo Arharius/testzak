@@ -9,3 +9,6 @@ index.backup.*.html
 tests/e2e_artifacts/
 tests/autodetect_report.*
 backups/
+
+# Local Netlify folder
+.netlify

@@ -8,6 +8,24 @@
 
 # Unified API on the same Netlify domain (frontend -> backend service).
 [[redirects]]
+  from   = "/api/ai/generate"
+  to     = "/.netlify/functions/ai-generate"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/search/specs"
+  to     = "/.netlify/functions/search-specs"
+  status = 200
+  force  = true
+
+[[redirects]]
+  from   = "/api/search/eis"
+  to     = "/.netlify/functions/search-eis"
+  status = 200
+  force  = true
+
+[[redirects]]
   from   = "/api/*"
   to     = "https://tz-generator-backend.onrender.com/api/:splat"
   status = 200

@@ -11,7 +11,7 @@ import {
   getStoredUser,
   setStoredToken,
   clearStoredAuth,
-  BACKEND_URL,
+  isBackendApiAvailable,
 } from './lib/backendApi';
 import {
   appendAutomationLog,
@@ -37,6 +37,7 @@ function download(name: string, content: string, type: string): void {
 }
 
 export function App() {
+  const backendAvailable = isBackendApiAvailable();
   const [automationSettings, setAutomationState] = useState<AutomationSettings>(getAutomationSettings());
   const [platformSettings, setPlatformState] = useState<PlatformIntegrationSettings>(getPlatformSettings());
   const [refreshTick, setRefreshTick] = useState(0);
@@ -172,7 +173,7 @@ export function App() {
       )}
 
       {/* Auth bar — top right */}
-      {BACKEND_URL && (
+      {backendAvailable && (
         <div style={authBarStyle}>
           {backendUser ? (
             <>
@@ -208,7 +209,7 @@ export function App() {
       )}
 
       {/* Login panel */}
-      {showLogin && !backendUser && BACKEND_URL && (
+      {showLogin && !backendUser && backendAvailable && (
         <div style={loginPanelStyle}>
           <h3 style={{ margin: '0 0 12px', color: '#E2E8F0', fontSize: 15 }}>Вход по ссылке в email</h3>
           {loginSent ? (

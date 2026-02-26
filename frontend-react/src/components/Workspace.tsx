@@ -18,7 +18,7 @@ import {
 import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
 import { generateItemSpecs, postPlatformDraft, sendEventThroughBestChannel } from '../lib/api';
-import { generateWithBackend, searchInternetSpecs, searchEisSpecs, BACKEND_URL } from '../lib/backendApi';
+import { generateWithBackend, searchInternetSpecs, searchEisSpecs, isBackendApiAvailable } from '../lib/backendApi';
 import { appendAutomationLog } from '../lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from '../types/schemas';
 import { GOODS_CATALOG, GOODS_GROUPS, detectGoodsType, type GoodsItem, type HardSpec } from '../data/goods-catalog';
@@ -579,7 +579,7 @@ type Props = {
 
 export function Workspace({ automationSettings, platformSettings, backendUser }: Props) {
   // Whether to use backend (logged in + backend URL configured)
-  const useBackend = !!(backendUser && BACKEND_URL);
+  const useBackend = !!(backendUser && isBackendApiAvailable());
   const [lawMode, setLawMode] = useState<LawMode>('44');
   const [provider, setProvider] = useState<Provider>('deepseek');
   const [apiKey, setApiKey] = useState('');
@@ -1165,7 +1165,7 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
         <div style={{ background: '#0F3B1E', border: '1px solid #166534', borderRadius: 8, padding: '10px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, fontSize: 13 }}>
           <span style={{ color: '#86EFAC' }}>✅ Сервер подключён — API-ключ не нужен</span>
           <span style={{ color: '#4ADE80', fontSize: 12 }}>
-            {backendUser?.role === 'admin' ? 'Безлимит (Admin)' : backendUser?.role === 'pro' ? '∞ Pro' : `${backendUser?.tz_count ?? 0}/${backendUser?.tz_limit ?? 5} ТЗ`}
+            {backendUser?.role === 'admin' ? 'Безлимит (Admin)' : backendUser?.role === 'pro' ? '∞ Pro' : `${backendUser?.tz_count ?? 0}/${backendUser?.tz_limit ?? 3} ТЗ`}
           </span>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', color: '#94A3B8', fontSize: 12 }}>
             Провайдер:
@@ -1193,10 +1193,17 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
             </label>
             <label>
               API-ключ
-              <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." />
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="sk-..."
+                autoComplete="off"
+                spellCheck={false}
+              />
             </label>
           </div>
-          {BACKEND_URL && (
+          {isBackendApiAvailable() && (
             <div style={{ fontSize: 12, color: '#94A3B8', padding: '6px 10px', background: '#1E293B', borderRadius: 6, marginBottom: 8 }}>
               💡 <strong style={{ color: '#CBD5E1' }}>Войдите</strong> (кнопка «Войти» вверху справа) — без API-ключа, реальный поиск в интернете и ЕИС.
             </div>

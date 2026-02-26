@@ -92,16 +92,99 @@ async function run() {
     });
   }
 
+  // Deterministic internet lookup mocks for legacy HTML helpers/features (Yandex suggest JSONP).
+  await page.route(/https:\/\/(suggest\.yandex\.ru|yandex\.ru)\/.*suggest-ya\.cgi.*/, async route => {
+    const reqUrl = new URL(route.request().url());
+    const callbackName = reqUrl.searchParams.get('callback') || '__cb';
+    const query = reqUrl.searchParams.get('part') || '';
+    const payload = [
+      query,
+      [
+        `${query} printer`,
+        `${query} лазерный принтер`,
+        `${query} характеристики`,
+      ],
+    ];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript; charset=utf-8',
+      body: `${callbackName}(${JSON.stringify(payload)});`,
+    });
+  });
+
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#goods-model-1');
 
   const title = await page.title();
   assert.ok(title.includes('Генератор ТЗ'), `Unexpected page title: ${title}`);
 
+  // Automation defaults for unattended work
+  assert.strictEqual(await page.locator('#automationAutopilotTemplate').isChecked(), true, 'Autopilot template mode should be enabled by default');
+  assert.strictEqual(await page.locator('#automationHardTemplateMinor').isChecked(), true, 'Hard template for minor goods should be enabled by default');
+
   // Auto-detect regression checks
   await expectType(page, 'Гравитон', 'pc');
   await expectType(page, 'Asus Vivobook 15 X1504', 'laptop');
   await expectType(page, 'DVD-R Verbatim 4.7GB', 'dvd');
+
+  // Internet hint filtering: noisy unrelated hints should be ignored for product hinting.
+  const filteredNoise = await page.evaluate(() =>
+    pickRelevantHintParts('Xerox B210', [
+      'Mars rover geology exploration and astronomy encyclopedia',
+      'Space science mission on another planet',
+    ])
+  );
+  assert.strictEqual(filteredNoise, '', 'Noisy unrelated hints must be filtered out');
+
+  const filteredRelevant = await page.evaluate(() =>
+    pickRelevantHintParts('Xerox B210', [
+      'Xerox B210 laser printer monochrome office device',
+    ])
+  );
+  assert.ok(
+    filteredRelevant && /xerox/i.test(filteredRelevant) && /b210/i.test(filteredRelevant),
+    'Relevant product hint should be retained'
+  );
+
+  await page.locator('#goods-model-1').fill('Xerox B210');
+  await page.waitForTimeout(150);
+  await page.locator('button:has-text("Подтянуть из интернета")').click();
+  await page.waitForTimeout(500);
+  const typeAfterInternet = await page.locator('#goods-type-1').evaluate(el => el.value);
+  assert.strictEqual(typeAfterInternet, 'printer', 'Internet enrichment must not corrupt type on noisy DDG response');
+
+  // New feature: build Yandex searches for ready TZ on zakupki.gov.ru and show EIS fallback link.
+  await page.locator('button:has-text("Найти готовые ТЗ")').click();
+  await page.waitForSelector('#goods-zakupki-1', { timeout: 15000 });
+  await page.waitForSelector('#goods-zakupki-1 a[href*="yandex.ru/search/"]', { timeout: 15000 });
+  const yandexLinksCount = await page.locator('#goods-zakupki-1 a[href*="yandex.ru/search/"]').count();
+  assert.ok(yandexLinksCount >= 2, `Expected Yandex search links in rendered helper, got ${yandexLinksCount}`);
+  const eisFallbackLinksCount = await page.locator('#goods-zakupki-1 a[href*="zakupki.gov.ru/epz/order/extendedsearch/"]').count();
+  assert.ok(eisFallbackLinksCount >= 1, 'Expected direct EIS fallback search link');
+
+  // Template mode + hard minor template: DVD should render deterministic table rows instead of AI laptop-like rows.
+  await page.locator('#goods-model-1').fill('DVD-R Verbatim 4.7GB');
+  await page.fill('#apiKey', USE_LIVE_API ? E2E_API_KEY : 'sk-or-e2e-mock-key');
+  await page.selectOption('#apiProvider', E2E_PROVIDER);
+  await page.selectOption('#modelSelect', E2E_MODEL);
+  await page.click('#generateTemplateBtn');
+  await page.waitForSelector('#goods-status-1 span:has-text(\"Готово\"), #goods-status-1 span:has-text(\"Шаблон\")', { timeout: 120000 });
+  await page.waitForSelector('#result.active', { timeout: 120000 });
+  const resultTextTemplateDvd = await page.locator('#result-inner').textContent();
+  assert.ok(
+    resultTextTemplateDvd && resultTextTemplateDvd.includes('Жёсткий шаблон мелочёвки активен'),
+    'Template banner should mention hard minor template'
+  );
+  assert.ok(
+    resultTextTemplateDvd.includes('Тип оптического носителя'),
+    'DVD template should include deterministic row "Тип оптического носителя"'
+  );
+  assert.ok(
+    resultTextTemplateDvd.includes('Емкость носителя'),
+    'DVD template should include deterministic row "Емкость носителя"'
+  );
+  await page.locator('button:has-text("Новый запрос")').click();
+  await page.waitForSelector('#goods-model-1');
 
   // Add row and check count
   await page.locator('button:has-text("Добавить товар")').click();

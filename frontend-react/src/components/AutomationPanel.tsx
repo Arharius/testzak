@@ -37,49 +37,27 @@ export function AutomationPanel({
           <input {...form.register('webhookUrl')} placeholder="https://hooks.example.com/flow" />
         </label>
         <label>
-          Secret
-          <input type="password" autoComplete="new-password" {...form.register('webhookSecret')} placeholder="X-TZ-Secret (вводится заново при изменении)" />
+          Секрет
+          <input {...form.register('webhookSecret')} placeholder="X-TZ-Secret" />
         </label>
         <label>
-          База Backend API
+          Бэкенд API URL
           <input {...form.register('backendApiBase')} placeholder="https://api.example.com" />
         </label>
         <label>
-          Токен Backend API
-          <input type="password" autoComplete="new-password" {...form.register('backendApiToken')} placeholder="Bearer token (не хранится в браузере)" />
-        </label>
-        <label>
-          Ретраи доставки
-          <input type="number" min={0} max={8} {...form.register('deliveryRetries', { valueAsNumber: true })} />
-        </label>
-        <label>
-          Базовая пауза (мс)
-          <input type="number" min={200} max={10000} step={100} {...form.register('deliveryBackoffMs', { valueAsNumber: true })} />
-        </label>
-        <label>
-          Tenant ID
-          <input {...form.register('tenantId')} placeholder="tenant-acme-001" />
-        </label>
-        <label>
-          Валюта биллинга
-          <input {...form.register('billingCurrency')} placeholder="RUB" />
-        </label>
-        <label>
-          Цена за документ (копейки)
-          <input type="number" min={0} max={500000} {...form.register('billingPricePerDocCents', { valueAsNumber: true })} />
+          Бэкенд API токен
+          <input {...form.register('backendApiToken')} placeholder="Bearer token" />
         </label>
       </div>
       <div className="checks">
         <label><input type="checkbox" {...form.register('autoSend')} /> Автоотправка webhook после генерации</label>
         <label><input type="checkbox" {...form.register('autopilot')} /> Режим автопилота</label>
-        <label><input type="checkbox" {...form.register('autoPickTopCandidate')} /> Автовыбор лучшего кандидата</label>
-        <label><input type="checkbox" {...form.register('useBackendQueueApi')} /> Отправка событий через очередь Backend API</label>
-        <label><input type="checkbox" {...form.register('requireHttpsForIntegrations')} /> Требовать HTTPS для внешних интеграций (кроме localhost)</label>
-        <label><input type="checkbox" {...form.register('billingEnabled')} /> Включить billing telemetry (usage события)</label>
+        <label><input type="checkbox" {...form.register('autoPickTopCandidate')} /> Автовыбор лучшего варианта</label>
+        <label><input type="checkbox" {...form.register('useBackendQueueApi')} /> Отправка событий через API очереди</label>
       </div>
       <div className="actions">
         <button onClick={form.handleSubmit(onSave)} type="button">Сохранить настройки</button>
-        <button onClick={() => void onSendTest()} type="button">Тест webhook</button>
+        <button onClick={() => void onSendTest()} type="button">Проверить webhook</button>
         <button onClick={() => void onAutopilot()} type="button">Запустить автопилот</button>
         <button onClick={onExportLearning} type="button">Экспорт обучения</button>
         <button onClick={onImportLearning} type="button">Импорт обучения</button>

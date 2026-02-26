@@ -1097,7 +1097,7 @@
         </div>
         <div class="form-group" style="flex:2">
           <label for="apiKey">API Ключ <span style="color:#ef4444">*</span></label>
-          <input type="text" id="apiKey" placeholder="Вставьте ваш ключ сюда..." autocomplete="off" spellcheck="false" />
+          <input type="password" id="apiKey" placeholder="Вставьте ваш ключ сюда..." autocomplete="off" spellcheck="false" />
         </div>
         <div class="form-group">
           <label for="modelSelect">Модель ИИ</label>
@@ -1128,7 +1128,7 @@
             </div>
             <div class="form-group" style="min-width:180px;">
               <label for="automationSecret">Секрет (опционально)</label>
-              <input id="automationSecret" type="text" placeholder="X-TZ-Secret" />
+              <input id="automationSecret" type="password" placeholder="X-TZ-Secret" />
             </div>
           </div>
           <div class="form-row" style="margin-bottom:8px;">
@@ -1138,7 +1138,7 @@
             </div>
             <div class="form-group" style="min-width:180px;">
               <label for="automationBackendApiToken">Backend API Token (опционально)</label>
-              <input id="automationBackendApiToken" type="text" placeholder="Bearer token" />
+              <input id="automationBackendApiToken" type="password" placeholder="Bearer token" />
             </div>
           </div>
           <div class="form-row" style="margin-bottom:8px;">
@@ -1237,7 +1237,7 @@
           <div class="form-row" style="margin-bottom:8px;">
             <div class="form-group">
               <label for="platformApiToken">API token</label>
-              <input id="platformApiToken" type="text" placeholder="Bearer token" />
+              <input id="platformApiToken" type="password" placeholder="Bearer token" />
             </div>
             <div class="form-group">
               <label for="platformCustomerInn">ИНН заказчика</label>
@@ -2883,10 +2883,11 @@ function addGoodsRow(type, model, qty) {
         value="${escHtml(rowModel)}"
         placeholder="Модель или описание..."
         style="width:100%;padding:7px 10px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;background:#f9fafb;outline:none;min-width:160px;"
-        oninput="autoDetectGoodsType(${id}, this.value); clearRowZakupkiResults(${id})"
+        oninput="autoDetectGoodsType(${id}, this.value); clearRowZakupkiResults(${id}); clearRowSpecDraft(${id})"
         onkeydown="if(event.key==='Enter') generateTZ()"
       />
       <div id="goods-suggestions-${id}" style="display:none;margin-top:6px;"></div>
+      <div id="goods-prefill-${id}" style="display:none;margin-top:6px;"></div>
       <div id="goods-zakupki-${id}" style="display:none;margin-top:6px;"></div>
     </td>
     <td style="padding:4px 6px;text-align:center;">
@@ -2896,6 +2897,7 @@ function addGoodsRow(type, model, qty) {
         value="${rowQty}"
         min="1"
         style="width:70px;padding:7px 6px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;background:#f9fafb;outline:none;text-align:center;"
+        oninput="clearRowSpecDraft(${id})"
       />
     </td>
     <td style="padding:4px 6px;text-align:center;" id="goods-status-${id}">
@@ -2916,6 +2918,8 @@ function addGoodsRow(type, model, qty) {
 function removeGoodsRow(id) {
   const tbody = document.getElementById('goods-rows');
   if (tbody.rows.length <= 1) return; // не удаляем последнюю
+  clearRowSpecDraft(id);
+  if (window.__internetCandidatesByRow) delete window.__internetCandidatesByRow[id];
   const row = document.getElementById('goods-row-' + id);
   if (row) row.remove();
   updateRowNumbers();
@@ -3952,6 +3956,349 @@ const INTERNET_LOOKUP_CACHE = Object.create(null);
 const ZAKUPKI_TZ_SEARCH_CACHE = Object.create(null);
 let AI_TYPE_DETECT_SEQ = 0;
 
+function getRowSpecDraftStore() {
+  const root = (typeof window !== 'undefined') ? window : globalThis;
+  if (!root.__rowSpecDraftByRow || typeof root.__rowSpecDraftByRow !== 'object') {
+    root.__rowSpecDraftByRow = Object.create(null);
+  }
+  return root.__rowSpecDraftByRow;
+}
+
+function makeRowSpecDraftSignature(type, model, qty) {
+  return [
+    String(type || '').trim(),
+    normalizeDetectText(model || ''),
+    Number(qty || 1) || 1
+  ].join('::');
+}
+
+function getRowCurrentData(rowId) {
+  const type = document.getElementById('goods-type-' + rowId)?.value || 'pc';
+  const model = document.getElementById('goods-model-' + rowId)?.value?.trim() || '';
+  const qty = parseInt(document.getElementById('goods-qty-' + rowId)?.value, 10) || 1;
+  return { rowId: String(rowId), type, model, qty };
+}
+
+function normalizeRowSpecDraftBucket(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  if (entry.variants && typeof entry.variants === 'object') {
+    const variants = Object.create(null);
+    for (const [k, v] of Object.entries(entry.variants)) {
+      if (v && typeof v === 'object') variants[String(k)] = v;
+    }
+    const keys = Object.keys(variants);
+    if (!keys.length) return null;
+    const activeVariant = (entry.activeVariant && variants[entry.activeVariant]) ? String(entry.activeVariant) : keys[0];
+    return { activeVariant, variants };
+  }
+  if (Array.isArray(entry.specs) && entry.specs.length) {
+    const key = String(entry.source || 'default');
+    return { activeVariant: key, variants: { [key]: entry } };
+  }
+  return null;
+}
+
+function getRowSpecDraftBucket(rowId) {
+  const store = getRowSpecDraftStore();
+  const key = String(rowId);
+  const normalized = normalizeRowSpecDraftBucket(store[key]);
+  if (normalized && normalized !== store[key]) store[key] = normalized;
+  return normalized;
+}
+
+function listRowSpecDrafts(rowId) {
+  const bucket = getRowSpecDraftBucket(rowId);
+  if (!bucket) return [];
+  const active = bucket.activeVariant;
+  return Object.entries(bucket.variants)
+    .map(([variantKey, draft]) => ({ ...draft, variantKey, _active: variantKey === active }))
+    .sort((a, b) => {
+      const rank = (x) => (x._active ? 0 : (x.variantKey === 'zakupki' ? 1 : (x.variantKey === 'internet' ? 2 : 3)));
+      return rank(a) - rank(b);
+    });
+}
+
+function getRowSpecDraft(rowId, variantKey) {
+  const bucket = getRowSpecDraftBucket(rowId);
+  if (!bucket) return null;
+  if (variantKey && bucket.variants[String(variantKey)]) return bucket.variants[String(variantKey)];
+  return bucket.variants[bucket.activeVariant] || null;
+}
+
+function setActiveRowSpecDraftVariant(rowId, variantKey) {
+  const store = getRowSpecDraftStore();
+  const key = String(rowId);
+  const bucket = getRowSpecDraftBucket(key);
+  if (!bucket || !bucket.variants[String(variantKey)]) return false;
+  bucket.activeVariant = String(variantKey);
+  store[key] = bucket;
+  renderRowSpecDraft(rowId);
+  const statusEl = document.getElementById('goods-status-' + rowId);
+  if (statusEl) {
+    const badge = String(variantKey) === 'zakupki' ? '🏛️ Вариант ЕИС' : (String(variantKey) === 'internet' ? '🌐 Вариант интернет' : '📥 Вариант');
+    statusEl.innerHTML = `<span style="font-size:12px;color:#0f766e;">${badge}</span>`;
+  }
+  return true;
+}
+
+function getRowSpecDraftBadge(draft) {
+  const source = String(draft?.source || '');
+  const method = String(draft?.method || '');
+  if (source === 'zakupki') return method === 'hard_minor' ? '🏛️ ЕИС → 🧱 шаблон' : '🏛️ ЕИС/поиск';
+  if (source === 'internet') return method === 'hard_minor' ? '🌐 Интернет → 🧱 шаблон' : '🌐 Интернет';
+  if (method === 'hard_minor') return '🧱 Жёсткий шаблон';
+  return '📥 Черновик';
+}
+
+function renderRowSpecDraft(rowId) {
+  const box = document.getElementById('goods-prefill-' + rowId);
+  if (!box) return;
+  const drafts = listRowSpecDrafts(rowId);
+  if (!drafts.length) {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+
+  const activeDraft = drafts.find(d => d._active) || drafts[0];
+  const variantsHtml = drafts.map((draft, cardIdx) => {
+    const badge = getRowSpecDraftBadge(draft);
+    const rowsHtml = (draft.specs || []).slice(0, draft._active ? 5 : 3).map((s, idx) => `
+      <tr style="background:${idx % 2 ? '#fff' : '#fbfdff'};">
+        <td style="padding:4px 6px;border:1px solid #e5edf4;font-size:11px;color:#374151;">${escHtml(s.group || 'Общие')}</td>
+        <td style="padding:4px 6px;border:1px solid #e5edf4;font-size:11px;color:#111827;">${escHtml(s.name || '')}</td>
+        <td style="padding:4px 6px;border:1px solid #e5edf4;font-size:11px;color:#0f4e79;">${escHtml(String(s.value || '') + (s.unit ? ' ' + s.unit : ''))}</td>
+      </tr>
+    `).join('');
+
+    const metaParts = [];
+    if (draft.meta?.okpd2_code) metaParts.push(`ОКПД2: ${draft.meta.okpd2_code}`);
+    if (draft.meta?.ktru_code) metaParts.push(`КТРУ: ${draft.meta.ktru_code}`);
+    if (draft.meta?.nac_regime) metaParts.push(`Нацрежим: ${draft.meta.nac_regime}`);
+    const note = draft.note ? cutText(String(draft.note), 220) : '';
+    const sourceQuery = draft.query ? cutText(String(draft.query), 120) : '';
+    const isActive = !!draft._active;
+    return `
+      <div style="margin-top:${cardIdx ? 8 : 6}px;padding:7px 8px;border:1px solid ${isActive ? '#8cc8ea' : '#dbe8f2'};border-radius:8px;background:${isActive ? '#ffffff' : '#f9fcff'};">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div style="font-size:11px;font-weight:700;color:${isActive ? '#0b5f94' : '#3b556b'};text-transform:uppercase;letter-spacing:.3px;">
+            ${escHtml(badge)} ${isActive ? '• будет подставлен в ТЗ' : ''}
+          </div>
+          ${isActive
+            ? '<span style="font-size:11px;color:#0f766e;font-weight:700;">Активный вариант</span>'
+            : `<button type="button" onclick="setActiveRowSpecDraftVariant(${Number(rowId)}, '${escHtml(String(draft.variantKey))}')"
+                style="font-size:11px;color:#0f4e79;background:#fff;border:1px solid #bfd6e8;border-radius:6px;padding:3px 6px;cursor:pointer;">Использовать в ТЗ</button>`
+          }
+        </div>
+        ${sourceQuery ? `<div style="font-size:11px;color:#4b5563;margin-top:4px;">Запрос: ${escHtml(sourceQuery)}</div>` : ''}
+        ${metaParts.length ? `<div style="font-size:11px;color:#4b5563;margin-top:4px;">${escHtml(metaParts.join(' • '))}</div>` : ''}
+        <div style="margin-top:6px;overflow:auto;">
+          <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5edf4;">
+            <thead>
+              <tr style="background:#eaf4fb;">
+                <th style="padding:4px 6px;border:1px solid #d6e7f3;font-size:10px;color:#0f4e79;text-align:left;">Группа</th>
+                <th style="padding:4px 6px;border:1px solid #d6e7f3;font-size:10px;color:#0f4e79;text-align:left;">Параметр</th>
+                <th style="padding:4px 6px;border:1px solid #d6e7f3;font-size:10px;color:#0f4e79;text-align:left;">Значение</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+        <div style="font-size:11px;color:#6b7280;margin-top:5px;">
+          ${(draft.specs || []).length > (isActive ? 5 : 3)
+            ? `Показано ${(isActive ? 5 : 3)} из ${(draft.specs || []).length} строк.`
+            : `Строк характеристик: ${(draft.specs || []).length}.`}
+        </div>
+        ${note ? `<div style="font-size:11px;color:#6b7280;margin-top:4px;">Источник/заметка: ${escHtml(note)}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  box.innerHTML = `
+    <div style="padding:7px 9px;border:1px solid #bfdff1;border-radius:8px;background:#f6fbff;">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
+        <div style="font-size:11px;font-weight:700;color:#0f4e79;text-transform:uppercase;letter-spacing:.3px;">
+          Варианты автоподстановки характеристик: ${drafts.length} (в ТЗ подставится активный вариант)
+        </div>
+        <button type="button" onclick="clearRowSpecDraft(${Number(rowId)})"
+          style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;padding:0;">Очистить</button>
+      </div>
+      <div style="font-size:11px;color:#4b5563;margin-top:4px;">
+        Активный сейчас: <b>${escHtml(getRowSpecDraftBadge(activeDraft))}</b>. Нажмите «Использовать в ТЗ» у другого варианта, чтобы переключить.
+      </div>
+      ${variantsHtml}
+    </div>`;
+  box.style.display = 'block';
+}
+
+function clearRowSpecDraft(rowId) {
+  const store = getRowSpecDraftStore();
+  if (rowId === undefined || rowId === null || rowId === '') {
+    for (const k of Object.keys(store)) delete store[k];
+    document.querySelectorAll('[id^="goods-prefill-"]').forEach(box => {
+      box.style.display = 'none';
+      box.innerHTML = '';
+    });
+    return;
+  }
+  delete store[String(rowId)];
+  renderRowSpecDraft(rowId);
+}
+
+function storeRowSpecDraft(rowId, draft) {
+  const row = getRowCurrentData(rowId);
+  const specs = cloneSpecsArray(draft?.specs || []);
+  const templateSpecs = cloneSpecsArray(draft?.templateSpecs || []);
+  const normalized = {
+    variantKey: String(draft?.variantKey || draft?.source || 'default'),
+    source: String(draft?.source || ''),
+    method: String(draft?.method || ''),
+    query: String(draft?.query || row.model || ''),
+    note: String(draft?.note || ''),
+    type: row.type,
+    model: row.model,
+    qty: row.qty,
+    signature: makeRowSpecDraftSignature(row.type, row.model, row.qty),
+    createdAt: new Date().toISOString(),
+    specs,
+    templateSpecs,
+    meta: draft?.meta && typeof draft.meta === 'object' ? { ...draft.meta } : {}
+  };
+  const store = getRowSpecDraftStore();
+  const key = String(rowId);
+  const bucket = getRowSpecDraftBucket(key) || { activeVariant: normalized.variantKey, variants: Object.create(null) };
+  bucket.variants = bucket.variants || Object.create(null);
+  bucket.variants[normalized.variantKey] = normalized;
+  bucket.activeVariant = normalized.variantKey;
+  store[key] = bucket;
+  renderRowSpecDraft(rowId);
+  return normalized;
+}
+
+function getUsableRowSpecDraftByVariant(rowId, type, model, qty, variantKey) {
+  const draft = getRowSpecDraft(rowId, variantKey);
+  if (!draft || !Array.isArray(draft.specs) || !draft.specs.length) return null;
+  const sig = makeRowSpecDraftSignature(type, model, qty);
+  if (String(draft.signature || '') !== sig) return null;
+  return draft;
+}
+
+function getUsableRowSpecDraft(rowId, type, model, qty) {
+  const bucket = getRowSpecDraftBucket(rowId);
+  if (!bucket) return null;
+  const sig = makeRowSpecDraftSignature(type, model, qty);
+  const activeDraft = bucket.variants?.[bucket.activeVariant];
+  if (activeDraft && Array.isArray(activeDraft.specs) && activeDraft.specs.length && String(activeDraft.signature || '') === sig) {
+    return activeDraft;
+  }
+  const preferredOrder = ['zakupki', 'internet'];
+  for (const key of preferredOrder) {
+    const d = bucket.variants?.[key];
+    if (d && Array.isArray(d.specs) && d.specs.length && String(d.signature || '') === sig) {
+      bucket.activeVariant = key;
+      getRowSpecDraftStore()[String(rowId)] = bucket;
+      return d;
+    }
+  }
+  for (const [key, d] of Object.entries(bucket.variants || {})) {
+    if (d && Array.isArray(d.specs) && d.specs.length && String(d.signature || '') === sig) {
+      bucket.activeVariant = key;
+      getRowSpecDraftStore()[String(rowId)] = bucket;
+      return d;
+    }
+  }
+  return null;
+}
+
+function buildRowSpecDraftPrompt(sourceLabel, row, extra) {
+  const basePrompt = buildPrompt(row.model, row.type, row.qty);
+  const lines = [];
+  lines.push(`Источник контекста для уточнения характеристик: ${sourceLabel}.`);
+  if (extra?.query) lines.push(`Поисковый запрос/описание: "${cutText(extra.query, 500)}".`);
+  if (extra?.hints) lines.push(`Интернет-подсказки (очищенные): "${cutText(extra.hints, 1500)}".`);
+  if (Array.isArray(extra?.zakupkiResults) && extra.zakupkiResults.length) {
+    const refs = extra.zakupkiResults.slice(0, 5).map((x, idx) => {
+      const title = String(x?.title || 'Ссылка на ЕИС').replace(/\s+/g, ' ').trim();
+      const url = String(x?.url || '').trim();
+      return `${idx + 1}) ${title}${url ? ' — ' + url : ''}`;
+    }).join('\n');
+    lines.push('Найденные документы/карточки (используй как ориентир по формулировкам ЕИС/ТЗ):\n' + refs);
+  }
+  if (extra?.note) lines.push(`Примечание: ${cutText(extra.note, 500)}`);
+  lines.push('Важно: используй этот контекст для уточнения характеристик и терминологии, но не выдумывай конкретные значения, которых нет в контексте, если они критичны. Для отсутствующих данных используй безопасные типовые требования для данного типа товара.');
+  lines.push('Ответ по-прежнему верни СТРОГО в том же JSON-формате (meta + specs), без markdown и пояснений.');
+  return `${basePrompt}\n\nДополнительный контекст для этой конкретной позиции:\n${lines.join('\n')}`;
+}
+
+async function generateAndStoreRowSpecDraft(rowId, options = {}) {
+  const row = getRowCurrentData(rowId);
+  if (!row.model) {
+    return { ok: false, reason: 'empty_model' };
+  }
+
+  const source = String(options.source || 'internet');
+  const variantKey = String(options.variantKey || source || 'default');
+  const sourceLabel = source === 'zakupki'
+    ? 'поиск ЕИС / готовые ТЗ (zakupki.gov.ru)'
+    : 'интернет-подсказки';
+
+  const existing = getUsableRowSpecDraftByVariant(rowId, row.type, row.model, row.qty, variantKey);
+  if (existing && !options.forceRegenerate) {
+    setActiveRowSpecDraftVariant(rowId, variantKey);
+    renderRowSpecDraft(rowId);
+    return { ok: true, cached: true, draft: existing };
+  }
+
+  if (isHardTemplateMinorEnabled() && isHardTemplateMinorType(row.type)) {
+    const hardSpecs = buildHardTemplateMinorSpecs(row.type, row.model, row.qty);
+    const hardDraft = storeRowSpecDraft(rowId, {
+      variantKey,
+      source,
+      method: 'hard_minor',
+      query: options.query || row.model,
+      note: options.note || 'Применён жёсткий шаблон мелочёвки (без ИИ).',
+      specs: hardSpecs,
+      templateSpecs: hardSpecs,
+      meta: applyLaw175MetaPolicy({
+        okpd2_code: (GOODS_CATALOG[row.type] || {}).okpd2 || '',
+        okpd2_name: (GOODS_CATALOG[row.type] || {}).okpd2name || '',
+        ktru_code: (GOODS_CATALOG[row.type] || {}).ktruFixed || ''
+      }, row.type, row.model)
+    });
+    return { ok: true, draft: hardDraft, method: 'hard_minor' };
+  }
+
+  const apiKey = document.getElementById('apiKey')?.value?.trim();
+  const provider = document.getElementById('apiProvider')?.value;
+  const aiModel = document.getElementById('modelSelect')?.value;
+  if (!canUseAITransport(apiKey, provider, aiModel)) {
+    return { ok: false, reason: 'no_ai_transport' };
+  }
+
+  const prompt = buildRowSpecDraftPrompt(sourceLabel, row, {
+    query: options.query || row.model,
+    hints: options.hints || '',
+    zakupkiResults: options.zakupkiResults || [],
+    note: options.note || ''
+  });
+
+  const text = await callAI(prompt, apiKey, provider, aiModel);
+  const parsed = parseSpecs(text);
+  if (!parsed || !Array.isArray(parsed.specs) || parsed.specs.length === 0) {
+    return { ok: false, reason: 'parse_failed', error: 'Не удалось распознать характеристики' };
+  }
+
+  const draft = storeRowSpecDraft(rowId, {
+    variantKey,
+    source,
+    method: 'ai',
+    query: options.query || row.model,
+    note: options.note || '',
+    specs: postProcessSpecs(parsed.specs),
+    meta: applyLaw175MetaPolicy(parsed.meta || {}, row.type, row.model)
+  });
+  return { ok: true, draft, method: 'ai' };
+}
+
 function applyDetectedGoodsType(rowId, detectedType, source) {
   if (!detectedType || !GOODS_CATALOG[detectedType]) return false;
   const typeInput = document.getElementById('goods-type-' + rowId);
@@ -4060,6 +4407,11 @@ function inferTypeByStrongKeywords(value) {
   // Ноутбуки
   if (/(ноутбук|laptop|notebook|ultrabook|macbook|vivobook|zenbook|expertbook|matebook|thinkpad|ideapad|probook|elitebook|inspiron|latitude|xps|aspire|swift|travelmate)/i.test(v)) {
     return 'laptop';
+  }
+
+  // Бренды принтеров/МФУ: для кратких моделей типа "Xerox B210" это сильный сигнал.
+  if (/(^|\s)(xerox|kyocera|pantum|oki)(\s|$)/i.test(v)) {
+    return 'printer';
   }
 
   // Серверы и серверные линейки
@@ -4520,14 +4872,34 @@ async function searchReadyTZOnZakupkiForRow(rowId) {
 
   const payload = ZAKUPKI_TZ_SEARCH_CACHE[cacheKey] || { ok: false, results: [] };
   renderRowZakupkiResults(rowId, query, payload.results, payload.note || '');
+  let draftApplied = false;
+  let draftReason = '';
+  try {
+    if (statusEl) statusEl.innerHTML = '<span style="font-size:12px;color:#0f6c8a;">🏛️ Черновик...</span>';
+    const draftRes = await generateAndStoreRowSpecDraft(rowId, {
+      source: 'zakupki',
+      query,
+      zakupkiResults: payload.results || [],
+      note: payload.note || 'Контекст ЕИС/поиска использован для автоподстановки характеристик в шаблон.',
+      forceRegenerate: true
+    });
+    draftApplied = !!draftRes.ok;
+    draftReason = draftRes.reason || '';
+  } catch (e) {
+    draftReason = e?.message || 'draft_error';
+  }
   if (statusEl) {
-    if (payload.results && payload.results.length) {
+    if (draftApplied) {
+      statusEl.innerHTML = `<span style="font-size:12px;color:#059669;">🏛️ ТЗ-черновик${payload.results?.length ? ` (${payload.results.length})` : ''}</span>`;
+    } else if (draftReason === 'no_ai_transport') {
+      statusEl.innerHTML = '<span style="font-size:12px;color:#f59e0b;">🏛️ Нужен AI/proxy</span>';
+    } else if (payload.results && payload.results.length) {
       statusEl.innerHTML = `<span style="font-size:12px;color:#059669;">🔎 Яндекс: ${payload.results.length}</span>`;
     } else {
       statusEl.innerHTML = '<span style="font-size:12px;color:#f59e0b;">🔎 Яндекс: открыть поиск</span>';
     }
   }
-  return { ok: !!payload.ok, count: (payload.results || []).length };
+  return { ok: !!payload.ok, count: (payload.results || []).length, draftApplied };
 }
 
 async function searchReadyTZOnZakupki() {
@@ -4538,16 +4910,18 @@ async function searchReadyTZOnZakupki() {
   }
 
   hideError();
-  setLoading(true, 'Ищу готовые ТЗ по ЕИС через Яндекс (site:zakupki.gov.ru)...');
+  setLoading(true, 'Ищу контекст ЕИС и подставляю характеристики в черновики строк...');
 
   let processed = 0;
   let withResults = 0;
+  let prefilled = 0;
   for (const tr of rows) {
     const id = Number(tr.dataset.rowId);
     if (!id) continue;
     const res = await searchReadyTZOnZakupkiForRow(id);
     if (res.reason !== 'empty_query') processed += 1;
     if (res.count > 0) withResults += 1;
+    if (res.draftApplied) prefilled += 1;
   }
 
   setLoading(false);
@@ -4557,7 +4931,8 @@ async function searchReadyTZOnZakupki() {
   }
   await sendAutomationEvent('zakupki.search.ready_tz', {
     rows: processed,
-    rowsWithResults: withResults
+    rowsWithResults: withResults,
+    rowsPrefilled: prefilled
   });
 }
 
@@ -4568,14 +4943,21 @@ function hideRowSuggestions(rowId) {
   box.innerHTML = '';
 }
 
-function applyInternetSuggestion(rowId, idx) {
+async function applyInternetSuggestion(rowId, idx, options = {}) {
   const bucket = window.__internetCandidatesByRow || {};
   const list = bucket[rowId] || [];
   const c = list[idx];
   if (!c) return;
+  const before = getRowCurrentData(rowId);
+  const beforeSig = makeRowSpecDraftSignature(before.type, before.model, before.qty);
   if (c.type) applyDetectedGoodsType(rowId, c.type, 'rules');
   const modelEl = document.getElementById('goods-model-' + rowId);
   if (modelEl && c.model && c.model.trim()) modelEl.value = c.model.trim();
+  const after = getRowCurrentData(rowId);
+  const afterSig = makeRowSpecDraftSignature(after.type, after.model, after.qty);
+  if (beforeSig !== afterSig) {
+    clearRowSpecDraft(rowId);
+  }
   if (c.type) {
     const learnText = (modelEl?.value || c.model || '').trim();
     if (learnText) learnTypeFromText(learnText, c.type, 'internet_pick');
@@ -4583,6 +4965,27 @@ function applyInternetSuggestion(rowId, idx) {
   const statusEl = document.getElementById('goods-status-' + rowId);
   if (statusEl) statusEl.innerHTML = '<span style="font-size:12px;color:#059669;">✅ Выбрано</span>';
   hideRowSuggestions(rowId);
+  try {
+    const query = (modelEl?.value || c.model || '').trim();
+    const hints = typeof options.hints === 'string' ? options.hints : await fetchInternetHints(query);
+    const draftRes = await generateAndStoreRowSpecDraft(rowId, {
+      source: 'internet',
+      query: options.query || query,
+      hints,
+      note: hints ? 'Черновик характеристик собран с учетом интернет-подсказок.' : 'Черновик характеристик собран после автоклассификации.'
+    });
+    if (statusEl) {
+      if (draftRes.ok) {
+        statusEl.innerHTML = '<span style="font-size:12px;color:#059669;">🌐 Характеристики</span>';
+      } else if (draftRes.reason === 'no_ai_transport') {
+        statusEl.innerHTML = '<span style="font-size:12px;color:#f59e0b;">⚠️ Нужен AI/proxy</span>';
+      }
+    }
+  } catch (e) {
+    if (statusEl) {
+      statusEl.innerHTML = `<span style="font-size:12px;color:#f59e0b;" title="${escHtml(e?.message || 'Ошибка черновика')}">⚠️ Черновик</span>`;
+    }
+  }
 }
 
 function showRowSuggestions(rowId, candidates) {
@@ -4648,6 +5051,9 @@ function buildHeuristicCandidates(query, hints) {
   }
   if (/(монитор|monitor|display|дисплей|lcd|oled|ips|qhd|uhd|4k)/i.test(combined)) {
     scores.monitor = (scores.monitor || 0) + 5;
+  }
+  if (/(xerox|kyocera|pantum|oki|лазерн(?:ый|ого)? принтер|монохромн(?:ый|ого)? принтер)/i.test(combined)) {
+    scores.printer = (scores.printer || 0) + 5;
   }
   if (/(системн(?:ый)? блок|системник|desktop|workstation|рабочая станция|microtower|mini tower|\bsff\b)/i.test(combined)) {
     scores.pc = (scores.pc || 0) + 5;
@@ -4759,6 +5165,7 @@ async function enrichRowsFromInternet() {
   setLoading(true, 'Подтягиваю данные из интернета по позициям...');
 
   let okCount = 0;
+  let draftCount = 0;
   for (const tr of rows) {
     const id = tr.dataset.rowId;
     const modelEl = document.getElementById('goods-model-' + id);
@@ -4774,21 +5181,46 @@ async function enrichRowsFromInternet() {
     }
 
     statusEl.innerHTML = '<span style="font-size:12px;color:#0f6c8a;">🌐 Поиск...</span>';
+    const strongTypeFromQuery = inferTypeByStrongKeywords(query);
+    if (strongTypeFromQuery) {
+      applyDetectedGoodsType(id, strongTypeFromQuery, 'rules');
+    }
     const hints = await fetchInternetHints(query);
 
     const heuristic = buildHeuristicCandidates(query, hints);
     const aiCandidates = await buildAICandidates(query, hints);
     const merged = prioritizeCandidates(id, query, [...aiCandidates, ...heuristic]);
     const strongDetectedType = inferTypeByStrongKeywords([query, hints].filter(Boolean).join(' '));
-    if (strongDetectedType && merged.length > 1) {
+    if (strongDetectedType && GOODS_CATALOG[strongDetectedType]) {
       const strongIdx = merged.findIndex(c => c.type === strongDetectedType);
       if (strongIdx >= 0) {
         window.__internetCandidatesByRow = window.__internetCandidatesByRow || {};
         window.__internetCandidatesByRow[id] = merged;
-        applyInternetSuggestion(id, strongIdx);
+        await applyInternetSuggestion(id, strongIdx, { query, hints });
+        if (getUsableRowSpecDraft(id, getRowCurrentData(id).type, getRowCurrentData(id).model, getRowCurrentData(id).qty)) {
+          draftCount += 1;
+        }
         okCount += 1;
         continue;
       }
+      applyDetectedGoodsType(id, strongDetectedType, 'rules');
+      if (modelEl.value.trim()) learnTypeFromText(modelEl.value.trim(), strongDetectedType, 'internet_strong');
+      const strongDraftRes = await generateAndStoreRowSpecDraft(id, {
+        source: 'internet',
+        query,
+        hints,
+        note: 'Черновик характеристик собран по сильным ключевым словам и интернет-подсказкам.'
+      });
+      if (strongDraftRes.ok) {
+        draftCount += 1;
+        statusEl.innerHTML = '<span style="font-size:12px;color:#059669;">🌐 Характеристики</span>';
+      } else if (strongDraftRes.reason === 'no_ai_transport') {
+        statusEl.innerHTML = '<span style="font-size:12px;color:#f59e0b;">⚠️ Нужен AI/proxy</span>';
+      } else {
+        statusEl.innerHTML = '<span style="font-size:12px;color:#059669;">✅ Интернет</span>';
+      }
+      okCount += 1;
+      continue;
     }
 
     if (merged.length > 1) {
@@ -4798,13 +5230,29 @@ async function enrichRowsFromInternet() {
     } else if (merged.length === 1) {
       window.__internetCandidatesByRow = window.__internetCandidatesByRow || {};
       window.__internetCandidatesByRow[id] = merged;
-      applyInternetSuggestion(id, 0);
+      await applyInternetSuggestion(id, 0, { query, hints });
+      if (getUsableRowSpecDraft(id, getRowCurrentData(id).type, getRowCurrentData(id).model, getRowCurrentData(id).qty)) {
+        draftCount += 1;
+      }
       okCount += 1;
     } else if (hints) {
       // Подмешиваем подсказки в автодетект и при пустой модели обновляем модельный текст
       autoDetectGoodsType(id, query + ' ' + hints);
       if (!modelEl.value.trim()) modelEl.value = cutText(query + ' ' + hints, 220);
-      statusEl.innerHTML = '<span style="font-size:12px;color:#059669;">✅ Интернет</span>';
+      const draftRes = await generateAndStoreRowSpecDraft(id, {
+        source: 'internet',
+        query,
+        hints,
+        note: 'Черновик характеристик собран по интернет-подсказкам.'
+      });
+      if (draftRes.ok) {
+        draftCount += 1;
+        statusEl.innerHTML = '<span style="font-size:12px;color:#059669;">🌐 Характеристики</span>';
+      } else if (draftRes.reason === 'no_ai_transport') {
+        statusEl.innerHTML = '<span style="font-size:12px;color:#f59e0b;">⚠️ Нужен AI/proxy</span>';
+      } else {
+        statusEl.innerHTML = '<span style="font-size:12px;color:#059669;">✅ Интернет</span>';
+      }
       okCount += 1;
     } else {
       // Если сеть недоступна/нет подсказок — хотя бы локальный детект по запросу
@@ -4819,9 +5267,10 @@ async function enrichRowsFromInternet() {
   }
   await sendAutomationEvent('rows.enriched', {
     rows: rows.length,
-    successRows: okCount
+    successRows: okCount,
+    rowsPrefilled: draftCount
   });
-  return { totalRows: rows.length, successRows: okCount };
+  return { totalRows: rows.length, successRows: okCount, rowsPrefilled: draftCount };
 }
 
 function autoResolveTopSuggestions() {
@@ -4979,6 +5428,9 @@ function selectRowGoods(rowId, value) {
     if (modelInput.value.trim()) learnTypeFromText(modelInput.value.trim(), value, 'manual_pick');
     modelInput.focus();
   }
+  clearRowSpecDraft(rowId);
+  clearRowZakupkiResults(rowId);
+  hideRowSuggestions(rowId);
 }
 
 // Клавиатурная навигация в дропдауне строки
@@ -5151,7 +5603,7 @@ function getBackendAIProxyConfig() {
   const base = String(baseFromInput || baseFromSettings || '').trim().replace(/\/+$/, '');
   const token = String(tokenFromInput || tokenFromSettings || '').trim();
   return {
-    enabled: !!base,
+    enabled: !!base && !!token,
     base,
     token,
     endpoint: base ? `${base}/api/v1/ai/chat` : ''
@@ -5384,6 +5836,24 @@ async function generateTZ(renderMode) {
     setLoading(true, `Генерирую позицию ${i+1} из ${goodsItems.length}: ${item.model}...`);
 
     try {
+      const rowDraft = getUsableRowSpecDraft(item.id, item.type, item.model, item.qty);
+      if (rowDraft) {
+        item.specs = cloneSpecsArray(rowDraft.specs);
+        item.templateSpecs = Array.isArray(rowDraft.templateSpecs) && rowDraft.templateSpecs.length
+          ? cloneSpecsArray(rowDraft.templateSpecs)
+          : null;
+        item._templateSpecsSignature = rowDraft.signature || '';
+        item._templateSpecsKind = rowDraft.method === 'hard_minor' ? 'hard_minor' : '';
+        item.meta = applyLaw175MetaPolicy(rowDraft.meta || {}, item.type, item.model);
+        item.status = 'done';
+        const badge = rowDraft.source === 'zakupki'
+          ? '🏛️ Черновик'
+          : (rowDraft.source === 'internet' ? '🌐 Черновик' : '📥 Черновик');
+        if (statusEl) statusEl.innerHTML = `<span style="font-size:12px;color:#0f766e;">${badge}</span>`;
+        logAutomationAction('row.spec_draft.used', true, `${item.type}:${item.id}`);
+        continue;
+      }
+
       const useHardMinorDirect = currentTzRenderMode === 'template'
         && isHardTemplateMinorEnabled()
         && isHardTemplateMinorType(item.type);

@@ -210,17 +210,6 @@ function dataCell(text: string, opts: { bold?: boolean; shade?: string; span?: n
   });
 }
 
-function labelCell(text: string, isLaw = false) {
-  return new TableCell({
-    children: [new Paragraph({
-      children: [new TextRun({ text, bold: true, font: FONT, size: FONT_SIZE, color: isLaw ? 'B45309' : '1F2937' })],
-    })],
-    width: { size: 35, type: WidthType.PERCENTAGE },
-    shading: isLaw ? cellShade('FFFBEB') : undefined,
-    borders: allBorders(),
-    margins: { top: 60, bottom: 60, left: 80, right: 80 },
-  });
-}
 
 // Ячейка левой колонки раздела 1 (синяя заливка EEF2FF, как в образце)
 function s1LabelCell(text: string) {
@@ -251,12 +240,6 @@ function allBorders() {
   return { top: b, bottom: b, left: b, right: b, insideHorizontal: b, insideVertical: b };
 }
 
-function sectionTitle(text: string) {
-  return new Paragraph({
-    children: [new TextRun({ text, bold: true, font: FONT, size: 26 })],
-    spacing: { before: 240, after: 120 },
-  });
-}
 
 function numText(n: number): string {
   const ones = ['','один','два','три','четыре','пять','шесть','семь','восемь','девять',
@@ -270,230 +253,271 @@ function numText(n: number): string {
   return tens[t] + (o ? ' ' + ones[o] : '');
 }
 
-// ── Функция генерации DOCX ────────────────────────────────────────────────────
+// ── Вспомогательные функции для 3-колоночной таблицы характеристик ────────────
+function specGroupRow3(text: string): TableRow {
+  return new TableRow({
+    children: [new TableCell({
+      columnSpan: 3,
+      children: [new Paragraph({
+        children: [new TextRun({ text, bold: true, font: FONT, size: FONT_SIZE })],
+        alignment: AlignmentType.CENTER,
+      })],
+      shading: cellShade('DBEAFE'),
+      borders: allBorders(),
+      margins: { top: 40, bottom: 40, left: 80, right: 80 },
+    })],
+  });
+}
+
+function spec3DataRow(name: string, value: string, unit: string, warning?: string): TableRow {
+  const valText = value + (warning ? ' ⚠️ ' + warning : '');
+  return new TableRow({
+    children: [
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun({ text: name, font: FONT, size: FONT_SIZE })] })],
+        width: { size: 50, type: WidthType.PERCENTAGE },
+        borders: allBorders(),
+        margins: { top: 60, bottom: 60, left: 80, right: 80 },
+      }),
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun({ text: valText, font: FONT, size: FONT_SIZE })] })],
+        borders: allBorders(),
+        margins: { top: 60, bottom: 60, left: 80, right: 80 },
+      }),
+      new TableCell({
+        children: [new Paragraph({ children: [new TextRun({ text: unit, font: FONT, size: FONT_SIZE })] })],
+        width: { size: 12, type: WidthType.PERCENTAGE },
+        borders: allBorders(),
+        margins: { top: 60, bottom: 60, left: 80, right: 80 },
+      }),
+    ],
+  });
+}
+
+// ── Функция генерации DOCX (структура по шаблону) ────────────────────────────
 async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
   const doneRows = rows.filter((r) => r.status === 'done' && r.specs);
   if (doneRows.length === 0) throw new Error('Нет готовых позиций для экспорта');
 
   const children: (Paragraph | Table)[] = [];
-
-  const goodsNames = doneRows.length === 1
-    ? (GOODS_CATALOG[doneRows[0].type]?.name ?? doneRows[0].type)
-    : doneRows.map((r) => GOODS_CATALOG[r.type]?.name ?? r.type).join(', ');
-
-  // ── Заголовок (по образцу) ──
-  children.push(
-    new Paragraph({
-      children: [new TextRun({ text: 'Приложение к документации о закупке', font: FONT, size: 18, color: '6B7280' })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 40 },
-    }),
-    new Paragraph({ children: [], spacing: { after: 80 } }),
-    new Paragraph({
-      children: [new TextRun({ text: 'ТЕХНИЧЕСКОЕ ЗАДАНИЕ', bold: true, font: FONT, size: 28, color: '1F2937' })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 40 },
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: `на поставку товара: ${goodsNames}`, font: FONT, size: 20, color: '6B7280' })],
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 200 },
-    }),
-  );
-
-  // ── Раздел 1 ──
-  children.push(sectionTitle('1. Наименование объекта закупки'));
-
   const currentYear = new Date().getFullYear();
+  const contractWord = lawMode === '44' ? 'контракта' : 'договора';
 
-  if (doneRows.length === 1) {
-    const row = doneRows[0];
-    const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
-    const meta = row.meta ?? {};
-    const okpd2Code = meta.okpd2_code || g.okpd2;
-    const okpd2Name = meta.okpd2_name || g.okpd2name;
-    const ktru = meta.ktru_code || g.ktruFixed || '';
-    const isSW = !!g.isSoftware;
-    const okeiStr = isSW ? '2805 — экземпляр' : '796 — штука';
-    const dateRow = isSW
-      ? `Не ранее ${currentYear} года (текущая актуальная версия на дату поставки)`
-      : `Не ранее 1 января ${currentYear} г.`;
+  // Вспомогательные параграфы
+  const boldPara = (text: string, spacingBefore = 160) => new Paragraph({
+    children: [new TextRun({ text, bold: true, font: FONT, size: FONT_SIZE, color: '1F2937' })],
+    spacing: { before: spacingBefore, after: 80 },
+  });
+  const regPara = (text: string) => new Paragraph({
+    children: [new TextRun({ text, font: FONT, size: FONT_SIZE })],
+    spacing: { after: 80 },
+  });
 
-    children.push(new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: [
-        new TableRow({ children: [s1LabelCell('Наименование объекта поставки'), valueCell(g.name)] }),
-        ...(row.model ? [new TableRow({ children: [s1LabelCell('Модель / описание'), valueCell(row.model)] })] : []),
-        new TableRow({ children: [s1LabelCell('Код ОКПД2'), valueCell(`${okpd2Code} — ${okpd2Name}`)] }),
-        new TableRow({ children: [s1LabelCell('Код КТРУ'), valueCell(ktru || 'Уточняется при размещении в ЕИС')] }),
-        new TableRow({ children: [s1LabelCell('Единица измерения (ОКЕИ)'), valueCell(okeiStr)] }),
-        new TableRow({ children: [s1LabelCell('Количество'), valueCell(`${row.qty} (${numText(row.qty)}) ${isSW ? 'лицензий' : 'штук'}`)] }),
-        new TableRow({ children: [s1LabelCell(isSW ? 'Дата версии / поставки' : 'Дата выпуска товара'), valueCell(dateRow)] }),
-      ],
-    }));
-  } else {
-    // Сводная таблица для нескольких позиций
-    children.push(new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: [
-        new TableRow({ children: [
-          hCell('№', { w: 500 }),
-          hCell('Наименование товара'),
-          hCell('Модель / описание'),
-          hCell('ОКПД2', { w: 1800 }),
-          hCell('КТРУ', { w: 2400 }),
-          hCell('Кол-во', { w: 800 }),
-        ]}),
-        ...doneRows.map((row, idx) => {
-          const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
-          const meta = row.meta ?? {};
-          return new TableRow({ children: [
-            dataCell(String(idx + 1), { w: 500 }),
-            dataCell(g.name),
-            dataCell(row.model),
-            dataCell(meta.okpd2_code || g.okpd2, { w: 1800 }),
-            dataCell(meta.ktru_code || g.ktruFixed || '—', { w: 2400 }),
-            dataCell(String(row.qty), { w: 800 }),
-          ]});
-        }),
-      ],
-    }));
-  }
-
-  // ── Разделы 2, 3, 4, 5 — для каждой позиции ──
   for (let i = 0; i < doneRows.length; i++) {
     const row = doneRows[i];
     const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
     const meta = row.meta ?? {};
-    const prefix = doneRows.length > 1 ? ` — позиция ${i + 1}: ${g.name}` : '';
-
-    // ── Раздел 2 ──
-    const sec2rows = buildSection2Rows(row.type, meta, lawMode);
-    children.push(sectionTitle(`2. Требования к качеству, безопасности и поставке${prefix}`));
-    children.push(new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: sec2rows.map(([k, v]) => {
-        const isLaw = k.includes('⚖️');
-        return new TableRow({ children: [labelCell(k, isLaw), valueCell(v, isLaw)] });
-      }),
-    }));
-
-    // ── Раздел 3: характеристики ──
-    children.push(sectionTitle(`3. Технические и функциональные характеристики${prefix}`));
+    const isSW = !!g.isSoftware;
     const okpd2Code = meta.okpd2_code || g.okpd2;
     const okpd2Name = meta.okpd2_name || g.okpd2name;
     const ktru = meta.ktru_code || g.ktruFixed || '';
+    const nacRegime = meta.nac_regime || (isSW ? 'pp1236' : 'pp878');
+    const specs = row.specs ?? [];
+
+    if (i > 0) children.push(new Paragraph({ pageBreakBefore: true, children: [] }));
+
+    // ── ЗАГОЛОВОК ──
+    children.push(
+      new Paragraph({
+        children: [new TextRun({ text: 'Приложение к документации о закупке', font: FONT, size: 18, color: '6B7280' })],
+        alignment: AlignmentType.CENTER, spacing: { after: 40 },
+      }),
+      new Paragraph({ children: [], spacing: { after: 60 } }),
+      new Paragraph({
+        children: [new TextRun({ text: 'ТЕХНИЧЕСКОЕ ЗАДАНИЕ', bold: true, font: FONT, size: 28, color: '1F2937' })],
+        alignment: AlignmentType.CENTER, spacing: { after: 40 },
+      }),
+      new Paragraph({
+        children: [new TextRun({ text: `на поставку товара: ${g.name}`, font: FONT, size: 20, color: '6B7280' })],
+        alignment: AlignmentType.CENTER, spacing: { after: 200 },
+      }),
+    );
+
+    // ── СВОДНАЯ ТАБЛИЦА (Наименование / Заказчик / Исполнитель) ──
+    const summaryRows: TableRow[] = [
+      new TableRow({
+        children: [new TableCell({
+          columnSpan: 2,
+          children: [new Paragraph({
+            children: [new TextRun({ text: 'Наименование, Заказчик, Исполнитель, сроки и адрес поставки', bold: true, font: FONT, size: FONT_SIZE, color: 'FFFFFF' })],
+            alignment: AlignmentType.CENTER,
+          })],
+          shading: cellShade('1F5C8B'),
+          borders: allBorders(),
+          margins: { top: 60, bottom: 60, left: 80, right: 80 },
+        })],
+      }),
+      new TableRow({ children: [s1LabelCell('Наименование объекта поставки:'), valueCell(g.name + (row.model ? '\n' + row.model : ''))] }),
+      new TableRow({ children: [s1LabelCell('Заказчик:'), valueCell('')] }),
+      new TableRow({ children: [s1LabelCell('Исполнитель:'), valueCell('Определяется по результатам закупочных процедур')] }),
+      new TableRow({ children: [s1LabelCell('Код ОКПД2:'), valueCell(`${okpd2Code}${okpd2Name ? ' — ' + okpd2Name : ''}`)] }),
+      ...(ktru ? [new TableRow({ children: [s1LabelCell('Код КТРУ:'), valueCell(ktru)] })] : []),
+      new TableRow({ children: [s1LabelCell('Срок поставки:'), valueCell(`Не более 60 (шестидесяти) календарных дней с даты заключения ${contractWord}`)] }),
+      new TableRow({ children: [s1LabelCell('Адрес поставки:'), valueCell('')] }),
+    ];
+    children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: summaryRows }));
+    children.push(new Paragraph({ children: [], spacing: { after: 120 } }));
+
+    // ── 1. ТРЕБОВАНИЯ К ПОСТАВКЕ ТОВАРА ──
+    children.push(boldPara('Требования к поставке Товара'));
+    children.push(regPara(isSW
+      ? `1.1. Требования к количеству поставляемого Товара: ${row.qty} (${numText(row.qty)}) лицензий.`
+      : `1.1. Требования к количеству поставляемого Товара: ${row.qty} (${numText(row.qty)}) штук.`));
     children.push(new Paragraph({
-      children: [new TextRun({
-        text: `ОКПД2: ${okpd2Code} — ${okpd2Name}${ktru ? '  |  КТРУ: ' + ktru : ''}`,
-        font: FONT, size: 20, italics: true,
-      })],
+      children: [new TextRun({ text: '1.2. Требования к качеству поставляемого Товара:', bold: true, font: FONT, size: FONT_SIZE })],
       spacing: { after: 80 },
     }));
+    children.push(new Paragraph({
+      children: [new TextRun({ text: g.name, bold: true, font: FONT, size: FONT_SIZE })],
+      alignment: AlignmentType.CENTER, spacing: { after: 80 },
+    }));
 
-    const specs = row.specs ?? [];
+    // ── ТАБЛИЦА ХАРАКТЕРИСТИК (3 колонки: Наименование | Значение | Единица) ──
     if (specs.length > 0) {
-      let rowNum = 0;
       let curGroup = '';
       const specTableRows: TableRow[] = [
         new TableRow({
           tableHeader: true,
           height: { value: 400, rule: HeightRule.ATLEAST },
           children: [
-            hCell('№', { w: 400 }),
-            hCell('Наименование характеристики', { w: 3200 }),
-            hCell('Значение / требование', { w: 3800 }),
-            hCell('Ед. изм.', { w: 1000 }),
+            hCell('Наименование характеристики', { w: 4500 }),
+            hCell('Значение характеристики', { w: 3500 }),
+            hCell('Единица измерения', { w: 1400 }),
           ],
         }),
       ];
-
       for (const spec of specs) {
-        // Групповой заголовок
         if (spec.group && spec.group !== curGroup) {
           curGroup = spec.group;
-          specTableRows.push(new TableRow({
-            children: [new TableCell({
-              columnSpan: 4,
-              children: [new Paragraph({
-                children: [new TextRun({ text: curGroup, bold: true, font: FONT, size: FONT_SIZE })],
-                alignment: AlignmentType.CENTER,
-              })],
-              shading: cellShade('C7D2FE'),
-              borders: allBorders(),
-              margins: { top: 40, bottom: 40, left: 80, right: 80 },
-            })],
-          }));
+          specTableRows.push(specGroupRow3(curGroup));
         }
-        rowNum++;
-        const hasWarning = !!spec._warning;
-        const valText = String(spec.value ?? '') + (hasWarning ? ' ⚠️ ' + String(spec._warning) : '');
-        specTableRows.push(new TableRow({
-          children: [
-            dataCell(String(rowNum), { w: 400 }),
-            dataCell(String(spec.name ?? ''), { w: 3200 }),
-            dataCell(valText, { w: 3800 }),
-            dataCell(String(spec.unit ?? ''), { w: 1000 }),
-          ],
-        }));
+        const warn = spec._warning ? String(spec._warning) : undefined;
+        specTableRows.push(spec3DataRow(String(spec.name ?? ''), String(spec.value ?? ''), String(spec.unit ?? ''), warn));
       }
+      // Поле ТОРП для аппаратных товаров с нацрежимом
+      if (!isSW && (nacRegime === 'pp878' || nacRegime === 'pp616')) {
+        specTableRows.push(spec3DataRow('ТОРП', 'Да', ''));
+      }
+      children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: specTableRows }));
+    }
+    children.push(new Paragraph({ children: [], spacing: { after: 100 } }));
 
-      children.push(new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        rows: specTableRows,
-      }));
+    // ── ТЕКСТОВЫЕ ТРЕБОВАНИЯ К КАЧЕСТВУ ──
+    if (isSW) {
+      for (const t of [
+        'Поставляемое программное обеспечение должно быть лицензионно чистым. Поставщик гарантирует правомерность использования ПО и несёт ответственность за нарушение авторских и смежных прав.',
+        'Программное обеспечение должно быть полнофункциональным, не лимитированным по сроку использования (за исключением лицензий с явно ограниченным сроком действия) и не быть демонстрационным.',
+        'Поставщик обязан передать Заказчику комплект документации на русском языке: руководство пользователя, руководство администратора.',
+        'Право использования ПО передаётся Заказчику на основании лицензионного договора (сублицензионного соглашения) в соответствии с частью IV Гражданского кодекса РФ.',
+      ]) children.push(regPara(t));
+    } else {
+      for (const t of [
+        'Все поставляемые технические средства должны быть полнофункциональными и не лимитированными по сроку использования (не быть демонстрационными).',
+        'Поставленный Товар не должен иметь дефектов, связанных с конструкцией, материалами или функционированием, при его штатном использовании в соответствии с технической документацией.',
+        'Товар должен отвечать требованиям качества, безопасности и другим требованиям, предъявленным законодательством Российской Федерации и настоящим Контрактом.',
+        'Поставляемый Товар должен быть заводской сборки, серийным, новым (не бывшим в эксплуатации, не восстановленным и не собранным из восстановленных компонентов).',
+        'Товар не должен находиться в залоге, под арестом или под иным обременением.',
+        'На поставляемом Товаре не должно быть следов механических повреждений, изменений вида комплектующих, а также других несоответствующих официальному техническому описанию.',
+        'Поставляемый Товар должен быть обеспечен необходимыми кабельными соединениями для осуществления эксплуатации.',
+        'В момент получения Заказчик имеет право в присутствии представителя Поставщика осуществить проверку качества поставляемого Товара. Замена забракованного Товара осуществляется Поставщиком в течение 3 (трёх) рабочих дней с момента проверки.',
+        'Товар должен сопровождаться комплектом документации на русском языке, поставляемой производителем.',
+      ]) children.push(regPara(t));
     }
 
-    // ── Раздел 4 ──
-    const sec4rows = buildSection4Rows(row.type, lawMode);
-    const sec4title = g.isSoftware
-      ? `4. Требования к поставке и технической поддержке${prefix}`
-      : `4. Требования к гарантийному обслуживанию и поставке${prefix}`;
-    children.push(sectionTitle(sec4title));
-    children.push(new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: sec4rows.map(([k, v]) => new TableRow({
-        children: [labelCell(k), valueCell(v)],
-      })),
-    }));
+    // ── ТРЕБОВАНИЯ СООТВЕТСТВИЯ (нацрежим) ──
+    children.push(boldPara('Требования соответствия.', 100));
+    if (isSW && nacRegime === 'pp1236') {
+      children.push(regPara('Программное обеспечение должно быть включено в Единый реестр российских программ для электронных вычислительных машин и баз данных (реестр Минцифры России) в соответствии с Постановлением Правительства РФ от 16.11.2015 № 1236.'));
+      children.push(regPara('Поставщик обязан представить реестровую запись (выписку) из реестра Минцифры России с актуальным регистрационным номером поставляемого программного обеспечения.'));
+    } else if (nacRegime === 'pp878') {
+      children.push(regPara('Товар должен быть включён в единый реестр российской радиоэлектронной продукции либо евразийский реестр промышленных товаров. Поставщик обязан представить документы и (или) реестровые записи, предусмотренные Постановлением Правительства РФ от 23.12.2024 № 1875 для подтверждения происхождения товара.'));
+    } else if (nacRegime === 'pp616') {
+      children.push(regPara('Товар должен иметь подтверждение производства промышленной продукции на территории государств — членов ЕАЭС. Поставщик обязан представить документы, предусмотренные Постановлением Правительства РФ от 23.12.2024 № 1875.'));
+    } else {
+      children.push(regPara('Ограничения по стране происхождения для данного вида товара не установлены. Страна происхождения указывается в товаросопроводительных документах.'));
+    }
+    // Совместимость с отечественными ОС для ПК/ноутбуков/серверов
+    if (['pc','laptop','monoblock','server','tablet','thinClient'].includes(row.type)) {
+      children.push(regPara('Товар должен быть совместим с отечественными операционными системами, включёнными в Единый реестр российских программ для ЭВМ и баз данных Министерства цифрового развития, связи и массовых коммуникаций РФ, в том числе: Astra Linux Special Edition, ALT Linux, РЕД ОС или эквивалентными (ч. 3 ст. 33 Федерального закона от 05.04.2013 № 44-ФЗ).'));
+    }
 
-    // ── Раздел 5 ──
-    const sec5rows = buildSection5Rows(row.type, lawMode);
-    children.push(sectionTitle(`5. Иные требования${prefix}`));
-    children.push(new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: sec5rows.map(([k, v]) => new TableRow({
-        children: [labelCell(k), valueCell(v)],
-      })),
-    }));
+    // ── ПУСКОНАЛАДОЧНЫЕ РАБОТЫ ──
+    children.push(boldPara('Требования к пуско-наладочным работам.', 100));
+    children.push(regPara(isSW
+      ? 'Пуско-наладочные работы включают установку программного обеспечения и первоначальную настройку на рабочих местах Заказчика.'
+      : 'Пуско-наладочные работы не требуются.'));
+
+    // ── 2. ГАРАНТИЯ (основная часть) ──
+    children.push(boldPara('Требования к сроку предоставления гарантии качества'));
+    if (isSW) {
+      children.push(regPara('Поставщик обязан обеспечить техническую поддержку программного обеспечения в течение не менее 12 (двенадцати) месяцев с даты передачи лицензии. Режим поддержки: 5×8 (рабочие дни, 09:00–18:00 МСК).'));
+      children.push(regPara(`Дата версии поставляемого программного обеспечения должна быть не ранее ${currentYear} года (актуальная версия на дату поставки).`));
+    } else {
+      children.push(regPara('Поставщик обязан предоставить Заказчику оригинал документа, подтверждающего предоставление гарантии производителя Товара на срок не менее 12 (двенадцати) месяцев.'));
+      children.push(regPara('При обнаружении дефектов Товара в течение гарантийного срока, возникших по независящим от Заказчика причинам, Поставщик обязан обеспечить прибытие своего уполномоченного представителя по адресу поставки Товара не позднее 7 дней с момента получения соответствующего уведомления от Заказчика и устранить недостатки Товара. При невозможности проведения ремонта Товара в указанный срок Поставщик обязан за свой счёт заменить Товар ненадлежащего качества новым или аналогичным в течение 30 дней с момента получения письменного уведомления от Заказчика. Возврат Товара и его замена производятся силами и за счёт средств Поставщика.'));
+      children.push(regPara('В случае замены неисправного носителя информации любого вида в целях обеспечения защиты информации у Заказчика не возникает обязанность по возврату Поставщику неисправного носителя информации.'));
+      children.push(regPara(`Дата выпуска поставляемого Товара должна быть не ранее 1 января ${currentYear} г.`));
+    }
+
+    // ── 3. ТАРА И УПАКОВКА ──
+    if (!isSW) {
+      children.push(boldPara('Требования к таре и упаковке товара'));
+      for (const t of [
+        'Поставщик обязан поставить Товар в таре и упаковке, обеспечивающей его сохранность, товарный вид и предохраняющей от повреждений при транспортировке.',
+        'Товар должен быть упакован и маркирован в соответствии с технической (эксплуатационной) документацией производителя. Вся маркировка должна быть нанесена способом, обеспечивающим чёткость и сохранность маркировки в течение всего срока эксплуатации.',
+        'Упаковка должна обеспечивать защиту от воздействия механических и климатических факторов во время транспортирования и хранения поставляемого Товара, а также наиболее полное использование грузоподъёмности транспортных средств и удобство выполнения погрузочно-разгрузочных работ.',
+        'Эксплуатационная документация должна быть вложена в потребительскую тару или транспортную тару вместе с Товаром.',
+      ]) children.push(regPara(t));
+    }
+
+    // ── 4. ТРЕБОВАНИЯ К ГАРАНТИИ (детализация) ──
+    children.push(boldPara('Требования к гарантии'));
+    children.push(regPara('Требования к нормативно-техническому обеспечению.'));
+    if (isSW) {
+      children.push(regPara('Поставщик обязан предоставить Заказчику оригиналы или заверенные копии следующих документов при поставке: лицензионный договор (сублицензионное соглашение); выписка из реестра Минцифры России с актуальным регистрационным номером ПО.'));
+    } else {
+      children.push(regPara(`Поставщик обязан предоставить Заказчику оригиналы документов при поставке ${g.name.toLowerCase()}:`));
+      children.push(regPara('— документ, подтверждающий предоставление гарантии производителя средств вычислительной техники на срок не менее 12 мес.;'));
+      children.push(regPara('— документ, подтверждающий страну происхождения средств вычислительной техники.'));
+    }
+    for (const t of [
+      'В течение срока гарантии качества Поставщик гарантирует надлежащее качество Товара.',
+      'В случае обнаружения недостатков, дефектов в поставленных Товарах, Поставщик, в сроки, установленные Заказчиком, своими силами и за свой счёт устраняет обнаруженные дефекты и недостатки.',
+      'Если Поставщик не устраняет недостатки в сроки, определяемые актом, Заказчик имеет право заменить Товар и устранить недостатки, дефекты и недоделки силами третьих лиц за счёт Поставщика.',
+      'Все сопутствующие гарантийному обслуживанию мероприятия (доставка, погрузка, разгрузка) осуществляются силами и за счёт Поставщика.',
+    ]) children.push(regPara(t));
+
+    // ── 5. МЕСТО, СРОКИ И УСЛОВИЯ ПОСТАВКИ ──
+    children.push(boldPara('Место, сроки и условия поставки товара.'));
+    children.push(regPara('Место доставки товара: _______________________________________________'));
+    children.push(regPara(`Срок поставки Товара: не более 60 (шестидесяти) календарных дней с даты заключения ${contractWord}.`));
+    children.push(regPara('Поставщик обязан согласовать с Заказчиком (представителем Заказчика) дату и время поставки товара не позднее, чем за 2 (два) рабочих дня до даты поставки. Поставка осуществляется в рабочее время Заказчика (понедельник – пятница с 9.00 до 13.00 и с 14.00 до 17.00, исключение – выходные и праздничные дни). Поставщик за счёт собственных средств осуществляет поставку, выгрузку и доставку товара согласно спецификации, непосредственно в помещение, указанное Заказчиком.'));
   }
 
-  // ── Подписи ──
-  children.push(
-    new Paragraph({ children: [], spacing: { before: 480 } }),
-    new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: [new TableRow({ children: [
-        dataCell('Заказчик:  _________________________ / _________________________', { w: 6000 }),
-        dataCell('Дата:  «____» ________________ 20__ г.', { w: 3400 }),
-      ]})],
-    }),
-  );
+  // ── Подпись ──
+  children.push(new Paragraph({ children: [], spacing: { before: 480 } }));
+  children.push(new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [new TableRow({ children: [
+      dataCell('Заказчик:  _________________________ / _________________________', { w: 6000 }),
+      dataCell(`«____» _______________ ${currentYear} г.`, { w: 3000 }),
+    ]})],
+  }));
 
   const doc = new Document({
-    styles: {
-      default: {
-        document: {
-          run: { font: FONT, size: FONT_SIZE },
-        },
-      },
-    },
+    styles: { default: { document: { run: { font: FONT, size: FONT_SIZE } } } },
     sections: [{
-      properties: {
-        page: {
-          margin: { top: 1134, bottom: 1134, left: 1800, right: 850 },
-        },
-      },
+      properties: { page: { margin: { top: 1134, bottom: 1134, left: 1800, right: 850 } } },
       children,
     }],
   });
@@ -769,131 +793,213 @@ export function Workspace({ automationSettings, platformSettings }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  // Предварительный просмотр в браузере
+  // Предварительный просмотр в браузере (структура соответствует шаблону DOCX)
   const renderPreview = () => {
     const done = rows.filter((r) => r.status === 'done' && r.specs);
     if (done.length === 0) return null;
-    const law = lawMode === '223' ? '223-ФЗ' : '44-ФЗ';
+    const contractWord = lawMode === '44' ? 'контракта' : 'договора';
+    const currentYear = new Date().getFullYear();
+    const tdL = { border: '1px solid #ccc', padding: '4px 8px', background: '#EEF2FF', fontWeight: 600, width: '38%', color: '#1F2937' } as const;
+    const tdR = { border: '1px solid #ccc', padding: '4px 8px', color: '#1F2937' } as const;
+    const pStyle = { margin: '4px 0', lineHeight: 1.5 } as const;
+    const boldStyle = { fontWeight: 700, margin: '10px 0 4px' } as const;
+
     return (
-      <div className="tz-preview" style={{ marginTop: 24, fontSize: 13, fontFamily: 'Times New Roman, serif' }}>
-        <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 15, marginBottom: 8 }}>
-          ТЕХНИЧЕСКОЕ ЗАДАНИЕ ({law})
-        </div>
+      <div className="tz-preview" style={{ marginTop: 24, fontSize: 12, fontFamily: 'Times New Roman, serif', lineHeight: 1.5 }}>
         {done.map((row, idx) => {
           const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
           const meta = row.meta ?? {};
-          const sec2 = buildSection2Rows(row.type, meta, lawMode);
-          const sec4 = buildSection4Rows(row.type, lawMode);
-          const sec5 = buildSection5Rows(row.type, lawMode);
+          const isSW = !!g.isSoftware;
+          const okpd2Code = meta.okpd2_code || g.okpd2;
+          const okpd2Name = meta.okpd2_name || g.okpd2name;
+          const ktru = meta.ktru_code || g.ktruFixed || '';
+          const nacRegime = meta.nac_regime || (isSW ? 'pp1236' : 'pp878');
+          const specs = row.specs ?? [];
+
           return (
-            <div key={row.id} style={{ marginBottom: 24 }}>
-              {done.length > 1 && (
-                <div style={{ fontWeight: 700, color: '#1F5C8B', margin: '12px 0 4px' }}>
-                  Позиция {idx + 1}: {g.name} — {row.model}
-                </div>
-              )}
+            <div key={row.id} style={{ marginBottom: 32, pageBreakAfter: 'always' }}>
+              {/* Разделитель для нескольких позиций */}
+              {idx > 0 && <hr style={{ borderTop: '2px dashed #93C5FD', margin: '24px 0' }} />}
 
-              {/* Раздел 1 */}
-              <div style={{ fontWeight: 700, margin: '8px 0 4px' }}>1. Наименование объекта закупки</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <tbody>
-                  {([
-                    ['Наименование объекта поставки', g.name],
-                    ...(row.model ? [['Модель / описание', row.model]] : []),
-                    ['Код ОКПД2', `${meta.okpd2_code || g.okpd2} — ${meta.okpd2_name || g.okpd2name}`],
-                    ['Код КТРУ', meta.ktru_code || g.ktruFixed || 'Уточняется при размещении в ЕИС'],
-                    ['Единица измерения (ОКЕИ)', g.isSoftware ? '2805 — экземпляр' : '796 — штука'],
-                    ['Количество', `${row.qty} (${numText(row.qty)}) ${g.isSoftware ? 'лицензий' : 'штук'}`],
-                    [g.isSoftware ? 'Дата версии / поставки' : 'Дата выпуска товара', g.isSoftware ? `Не ранее ${new Date().getFullYear()} года` : `Не ранее 1 января ${new Date().getFullYear()} г.`],
-                  ] as [string, string][]).map(([k, v]) => (
-                    <tr key={k}>
-                      <td style={{ border: '1px solid #ccc', padding: '4px 8px', fontWeight: 600, width: '35%', background: '#EEF2FF', color: '#1F2937' }}>{k}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '4px 8px', color: '#1F2937' }}>{v}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {/* Заголовок */}
+              <div style={{ textAlign: 'center', color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Приложение к документации о закупке</div>
+              <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 16, margin: '4px 0 2px' }}>ТЕХНИЧЕСКОЕ ЗАДАНИЕ</div>
+              <div style={{ textAlign: 'center', color: '#6B7280', fontSize: 12, marginBottom: 12 }}>на поставку товара: {g.name}</div>
 
-              {/* Раздел 2 */}
-              <div style={{ fontWeight: 700, margin: '8px 0 4px' }}>2. Требования к качеству и безопасности</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <tbody>
-                  {sec2.map(([k, v]) => (
-                    <tr key={k} style={{ background: k.includes('⚖️') ? '#FFFBEB' : undefined }}>
-                      <td style={{ border: '1px solid #ccc', padding: '4px 8px', fontWeight: 600, width: '35%', color: k.includes('⚖️') ? '#B45309' : undefined }}>{k}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{v}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {/* Раздел 3 */}
-              <div style={{ fontWeight: 700, margin: '8px 0 4px' }}>3. Технические характеристики</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              {/* Сводная таблица */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
                 <thead>
-                  <tr style={{ background: '#1F5C8B', color: '#fff' }}>
-                    <th style={{ border: '1px solid #ccc', padding: '4px 8px', width: 40 }}>№</th>
-                    <th style={{ border: '1px solid #ccc', padding: '4px 8px' }}>Наименование</th>
-                    <th style={{ border: '1px solid #ccc', padding: '4px 8px' }}>Значение</th>
-                    <th style={{ border: '1px solid #ccc', padding: '4px 8px', width: 80 }}>Ед.изм.</th>
-                  </tr>
+                  <tr><th colSpan={2} style={{ border: '1px solid #ccc', padding: '4px 8px', background: '#1F5C8B', color: '#fff', textAlign: 'center' }}>Наименование, Заказчик, Исполнитель, сроки и адрес поставки</th></tr>
                 </thead>
                 <tbody>
-                  {(() => {
-                    let n = 0, g2 = '';
-                    return (row.specs ?? []).map((s, si) => {
-                      const rows2 = [];
-                      if (s.group && s.group !== g2) {
-                        g2 = s.group;
+                  <tr><td style={tdL}>Наименование объекта поставки:</td><td style={tdR}>{g.name}{row.model ? '\n' + row.model : ''}</td></tr>
+                  <tr><td style={tdL}>Заказчик:</td><td style={tdR}></td></tr>
+                  <tr><td style={tdL}>Исполнитель:</td><td style={tdR}>Определяется по результатам закупочных процедур</td></tr>
+                  <tr><td style={tdL}>Код ОКПД2:</td><td style={tdR}>{okpd2Code}{okpd2Name ? ' — ' + okpd2Name : ''}</td></tr>
+                  {ktru && <tr><td style={tdL}>Код КТРУ:</td><td style={tdR}>{ktru}</td></tr>}
+                  <tr><td style={tdL}>Срок поставки:</td><td style={tdR}>Не более 60 (шестидесяти) календарных дней с даты заключения {contractWord}</td></tr>
+                  <tr><td style={tdL}>Адрес поставки:</td><td style={tdR}></td></tr>
+                </tbody>
+              </table>
+
+              {/* 1. Требования к поставке */}
+              <div style={boldStyle}>Требования к поставке Товара</div>
+              <p style={pStyle}>{isSW
+                ? `1.1. Требования к количеству поставляемого Товара: ${row.qty} (${numText(row.qty)}) лицензий.`
+                : `1.1. Требования к количеству поставляемого Товара: ${row.qty} (${numText(row.qty)}) штук.`}
+              </p>
+              <p style={{ ...pStyle, fontWeight: 600 }}>1.2. Требования к качеству поставляемого Товара:</p>
+              <p style={{ ...pStyle, textAlign: 'center', fontWeight: 700 }}>{g.name}</p>
+
+              {/* Таблица характеристик (3 колонки) */}
+              {specs.length > 0 && (() => {
+                let curGroup = '';
+                return (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
+                    <thead>
+                      <tr style={{ background: '#1F5C8B', color: '#fff' }}>
+                        <th style={{ border: '1px solid #ccc', padding: '4px 8px' }}>Наименование характеристики</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px 8px' }}>Значение характеристики</th>
+                        <th style={{ border: '1px solid #ccc', padding: '4px 8px', width: 90 }}>Единица измерения</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {specs.map((s, si) => {
+                        const rows2: React.ReactNode[] = [];
+                        if (s.group && s.group !== curGroup) {
+                          curGroup = s.group;
+                          rows2.push(
+                            <tr key={`g-${si}`}>
+                              <td colSpan={3} style={{ border: '1px solid #ccc', padding: '4px 8px', background: '#C7D2FE', fontWeight: 700, textAlign: 'center' }}>{curGroup}</td>
+                            </tr>
+                          );
+                        }
                         rows2.push(
-                          <tr key={`g-${si}`}>
-                            <td colSpan={4} style={{ border: '1px solid #ccc', padding: '4px 8px', background: '#C7D2FE', fontWeight: 700, textAlign: 'center' }}>{g2}</td>
+                          <tr key={si} style={{ background: s._warning ? '#FFF7ED' : undefined }}>
+                            <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{s.name ?? ''}</td>
+                            <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>
+                              {s.value ?? ''}
+                              {s._warning && <span style={{ color: '#D97706', fontSize: 10, display: 'block' }}>⚠️ {s._warning}</span>}
+                            </td>
+                            <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{s.unit ?? ''}</td>
                           </tr>
                         );
-                      }
-                      n++;
-                      rows2.push(
-                        <tr key={si} style={{ background: s._warning ? '#FFF7ED' : undefined }}>
-                          <td style={{ border: '1px solid #ccc', padding: '4px 8px', textAlign: 'center' }}>{n}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{s.name ?? ''}</td>
-                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>
-                            {s.value ?? ''}
-                            {s._warning && <span style={{ color: '#D97706', fontSize: 11, display: 'block' }}>⚠️ {s._warning}</span>}
-                          </td>
-                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{s.unit ?? ''}</td>
+                        return rows2;
+                      })}
+                      {/* ТОРП для аппаратного товара */}
+                      {!isSW && (nacRegime === 'pp878' || nacRegime === 'pp616') && (
+                        <tr>
+                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>ТОРП</td>
+                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>Да</td>
+                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}></td>
                         </tr>
-                      );
-                      return rows2;
-                    });
-                  })()}
-                </tbody>
-              </table>
+                      )}
+                    </tbody>
+                  </table>
+                );
+              })()}
 
-              {/* Раздел 4 */}
-              <div style={{ fontWeight: 700, margin: '8px 0 4px' }}>
-                {g.isSoftware ? '4. Требования к поставке и технической поддержке' : '4. Требования к гарантийному обслуживанию и поставке'}
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <tbody>
-                  {sec4.map(([k, v]) => (
-                    <tr key={k}>
-                      <td style={{ border: '1px solid #ccc', padding: '4px 8px', fontWeight: 600, width: '35%' }}>{k}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{v}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {/* Текстовые требования к качеству */}
+              {isSW ? (
+                <>
+                  <p style={pStyle}>Поставляемое программное обеспечение должно быть лицензионно чистым. Поставщик гарантирует правомерность использования ПО и несёт ответственность за нарушение авторских и смежных прав.</p>
+                  <p style={pStyle}>Программное обеспечение должно быть полнофункциональным, не лимитированным по сроку использования (за исключением лицензий с явно ограниченным сроком действия) и не быть демонстрационным.</p>
+                  <p style={pStyle}>Поставщик обязан передать Заказчику комплект документации на русском языке: руководство пользователя, руководство администратора.</p>
+                  <p style={pStyle}>Право использования ПО передаётся Заказчику на основании лицензионного договора (сублицензионного соглашения) в соответствии с частью IV Гражданского кодекса РФ.</p>
+                </>
+              ) : (
+                <>
+                  <p style={pStyle}>Все поставляемые технические средства должны быть полнофункциональными и не лимитированными по сроку использования (не быть демонстрационными).</p>
+                  <p style={pStyle}>Поставленный Товар не должен иметь дефектов, связанных с конструкцией, материалами или функционированием, при его штатном использовании в соответствии с технической документацией.</p>
+                  <p style={pStyle}>Товар должен отвечать требованиям качества, безопасности и другим требованиям, предъявленным законодательством Российской Федерации и настоящим Контрактом.</p>
+                  <p style={pStyle}>Поставляемый Товар должен быть заводской сборки, серийным, новым (не бывшим в эксплуатации, не восстановленным и не собранным из восстановленных компонентов).</p>
+                  <p style={pStyle}>Товар не должен находиться в залоге, под арестом или под иным обременением.</p>
+                  <p style={pStyle}>На поставляемом Товаре не должно быть следов механических повреждений, изменений вида комплектующих, а также других несоответствующих официальному техническому описанию.</p>
+                  <p style={pStyle}>Поставляемый Товар должен быть обеспечен необходимыми кабельными соединениями для осуществления эксплуатации.</p>
+                  <p style={pStyle}>В момент получения Заказчик имеет право в присутствии представителя Поставщика осуществить проверку качества поставляемого Товара. Замена забракованного Товара осуществляется Поставщиком в течение 3 (трёх) рабочих дней с момента проверки.</p>
+                  <p style={pStyle}>Товар должен сопровождаться комплектом документации на русском языке, поставляемой производителем.</p>
+                </>
+              )}
 
-              {/* Раздел 5 */}
-              <div style={{ fontWeight: 700, margin: '8px 0 4px' }}>5. Иные требования</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              {/* Требования соответствия */}
+              <div style={boldStyle}>Требования соответствия.</div>
+              {isSW && nacRegime === 'pp1236' ? (
+                <>
+                  <p style={pStyle}>Программное обеспечение должно быть включено в Единый реестр российских программ для электронных вычислительных машин и баз данных (реестр Минцифры России) в соответствии с Постановлением Правительства РФ от 16.11.2015 № 1236.</p>
+                  <p style={pStyle}>Поставщик обязан представить реестровую запись (выписку) из реестра Минцифры России с актуальным регистрационным номером поставляемого программного обеспечения.</p>
+                </>
+              ) : nacRegime === 'pp878' ? (
+                <p style={pStyle}>Товар должен быть включён в единый реестр российской радиоэлектронной продукции либо евразийский реестр промышленных товаров. Поставщик обязан представить документы и (или) реестровые записи, предусмотренные Постановлением Правительства РФ от 23.12.2024 № 1875 для подтверждения происхождения товара.</p>
+              ) : nacRegime === 'pp616' ? (
+                <p style={pStyle}>Товар должен иметь подтверждение производства промышленной продукции на территории государств — членов ЕАЭС. Поставщик обязан представить документы, предусмотренные Постановлением Правительства РФ от 23.12.2024 № 1875.</p>
+              ) : (
+                <p style={pStyle}>Ограничения по стране происхождения для данного вида товара не установлены. Страна происхождения указывается в товаросопроводительных документах.</p>
+              )}
+              {['pc','laptop','monoblock','server','tablet','thinClient'].includes(row.type) && (
+                <p style={pStyle}>Товар должен быть совместим с отечественными операционными системами, включёнными в Единый реестр российских программ для ЭВМ и баз данных Министерства цифрового развития, связи и массовых коммуникаций РФ, в том числе: Astra Linux Special Edition, ALT Linux, РЕД ОС или эквивалентными (ч. 3 ст. 33 Федерального закона от 05.04.2013 № 44-ФЗ).</p>
+              )}
+
+              {/* Пусконаладочные работы */}
+              <div style={boldStyle}>Требования к пуско-наладочным работам.</div>
+              <p style={pStyle}>{isSW
+                ? 'Пуско-наладочные работы включают установку программного обеспечения и первоначальную настройку на рабочих местах Заказчика.'
+                : 'Пуско-наладочные работы не требуются.'}
+              </p>
+
+              {/* Гарантия */}
+              <div style={boldStyle}>Требования к сроку предоставления гарантии качества</div>
+              {isSW ? (
+                <>
+                  <p style={pStyle}>Поставщик обязан обеспечить техническую поддержку программного обеспечения в течение не менее 12 (двенадцати) месяцев с даты передачи лицензии. Режим поддержки: 5×8 (рабочие дни, 09:00–18:00 МСК).</p>
+                  <p style={pStyle}>Дата версии поставляемого программного обеспечения должна быть не ранее {currentYear} года (актуальная версия на дату поставки).</p>
+                </>
+              ) : (
+                <>
+                  <p style={pStyle}>Поставщик обязан предоставить Заказчику оригинал документа, подтверждающего предоставление гарантии производителя Товара на срок не менее 12 (двенадцати) месяцев.</p>
+                  <p style={pStyle}>При обнаружении дефектов Товара в течение гарантийного срока, возникших по независящим от Заказчика причинам, Поставщик обязан обеспечить прибытие своего уполномоченного представителя по адресу поставки Товара не позднее 7 дней с момента получения соответствующего уведомления от Заказчика и устранить недостатки Товара. При невозможности проведения ремонта Товара в указанный срок Поставщик обязан за свой счёт заменить Товар ненадлежащего качества новым или аналогичным в течение 30 дней с момента получения письменного уведомления от Заказчика.</p>
+                  <p style={pStyle}>Дата выпуска поставляемого Товара должна быть не ранее 1 января {currentYear} г.</p>
+                </>
+              )}
+
+              {/* Тара и упаковка (только для оборудования) */}
+              {!isSW && (
+                <>
+                  <div style={boldStyle}>Требования к таре и упаковке товара</div>
+                  <p style={pStyle}>Поставщик обязан поставить Товар в таре и упаковке, обеспечивающей его сохранность, товарный вид и предохраняющей от повреждений при транспортировке.</p>
+                  <p style={pStyle}>Товар должен быть упакован и маркирован в соответствии с технической (эксплуатационной) документацией производителя.</p>
+                  <p style={pStyle}>Эксплуатационная документация должна быть вложена в потребительскую тару или транспортную тару вместе с Товаром.</p>
+                </>
+              )}
+
+              {/* Детализация гарантии */}
+              <div style={boldStyle}>Требования к гарантии</div>
+              <p style={pStyle}>Требования к нормативно-техническому обеспечению.</p>
+              {isSW ? (
+                <p style={pStyle}>Поставщик обязан предоставить Заказчику оригиналы или заверенные копии следующих документов при поставке: лицензионный договор (сублицензионное соглашение); выписка из реестра Минцифры России с актуальным регистрационным номером ПО.</p>
+              ) : (
+                <>
+                  <p style={pStyle}>Поставщик обязан предоставить Заказчику оригиналы документов при поставке {g.name.toLowerCase()}:</p>
+                  <p style={pStyle}>— документ, подтверждающий предоставление гарантии производителя средств вычислительной техники на срок не менее 12 мес.;</p>
+                  <p style={pStyle}>— документ, подтверждающий страну происхождения средств вычислительной техники.</p>
+                </>
+              )}
+              <p style={pStyle}>В течение срока гарантии качества Поставщик гарантирует надлежащее качество Товара.</p>
+              <p style={pStyle}>В случае обнаружения недостатков, дефектов в поставленных Товарах, Поставщик, в сроки, установленные Заказчиком, своими силами и за свой счёт устраняет обнаруженные дефекты и недостатки.</p>
+              <p style={pStyle}>Все сопутствующие гарантийному обслуживанию мероприятия (доставка, погрузка, разгрузка) осуществляются силами и за счёт Поставщика.</p>
+
+              {/* Место и сроки поставки */}
+              <div style={boldStyle}>Место, сроки и условия поставки товара.</div>
+              <p style={pStyle}>Место доставки товара: _______________________________________________</p>
+              <p style={pStyle}>Срок поставки Товара: не более 60 (шестидесяти) календарных дней с даты заключения {contractWord}.</p>
+              <p style={pStyle}>Поставщик обязан согласовать с Заказчиком дату и время поставки товара не позднее, чем за 2 (два) рабочих дня до даты поставки. Поставка осуществляется в рабочее время Заказчика (понедельник – пятница с 9.00 до 13.00 и с 14.00 до 17.00).</p>
+
+              {/* Подпись */}
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 20, fontSize: 12 }}>
                 <tbody>
-                  {sec5.map(([k, v]) => (
-                    <tr key={k}>
-                      <td style={{ border: '1px solid #ccc', padding: '4px 8px', fontWeight: 600, width: '35%' }}>{k}</td>
-                      <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{v}</td>
-                    </tr>
-                  ))}
+                  <tr>
+                    <td style={{ padding: '4px 8px', width: '60%' }}>Заказчик: _________________________ / _________________________</td>
+                    <td style={{ padding: '4px 8px' }}>«____» _______________ {currentYear} г.</td>
+                  </tr>
                 </tbody>
               </table>
             </div>

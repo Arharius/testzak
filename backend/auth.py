@@ -17,7 +17,8 @@ SMTP_HOST = os.getenv("SMTP_HOST", "smtp.yandex.ru")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
-APP_URL = os.getenv("APP_URL", "https://arharius.github.io/testzak")
+SMTP_TIMEOUT = int(os.getenv("SMTP_TIMEOUT", "10"))
+APP_URL = os.getenv("APP_URL", "https://tz-generator-live-20260227.netlify.app")
 
 def _safe_int(value: str, default: int) -> int:
     try:
@@ -64,8 +65,12 @@ def sync_user_entitlements(user: User) -> bool:
     return changed
 
 def send_magic_link(email: str, token: str):
-    """Send magic link email via Yandex SMTP"""
+    """Send magic link email via SMTP. Returns (sent_ok, magic_link)."""
     link = f"{APP_URL}?magic={token}"
+    # If SMTP is not configured, skip sending — caller will return link directly
+    if not SMTP_USER or not SMTP_PASS:
+        print(f"SMTP not configured, magic link: {link}")
+        return False, link
     msg = MIMEMultipart("alternative")
     msg["Subject"] = "Вход в Генератор ТЗ"
     msg["From"] = SMTP_USER
@@ -84,13 +89,13 @@ def send_magic_link(email: str, token: str):
     """
     msg.attach(MIMEText(html, "html"))
     try:
-        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT) as server:
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(SMTP_USER, email, msg.as_string())
-        return True
+        return True, link
     except Exception as e:
         print(f"Email send error: {e}")
-        return False
+        return False, link
 
 def create_magic_token(email: str, db) -> str:
     token = secrets.token_urlsafe(32)

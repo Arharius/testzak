@@ -1168,11 +1168,19 @@ def send_link(req: SendLinkRequest, db: Session = Depends(get_db)):
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Некорректный email")
     token = create_magic_token(email, db)
-    ok = send_magic_link(email, token)
-    if not ok:
-        raise HTTPException(status_code=500, detail="Не удалось отправить письмо. Проверьте настройки SMTP.")
-    logger.info(f"Magic link sent to {email}")
-    return {"ok": True, "message": "Письмо со ссылкой для входа отправлено"}
+    ok, link = send_magic_link(email, token)
+    if ok:
+        logger.info(f"Magic link sent to {email}")
+        return {"ok": True, "message": "Письмо со ссылкой для входа отправлено"}
+    else:
+        # SMTP not configured or failed — return the link directly for self-service
+        logger.info(f"Magic link (no SMTP) for {email}: {link}")
+        return {
+            "ok": True,
+            "message": "Ссылка для входа (SMTP не настроен — скопируйте и откройте вручную)",
+            "magic_link": link,
+            "smtp_configured": False,
+        }
 
 @app.get("/api/auth/verify")
 def verify_token(token: str = Query(...), db: Session = Depends(get_db)):

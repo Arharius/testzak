@@ -9,6 +9,7 @@ import logging
 import asyncio
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError, URLError
+from urllib.parse import quote_plus
 from html.parser import HTMLParser
 from typing import Any
 
@@ -228,9 +229,10 @@ def _search_ktru(query: str) -> list[dict]:
     Search KTRU catalog on zakupki.gov.ru.
     Returns list of KTRU items with their characteristics.
     """
+    q = quote_plus(str(query or ""))
     url = (
         "https://zakupki.gov.ru/epz/ktru/ws/search/common/ktru/getKtruList.html"
-        f"?searchString={query}&morphology=on&pageNumber=1&sortDirection=false&recordsPerPage=_10"
+        f"?searchString={q}&morphology=on&pageNumber=1&sortDirection=false&recordsPerPage=_10"
     )
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
@@ -253,9 +255,10 @@ def _search_eis_purchases(query: str) -> str:
     """
     Search EIS for procurement notices. Returns HTML text.
     """
+    q = quote_plus(str(query or ""))
     url = (
         "https://zakupki.gov.ru/epz/order/extendedsearch/results.html"
-        f"?searchString={query}&morphology=on&search-filter=%D0%94%D0%B0%D1%82%D0%B5+%D1%80%D0%B0%D0%B7%D0%BC%D0%B5%D1%89%D0%B5%D0%BD%D0%B8%D1%8F"
+        f"?searchString={q}&morphology=on&search-filter=%D0%94%D0%B0%D1%82%D0%B5+%D1%80%D0%B0%D0%B7%D0%BC%D0%B5%D1%89%D0%B5%D0%BD%D0%B8%D1%8F"
         "&pageNumber=1&sortDirection=false&recordsPerPage=_10&showLotsInfoHidden=false"
         "&fz44=on&pc=on"
     )

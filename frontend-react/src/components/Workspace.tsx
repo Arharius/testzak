@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef } from 'react';
+import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import {
   AlignmentType,
@@ -38,6 +38,17 @@ interface GoodsRow {
   meta?: Record<string, string>;
   // Яндекс-подсказки и ссылки ЕИС (хранятся в отдельном state, не здесь)
 }
+
+type SpecsCandidate = {
+  specs: SpecItem[];
+  meta: Record<string, string>;
+  source: 'internet' | 'eis' | 'ai';
+};
+
+type GenerateOptions = {
+  forceAutopilot?: boolean;
+  trigger?: 'manual' | 'autopilot_button';
+};
 
 // ── Промпты по типу товара ────────────────────────────────────────────────────
 function buildPrompt(row: GoodsRow, lawMode: LawMode): string {
@@ -584,6 +595,8 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
   const [provider, setProvider] = useState<Provider>('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('deepseek-chat');
+  const [authPanelOpen, setAuthPanelOpen] = useState<boolean>(() => !useBackend);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
   const [docxReady, setDocxReady] = useState(false);
 
@@ -605,81 +618,297 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
     setTimeout(() => previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
   }, []);
 
+  const hasUserApiKey = apiKey.trim().length > 6;
+  const useBackendAi = useBackend && !hasUserApiKey;
+  const apiKeyInputType: 'password' | 'text' = showApiKey ? 'text' : 'password';
+
   const canGenerate = useMemo(
-    () => (useBackend || apiKey.trim().length > 6) && rows.every((r) => r.model.trim().length > 0),
-    [useBackend, apiKey, rows]
+    () => (useBackend || hasUserApiKey) && rows.every((r) => r.model.trim().length > 0),
+    [useBackend, hasUserApiKey, rows]
   );
 
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const next = [...rows];
-      setDocxReady(false);
-      for (let i = 0; i < next.length; i++) {
-        next[i] = { ...next[i], status: 'loading', error: '' };
-        setRows([...next]);
-        const g = GOODS_CATALOG[next[i].type] ?? GOODS_CATALOG['pc'];
-        // Если для типа товара есть жёсткий шаблон — пропускаем AI
-        if (g.hardTemplate && g.hardTemplate.length > 0) {
-          const specs = (g.hardTemplate as HardSpec[]).map((s) => ({ group: s.group, name: s.name, value: s.value, unit: s.unit ?? '' }));
-          const meta: Record<string, string> = {
+  const buildPayload = useCallback((sourceRows: GoodsRow[]) => ({
+    law: lawMode === '223' ? '223-FZ' : '44-FZ',
+    profile: platformSettings.profile,
+    organization: platformSettings.orgName,
+    customerInn: platformSettings.customerInn,
+    items: sourceRows.map((r) => ({
+      type: r.type,
+      model: r.model,
+      qty: r.qty,
+      status: r.status,
+      okpd2: r.meta?.okpd2_code || GOODS_CATALOG[r.type]?.okpd2 || '',
+      ktru: r.meta?.ktru_code || GOODS_CATALOG[r.type]?.ktruFixed || '',
+    })),
+  }), [lawMode, platformSettings.profile, platformSettings.orgName, platformSettings.customerInn]);
+
+  const exportPackage = useCallback((sourceRows: GoodsRow[] = rows) => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      law: lawMode === '223' ? '223-FZ' : '44-FZ',
+      profile: platformSettings.profile,
+      items: sourceRows.map((r) => ({
+        type: r.type,
+        model: r.model,
+        qty: r.qty,
+        okpd2: r.meta?.okpd2_code || GOODS_CATALOG[r.type]?.okpd2 || '',
+        ktru: r.meta?.ktru_code || GOODS_CATALOG[r.type]?.ktruFixed || '',
+        specsCount: r.specs?.length ?? 0,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `procurement_pack_${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [lawMode, platformSettings.profile, rows]);
+
+  const fetchInternetCandidateForRow = useCallback(async (row: GoodsRow): Promise<SpecsCandidate | null> => {
+    if (!row.model.trim()) return null;
+    const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+
+    if (useBackend) {
+      const backendSpecs = await searchInternetSpecs(row.model.trim(), row.type);
+      if (backendSpecs.length > 0) {
+        return {
+          source: 'internet',
+          specs: backendSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' })),
+          meta: {
             okpd2_code: g.okpd2,
             okpd2_name: g.okpd2name,
             ktru_code: g.ktruFixed ?? '',
-            nac_regime: 'pp616',
-          };
-          next[i] = { ...next[i], status: 'done', specs, meta };
+            nac_regime: 'pp878',
+          },
+        };
+      }
+    }
+
+    const prompt = buildSpecSearchPrompt(row, g);
+    let raw: string;
+    if (useBackendAi) {
+      raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
+    } else {
+      raw = await generateItemSpecs(provider, apiKey, model, prompt);
+    }
+    const { meta, specs } = parseAiResponse(raw);
+    return {
+      source: 'internet',
+      specs: postProcessSpecs(specs),
+      meta,
+    };
+  }, [useBackend, useBackendAi, provider, model, apiKey]);
+
+  const fetchEisCandidateForRow = useCallback(async (row: GoodsRow): Promise<SpecsCandidate | null> => {
+    if (!row.model.trim()) return null;
+    const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+
+    if (useBackend) {
+      const eisSpecs = await searchEisSpecs(row.model.trim(), row.type);
+      if (eisSpecs.length > 0) {
+        return {
+          source: 'eis',
+          specs: eisSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' })),
+          meta: {
+            okpd2_code: g.okpd2,
+            okpd2_name: g.okpd2name,
+            ktru_code: g.ktruFixed ?? '',
+            nac_regime: 'pp878',
+          },
+        };
+      }
+    }
+
+    let eisContext = '';
+    try {
+      const controller = new AbortController();
+      const tid = window.setTimeout(() => controller.abort(), 20000);
+      try {
+        eisContext = await fetchEisContext(g, row.model.trim(), controller.signal);
+      } finally {
+        clearTimeout(tid);
+      }
+    } catch {
+      // proxy недоступен
+    }
+    const prompt = buildEisStylePrompt(row, g, eisContext);
+    let raw: string;
+    if (useBackendAi) {
+      raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
+    } else {
+      raw = await generateItemSpecs(provider, apiKey, model, prompt);
+    }
+    const { meta, specs } = parseAiResponse(raw);
+    return {
+      source: 'eis',
+      specs: postProcessSpecs(specs),
+      meta,
+    };
+  }, [useBackend, useBackendAi, provider, model, apiKey]);
+
+  const pickBestCandidate = useCallback((
+    internetCandidate: SpecsCandidate | null,
+    eisCandidate: SpecsCandidate | null,
+    autoPickTopCandidate: boolean,
+  ): SpecsCandidate | null => {
+    if (!internetCandidate && !eisCandidate) return null;
+    if (!autoPickTopCandidate) return eisCandidate ?? internetCandidate;
+    const internetCount = internetCandidate?.specs.length ?? 0;
+    const eisCount = eisCandidate?.specs.length ?? 0;
+    if (eisCount > internetCount) return eisCandidate;
+    if (internetCount > eisCount) return internetCandidate;
+    return eisCandidate ?? internetCandidate;
+  }, []);
+
+  const mutation = useMutation({
+    mutationFn: async (options?: GenerateOptions) => {
+      const autopilotEnabled = !!(options?.forceAutopilot || automationSettings.autopilot);
+      if (!rows.every((r) => r.model.trim().length > 0)) {
+        showToast('❌ Заполните поле «Модель / описание» для всех строк', false);
+        return;
+      }
+      if (!useBackend && !hasUserApiKey) {
+        showToast('❌ Нужен вход в аккаунт или API-ключ', false);
+        return;
+      }
+
+      const next = [...rows];
+      const sourceStats = { template: 0, internet: 0, eis: 0, ai: 0, error: 0 };
+
+      if (autopilotEnabled) {
+        setInternetSearching(true);
+        setEisSearching(true);
+      }
+      setDocxReady(false);
+      try {
+        for (let i = 0; i < next.length; i++) {
+          next[i] = { ...next[i], status: 'loading', error: '' };
           setRows([...next]);
-          continue;
-        }
-        const prompt = buildPrompt(next[i], lawMode);
-        try {
-          let raw: string;
-          if (useBackend) {
-            raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
-          } else {
-            raw = await generateItemSpecs(provider, apiKey, model, prompt);
+
+          const currentRow = next[i];
+          const g = GOODS_CATALOG[currentRow.type] ?? GOODS_CATALOG['pc'];
+
+          // Если для типа товара есть жёсткий шаблон — пропускаем AI
+          if (g.hardTemplate && g.hardTemplate.length > 0) {
+            const specs = (g.hardTemplate as HardSpec[]).map((s) => ({ group: s.group, name: s.name, value: s.value, unit: s.unit ?? '' }));
+            const meta: Record<string, string> = {
+              okpd2_code: g.okpd2,
+              okpd2_name: g.okpd2name,
+              ktru_code: g.ktruFixed ?? '',
+              nac_regime: 'pp616',
+            };
+            next[i] = { ...currentRow, status: 'done', specs, meta };
+            sourceStats.template += 1;
+            setRows([...next]);
+            continue;
           }
-          const { meta, specs } = parseAiResponse(raw);
-          const processed = postProcessSpecs(specs);
-          next[i] = { ...next[i], status: 'done', specs: processed, meta };
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : 'generation_error';
-          next[i] = { ...next[i], status: 'error', error: msg };
+
+          try {
+            if (autopilotEnabled) {
+              let internetCandidate: SpecsCandidate | null = null;
+              let eisCandidate: SpecsCandidate | null = null;
+
+              try {
+                internetCandidate = await fetchInternetCandidateForRow(currentRow);
+              } catch {
+                // игнорируем и пробуем ЕИС + fallback AI ниже
+              }
+              try {
+                eisCandidate = await fetchEisCandidateForRow(currentRow);
+              } catch {
+                // игнорируем и пробуем fallback AI ниже
+              }
+
+              const picked = pickBestCandidate(internetCandidate, eisCandidate, automationSettings.autoPickTopCandidate);
+              if (picked) {
+                next[i] = { ...currentRow, status: 'done', specs: picked.specs, meta: picked.meta };
+                if (picked.source === 'internet') sourceStats.internet += 1;
+                else sourceStats.eis += 1;
+                setRows([...next]);
+                continue;
+              }
+            }
+
+            const prompt = buildPrompt(currentRow, lawMode);
+            let raw: string;
+            if (useBackendAi) {
+              raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
+            } else {
+              raw = await generateItemSpecs(provider, apiKey, model, prompt);
+            }
+            const { meta, specs } = parseAiResponse(raw);
+            const processed = postProcessSpecs(specs);
+            next[i] = { ...currentRow, status: 'done', specs: processed, meta };
+            sourceStats.ai += 1;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : 'generation_error';
+            next[i] = { ...currentRow, status: 'error', error: msg };
+            sourceStats.error += 1;
+          }
+          setRows([...next]);
         }
-        setRows([...next]);
-      }
 
-      const payload = {
-        law: lawMode === '223' ? '223-FZ' : '44-FZ',
-        profile: platformSettings.profile,
-        organization: platformSettings.orgName,
-        customerInn: platformSettings.customerInn,
-        items: next.map((r) => ({
-          type: r.type,
-          model: r.model,
-          qty: r.qty,
-          status: r.status,
-          okpd2: r.meta?.okpd2_code || GOODS_CATALOG[r.type]?.okpd2 || '',
-          ktru: r.meta?.ktru_code || GOODS_CATALOG[r.type]?.ktruFixed || '',
-        })),
-      };
+        const payload = buildPayload(next);
+        let integrationsOk = true;
 
-      if (automationSettings.autoSend) {
-        await sendEventThroughBestChannel(automationSettings, 'tz.generated.react', payload);
-      }
-      if (platformSettings.autoSendDraft) {
-        await postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload);
-      }
-      appendAutomationLog({ at: new Date().toISOString(), event: 'react.generate', ok: true, note: `rows=${next.length}` });
-      const doneRows = next.filter((r) => r.status === 'done');
-      const totalSpecs = doneRows.reduce((s, r) => s + (r.specs?.length ?? 0), 0);
-      setDocxReady(doneRows.length > 0);
-      if (doneRows.length > 0) {
-        showToast(`✅ ТЗ сформировано: ${doneRows.length} позиц., ${totalSpecs} характеристик`);
-        scrollToPreview();
+        if (automationSettings.autoSend) {
+          const ok = await sendEventThroughBestChannel(automationSettings, 'tz.generated.react', payload);
+          integrationsOk = integrationsOk && ok;
+        }
+        if (platformSettings.autoSendDraft) {
+          const ok = await postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload);
+          integrationsOk = integrationsOk && ok;
+        }
+        if (platformSettings.autoExport) {
+          try {
+            exportPackage(next);
+            appendAutomationLog({ at: new Date().toISOString(), event: 'platform.auto_export', ok: true });
+          } catch {
+            integrationsOk = false;
+            appendAutomationLog({ at: new Date().toISOString(), event: 'platform.auto_export', ok: false });
+          }
+        }
+
+        const doneRows = next.filter((r) => r.status === 'done');
+        const totalSpecs = doneRows.reduce((s, r) => s + (r.specs?.length ?? 0), 0);
+        const eventName = autopilotEnabled ? 'react.autopilot' : 'react.generate';
+        appendAutomationLog({
+          at: new Date().toISOString(),
+          event: eventName,
+          ok: doneRows.length > 0 && integrationsOk,
+          note: `rows=${next.length}; done=${doneRows.length}; src=t${sourceStats.template}/i${sourceStats.internet}/e${sourceStats.eis}/a${sourceStats.ai}/err${sourceStats.error}`,
+        });
+
+        setDocxReady(doneRows.length > 0);
+        if (doneRows.length > 0) {
+          const prefix = autopilotEnabled ? 'Автопилот завершён' : 'ТЗ сформировано';
+          if (integrationsOk) {
+            showToast(`✅ ${prefix}: ${doneRows.length} позиц., ${totalSpecs} характеристик`);
+          } else {
+            showToast(`⚠️ ${prefix}, но часть интеграций не отправлена`, false);
+          }
+          scrollToPreview();
+        } else {
+          showToast('❌ Не удалось сформировать ТЗ', false);
+        }
+      } finally {
+        if (autopilotEnabled) {
+          setInternetSearching(false);
+          setEisSearching(false);
+        }
       }
     },
   });
+
+  useEffect(() => {
+    const runAutopilot = () => {
+      if (mutation.isPending) return;
+      mutation.mutate({ forceAutopilot: true, trigger: 'autopilot_button' });
+    };
+    window.addEventListener('tz:autopilot:run', runAutopilot as EventListener);
+    return () => window.removeEventListener('tz:autopilot:run', runAutopilot as EventListener);
+  }, [mutation.isPending, mutation.mutate]);
 
   const addRow = () => {
     setRows((prev) => [...prev, { id: Date.now(), type: 'pc', model: '', qty: 1, status: 'idle' }]);
@@ -700,40 +929,14 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
     const next = [...rows];
     for (let i = 0; i < next.length; i++) {
       if (!next[i].model.trim()) continue;
-      const g = GOODS_CATALOG[next[i].type] ?? GOODS_CATALOG['pc'];
       next[i] = { ...next[i], status: 'loading', error: '' };
       setRows([...next]);
       try {
-        let newSpecs: SpecItem[] | undefined;
-        let newMeta: Record<string, string> | undefined;
-
-        if (useBackend) {
-          // Use Serper.dev backend search — real internet product specs
-          const backendSpecs = await searchInternetSpecs(next[i].model.trim(), next[i].type);
-          if (backendSpecs.length > 0) {
-            newSpecs = backendSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' }));
-            newMeta = {
-              okpd2_code: g.okpd2, okpd2_name: g.okpd2name,
-              ktru_code: g.ktruFixed ?? '', nac_regime: 'pp878',
-            };
-          }
+        const candidate = await fetchInternetCandidateForRow(next[i]);
+        if (!candidate || candidate.specs.length === 0) {
+          throw new Error('характеристики не найдены');
         }
-
-        if (!newSpecs || newSpecs.length === 0) {
-          // Fallback: use AI prompt (direct or backend)
-          const prompt = buildSpecSearchPrompt(next[i], g);
-          let raw: string;
-          if (useBackend) {
-            raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
-          } else {
-            raw = await generateItemSpecs(provider, apiKey, model, prompt);
-          }
-          const { meta, specs } = parseAiResponse(raw);
-          newSpecs = postProcessSpecs(specs);
-          newMeta = meta;
-        }
-
-        next[i] = { ...next[i], status: 'done', specs: newSpecs, meta: newMeta };
+        next[i] = { ...next[i], status: 'done', specs: candidate.specs, meta: candidate.meta };
       } catch (e) {
         next[i] = { ...next[i], status: 'error', error: e instanceof Error ? e.message : 'error' };
       }
@@ -747,9 +950,15 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
       showToast(`✅ Характеристики добавлены в ТЗ: ${totalSpecs} параметров`);
       scrollToPreview();
     } else {
-      showToast('❌ Не удалось получить характеристики', false);
+      const firstError = next.find((r) => r.status === 'error' && r.error)?.error || '';
+      showToast(
+        firstError
+          ? `❌ Не удалось получить характеристики: ${firstError}`
+          : '❌ Не удалось получить характеристики',
+        false
+      );
     }
-  }, [useBackend, rows, apiKey, provider, model, showToast, scrollToPreview]);
+  }, [useBackend, rows, apiKey, fetchInternetCandidateForRow, showToast, scrollToPreview]);
 
   // ── Найти ТЗ в ЕИС (zakupki.gov.ru) ─────────────────────────────────────────
   const searchZakupki = useCallback(async () => {
@@ -766,53 +975,15 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
     const next = [...rows];
     for (let i = 0; i < next.length; i++) {
       if (!next[i].model.trim()) continue;
-      const g = GOODS_CATALOG[next[i].type] ?? GOODS_CATALOG['pc'];
       next[i] = { ...next[i], status: 'loading', error: '' };
       setRows([...next]);
 
       try {
-        let newSpecs: SpecItem[] | undefined;
-        let newMeta: Record<string, string> | undefined;
-
-        if (useBackend) {
-          // Use backend EIS search — zakupki.gov.ru + AI extraction
-          const eisSpecs = await searchEisSpecs(next[i].model.trim(), next[i].type);
-          if (eisSpecs.length > 0) {
-            newSpecs = eisSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' }));
-            newMeta = {
-              okpd2_code: g.okpd2, okpd2_name: g.okpd2name,
-              ktru_code: g.ktruFixed ?? '', nac_regime: 'pp878',
-            };
-          }
+        const candidate = await fetchEisCandidateForRow(next[i]);
+        if (!candidate || candidate.specs.length === 0) {
+          throw new Error('данные ЕИС не найдены');
         }
-
-        if (!newSpecs || newSpecs.length === 0) {
-          // Fallback: nginx proxy + AI
-          let eisContext = '';
-          try {
-            const controller = new AbortController();
-            const tid = window.setTimeout(() => controller.abort(), 20000);
-            try {
-              eisContext = await fetchEisContext(g, next[i].model.trim(), controller.signal);
-            } finally {
-              clearTimeout(tid);
-            }
-          } catch {
-            // proxy недоступен
-          }
-          const prompt = buildEisStylePrompt(next[i], g, eisContext);
-          let raw: string;
-          if (useBackend) {
-            raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
-          } else {
-            raw = await generateItemSpecs(provider, apiKey, model, prompt);
-          }
-          const { meta, specs } = parseAiResponse(raw);
-          newSpecs = postProcessSpecs(specs);
-          newMeta = meta;
-        }
-
-        next[i] = { ...next[i], status: 'done', specs: newSpecs, meta: newMeta };
+        next[i] = { ...next[i], status: 'done', specs: candidate.specs, meta: candidate.meta };
       } catch (e) {
         next[i] = { ...next[i], status: 'error', error: e instanceof Error ? e.message : 'error' };
       }
@@ -826,9 +997,15 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
       showToast(`✅ Данные из ЕИС добавлены в ТЗ: ${totalSpecs2} характеристик`);
       scrollToPreview();
     } else {
-      showToast('❌ Не удалось получить данные из ЕИС', false);
+      const firstError = next.find((r) => r.status === 'error' && r.error)?.error || '';
+      showToast(
+        firstError
+          ? `❌ Не удалось получить данные из ЕИС: ${firstError}`
+          : '❌ Не удалось получить данные из ЕИС',
+        false
+      );
     }
-  }, [useBackend, rows, apiKey, provider, model, showToast, scrollToPreview]);
+  }, [useBackend, rows, apiKey, fetchEisCandidateForRow, showToast, scrollToPreview]);
 
   const exportDocx = async () => {
     try {
@@ -896,29 +1073,6 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
     const date = new Date().toISOString().slice(0, 10);
     doc.save(`TZ_${date}.pdf`);
     appendAutomationLog({ at: new Date().toISOString(), event: 'react.export_pdf', ok: true });
-  };
-
-  const exportPackage = () => {
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      law: lawMode === '223' ? '223-FZ' : '44-FZ',
-      profile: platformSettings.profile,
-      items: rows.map((r) => ({
-        type: r.type,
-        model: r.model,
-        qty: r.qty,
-        okpd2: r.meta?.okpd2_code || GOODS_CATALOG[r.type]?.okpd2 || '',
-        ktru: r.meta?.ktru_code || GOODS_CATALOG[r.type]?.ktruFixed || '',
-        specsCount: r.specs?.length ?? 0,
-      })),
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `procurement_pack_${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   // Предварительный просмотр в браузере (структура соответствует шаблону DOCX)
@@ -1160,56 +1314,124 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
         <label><input type="radio" checked={lawMode === '223'} onChange={() => setLawMode('223')} /> 223-ФЗ</label>
       </div>
 
-      {/* Провайдер, модель и ключ */}
-      {useBackend ? (
-        <div style={{ background: '#0F3B1E', border: '1px solid #166534', borderRadius: 8, padding: '10px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, fontSize: 13 }}>
-          <span style={{ color: '#86EFAC' }}>✅ Сервер подключён — API-ключ не нужен</span>
-          <span style={{ color: '#4ADE80', fontSize: 12 }}>
-            {backendUser?.role === 'admin' ? 'Безлимит (Admin)' : backendUser?.role === 'pro' ? '∞ Pro' : `${backendUser?.tz_count ?? 0}/${backendUser?.tz_limit ?? 3} ТЗ`}
+      {/* Авторизация / доступ к AI */}
+      <div className="workspace-auth-shell">
+        <button
+          type="button"
+          className="workspace-auth-toggle"
+          onClick={() => setAuthPanelOpen((v) => !v)}
+          aria-expanded={authPanelOpen}
+        >
+          <span className="workspace-auth-toggle-title">
+            <span className={`workspace-auth-dot ${useBackend ? 'is-backend' : 'is-local'}`} aria-hidden="true"></span>
+            Авторизация и доступ к AI
           </span>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', color: '#94A3B8', fontSize: 12 }}>
-            Провайдер:
-            <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)} style={{ fontSize: 12, padding: '2px 6px', background: '#1E293B', color: '#E2E8F0', border: '1px solid #334155', borderRadius: 4 }}>
-              <option value="deepseek">DeepSeek</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="groq">Groq</option>
-            </select>
-          </label>
-        </div>
-      ) : (
-        <>
-          <div className="grid two">
-            <label>
-              Провайдер
-              <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
-                <option value="deepseek">DeepSeek</option>
-                <option value="openrouter">OpenRouter</option>
-                <option value="groq">Groq</option>
-              </select>
-            </label>
-            <label>
-              Модель
-              <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
-            </label>
-            <label>
-              API-ключ
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-..."
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
+          <span className="workspace-auth-toggle-meta">
+            {useBackend ? (hasUserApiKey ? 'Backend + ваш ключ' : 'Backend') : 'Локально по ключу'}
+          </span>
+          <span className={`workspace-auth-toggle-chevron ${authPanelOpen ? 'open' : ''}`} aria-hidden="true">▾</span>
+        </button>
+
+        <div className={`workspace-auth-collapse ${authPanelOpen ? 'open' : ''}`}>
+          <div className="workspace-auth-collapse-inner">
+            {useBackend ? (
+              <>
+                <div style={{ background: '#0F3B1E', border: '1px solid #166534', borderRadius: 8, padding: '10px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, fontSize: 13 }}>
+                  <span style={{ color: '#86EFAC' }}>
+                    ✅ Сервер подключён{hasUserApiKey ? ' — AI по вашему ключу' : ' — API-ключ не обязателен'}
+                  </span>
+                  <span style={{ color: '#4ADE80', fontSize: 12 }}>
+                    {backendUser?.role === 'admin' ? 'Безлимит (Admin)' : backendUser?.role === 'pro' ? '∞ Pro' : `${backendUser?.tz_count ?? 0}/${backendUser?.tz_limit ?? 3} ТЗ`}
+                  </span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', color: '#94A3B8', fontSize: 12 }}>
+                    Провайдер:
+                    <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)} style={{ fontSize: 12, padding: '2px 6px', background: '#1E293B', color: '#E2E8F0', border: '1px solid #334155', borderRadius: 4 }}>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="groq">Groq</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="grid two">
+                  <label>
+                    Модель
+                    <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
+                  </label>
+                  <label>
+                    API-ключ (опционально)
+                    <div className="workspace-secret-row">
+                      <input
+                        type={apiKeyInputType}
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                        placeholder="sk-..."
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <button
+                        type="button"
+                        className="workspace-secret-toggle"
+                        onClick={() => setShowApiKey((v) => !v)}
+                        aria-label={showApiKey ? 'Скрыть API-ключ' : 'Показать API-ключ'}
+                        title={showApiKey ? 'Скрыть ключ' : 'Показать ключ'}
+                      >
+                        {showApiKey ? 'Скрыть' : 'Показать'}
+                      </button>
+                    </div>
+                  </label>
+                </div>
+                <div style={{ fontSize: 12, color: '#94A3B8', padding: '6px 10px', background: '#1E293B', borderRadius: 6, marginBottom: 8 }}>
+                  💡 Поле ключа скрывает ввод. Если указать ключ, AI-запросы пойдут напрямую к провайдеру (например, DeepSeek).
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid two">
+                  <label>
+                    Провайдер
+                    <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="openrouter">OpenRouter</option>
+                      <option value="groq">Groq</option>
+                    </select>
+                  </label>
+                  <label>
+                    Модель
+                    <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
+                  </label>
+                  <label>
+                    API-ключ
+                    <div className="workspace-secret-row">
+                      <input
+                        type={apiKeyInputType}
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                        placeholder="sk-..."
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <button
+                        type="button"
+                        className="workspace-secret-toggle"
+                        onClick={() => setShowApiKey((v) => !v)}
+                        aria-label={showApiKey ? 'Скрыть API-ключ' : 'Показать API-ключ'}
+                        title={showApiKey ? 'Скрыть ключ' : 'Показать ключ'}
+                      >
+                        {showApiKey ? 'Скрыть' : 'Показать'}
+                      </button>
+                    </div>
+                  </label>
+                </div>
+                {isBackendApiAvailable() && (
+                  <div style={{ fontSize: 12, color: '#94A3B8', padding: '6px 10px', background: '#1E293B', borderRadius: 6, marginBottom: 8 }}>
+                    💡 <strong style={{ color: '#CBD5E1' }}>Войдите</strong> (кнопка «Войти» вверху справа) — без API-ключа, реальный поиск в интернете и ЕИС.
+                  </div>
+                )}
+              </>
+            )}
           </div>
-          {isBackendApiAvailable() && (
-            <div style={{ fontSize: 12, color: '#94A3B8', padding: '6px 10px', background: '#1E293B', borderRadius: 6, marginBottom: 8 }}>
-              💡 <strong style={{ color: '#CBD5E1' }}>Войдите</strong> (кнопка «Войти» вверху справа) — без API-ключа, реальный поиск в интернете и ЕИС.
-            </div>
-          )}
-        </>
-      )}
+        </div>
+      </div>
 
       {/* Таблица позиций */}
       <div className="rows-table-wrap">
@@ -1305,7 +1527,7 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
         <button
           type="button"
           disabled={!canGenerate || mutation.isPending}
-          onClick={() => mutation.mutate()}
+          onClick={() => mutation.mutate({ trigger: 'manual' })}
           style={{ background: canGenerate && !mutation.isPending ? '#1F5C8B' : undefined, color: canGenerate && !mutation.isPending ? '#fff' : undefined }}
         >
           {mutation.isPending ? '⏳ Генерация...' : '🚀 Сгенерировать ТЗ'}
@@ -1326,7 +1548,7 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
         >
           {eisSearching ? '⏳ Ищу в ЕИС...' : '🏛️ Найти ТЗ в ЕИС'}
         </button>
-        <button type="button" onClick={exportPackage}>📦 Экспорт JSON</button>
+        <button type="button" onClick={() => exportPackage()}>📦 Экспорт JSON</button>
         <button
           type="button"
           onClick={() => void exportDocx()}

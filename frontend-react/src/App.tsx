@@ -26,6 +26,8 @@ import {
 } from './lib/storage';
 import type { AutomationSettings, PlatformIntegrationSettings } from './types/schemas';
 
+type UiTheme = 'sapphire' | 'contrast';
+
 function download(name: string, content: string, type: string): void {
   const blob = new Blob([content], { type });
   const url = URL.createObjectURL(blob);
@@ -41,6 +43,14 @@ export function App() {
   const [automationSettings, setAutomationState] = useState<AutomationSettings>(getAutomationSettings());
   const [platformSettings, setPlatformState] = useState<PlatformIntegrationSettings>(getPlatformSettings());
   const [refreshTick, setRefreshTick] = useState(0);
+  const [theme, setTheme] = useState<UiTheme>(() => {
+    try {
+      const stored = window.localStorage.getItem('tz_ui_theme');
+      return stored === 'contrast' ? 'contrast' : 'sapphire';
+    } catch {
+      return 'sapphire';
+    }
+  });
 
   // ── Auth state ───────────────────────────────────────────────────────────
   const [backendUser, setBackendUser] = useState(getStoredUser());
@@ -74,6 +84,21 @@ export function App() {
         });
     }
   }, []);
+
+  useEffect(() => {
+    const onLogUpdated = () => setRefreshTick((x) => x + 1);
+    window.addEventListener('tz:automation-log-updated', onLogUpdated as EventListener);
+    return () => window.removeEventListener('tz:automation-log-updated', onLogUpdated as EventListener);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      window.localStorage.setItem('tz_ui_theme', theme);
+    } catch {
+      // ignore storage errors
+    }
+  }, [theme]);
 
   const handleSendLink = async () => {
     if (!loginEmail.trim()) return;
@@ -141,85 +166,97 @@ export function App() {
     setRefreshTick((x) => x + 1);
   };
 
-  // ── Auth bar styles ──────────────────────────────────────────────────────
-  const authBarStyle: React.CSSProperties = {
-    position: 'fixed', top: 0, right: 0, zIndex: 1000,
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '6px 16px',
-    background: 'rgba(15, 23, 42, 0.9)',
-    borderBottomLeftRadius: 8,
-    fontSize: 13, color: '#CBD5E1',
-  };
-
-  const loginPanelStyle: React.CSSProperties = {
-    position: 'fixed', top: 40, right: 0, zIndex: 999,
-    background: '#1E293B', border: '1px solid #334155',
-    borderRadius: '0 0 0 8px', padding: 20, width: 280,
-    boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-  };
+  const backendTierLabel = backendUser
+    ? (backendUser.role === 'admin'
+      ? 'Admin'
+      : backendUser.role === 'pro'
+        ? 'Pro'
+        : `Free (${backendUser.tz_count}/${backendUser.tz_limit})`)
+    : '';
 
   return (
-    <main className="layout">
+    <main className="layout sovereign-layout">
       {/* Auth message toast */}
       {authMsg && (
-        <div style={{
-          position: 'fixed', top: 48, right: 16, zIndex: 9999,
-          background: authMsg.startsWith('✅') ? '#065F46' : '#7F1D1D',
-          color: '#fff', padding: '10px 18px', borderRadius: 8,
-          boxShadow: '0 4px 16px rgba(0,0,0,0.4)', fontSize: 14,
-        }}>
+        <div className={`auth-toast ${authMsg.startsWith('✅') ? 'ok' : 'err'}`}>
           {authMsg}
         </div>
       )}
 
       {/* Auth bar — top right */}
       {backendAvailable && (
-        <div style={authBarStyle}>
+        <div className="auth-rail">
           {backendUser ? (
             <>
-              <span style={{ color: '#94A3B8', fontSize: 12 }}>
-                👤 {backendUser.email}
+              <span className="auth-identity">
+                <span className="auth-dot" aria-hidden="true"></span>
+                {backendUser.email}
               </span>
-              <span style={{
-                fontSize: 11, padding: '2px 6px', borderRadius: 4,
-                background: backendUser.role === 'admin' ? '#7C3AED' : backendUser.role === 'pro' ? '#059669' : '#374151',
-                color: '#fff',
-              }}>
-                {backendUser.role === 'admin' ? 'Admin' : backendUser.role === 'pro' ? 'Pro' : `Free (${backendUser.tz_count}/${backendUser.tz_limit})`}
+              <span className={`auth-badge ${backendUser.role === 'admin' ? 'admin' : backendUser.role === 'pro' ? 'pro' : 'free'}`}>
+                {backendTierLabel}
               </span>
               <button
                 onClick={handleLogout}
-                style={{ background: 'transparent', border: '1px solid #475569', color: '#94A3B8', padding: '2px 8px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+                className="auth-ghost-btn"
               >
                 Выйти
               </button>
             </>
           ) : (
             <>
-              <span style={{ color: '#94A3B8', fontSize: 12 }}>🔒 Войдите для Pro-функций</span>
+              <span className="auth-identity">
+                <span className="auth-dot muted" aria-hidden="true"></span>
+                Войдите для Pro-функций
+              </span>
               <button
                 onClick={() => setShowLogin((x) => !x)}
-                style={{ background: '#1F5C8B', border: 'none', color: '#fff', padding: '3px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+                className="auth-primary-btn"
               >
-                Войти
+                {showLogin ? 'Закрыть' : 'Войти'}
               </button>
             </>
           )}
         </div>
       )}
 
+      <div className="theme-rail" role="group" aria-label="Переключение темы">
+        <span className="theme-rail-label">Тема</span>
+        <button
+          type="button"
+          className={`theme-btn ${theme === 'sapphire' ? 'is-active' : ''}`}
+          onClick={() => setTheme('sapphire')}
+          aria-pressed={theme === 'sapphire'}
+        >
+          Классика
+        </button>
+        <button
+          type="button"
+          className={`theme-btn ${theme === 'contrast' ? 'is-active' : ''}`}
+          onClick={() => setTheme('contrast')}
+          aria-pressed={theme === 'contrast'}
+        >
+          Контраст
+        </button>
+      </div>
+
       {/* Login panel */}
       {showLogin && !backendUser && backendAvailable && (
-        <div style={loginPanelStyle}>
-          <h3 style={{ margin: '0 0 12px', color: '#E2E8F0', fontSize: 15 }}>Вход по ссылке в email</h3>
+        <div className="auth-popover">
+          <div className="auth-popover-head">
+            <div>
+              <div className="micro-label">Авторизация</div>
+              <h3>Вход по ссылке в email</h3>
+            </div>
+            <span className="auth-popover-mark">DeepSeek</span>
+          </div>
           {loginSent ? (
-            <div style={{ color: '#86EFAC', fontSize: 13 }}>
+            <div className="auth-success">
               ✅ Письмо отправлено на <strong>{loginEmail}</strong>.<br />
-              <span style={{ color: '#94A3B8' }}>Нажмите ссылку в письме для входа.</span>
+              <span className="muted">Нажмите ссылку в письме для входа.</span>
               <br /><br />
               <button
                 onClick={() => { setLoginSent(false); setLoginEmail(''); }}
-                style={{ background: 'transparent', border: '1px solid #475569', color: '#94A3B8', padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}
+                className="auth-ghost-btn"
               >
                 Отправить ещё раз
               </button>
@@ -232,23 +269,24 @@ export function App() {
                 onChange={(e) => setLoginEmail(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSendLink()}
                 placeholder="your@email.ru"
-                style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: 6, border: '1px solid #475569', background: '#0F172A', color: '#E2E8F0', fontSize: 13, marginBottom: 8 }}
+                className="auth-input"
               />
-              {loginError && <div style={{ color: '#FCA5A5', fontSize: 12, marginBottom: 6 }}>{loginError}</div>}
+              {loginError && <div className="auth-error">{loginError}</div>}
               <button
                 onClick={handleSendLink}
                 disabled={loginLoading || !loginEmail.trim()}
-                style={{ width: '100%', background: '#1F5C8B', border: 'none', color: '#fff', padding: '8px 0', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}
+                className="auth-submit-btn"
               >
                 {loginLoading ? '⏳ Отправка...' : 'Отправить ссылку для входа'}
               </button>
-              <p style={{ color: '#64748B', fontSize: 11, marginTop: 8, marginBottom: 0 }}>
+              <p className="auth-hint">
                 Ссылка действует 30 минут. Пароль не требуется.
               </p>
             </>
           )}
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #334155', color: '#64748B', fontSize: 11 }}>
-            💎 <strong style={{ color: '#94A3B8' }}>Pro план — 1500 ₽/мес:</strong><br />
+          <div className="auth-pro-box">
+            <div className="micro-label">Pro доступ</div>
+            <strong>Pro план — 1500 ₽/мес</strong><br />
             • Безлимитные ТЗ<br />
             • Поиск в интернете (реальные характеристики)<br />
             • Поиск в ЕИС (готовые ТЗ из zakupki.gov.ru)<br />
@@ -258,82 +296,133 @@ export function App() {
       )}
 
       <div className="bg-layer" aria-hidden="true">
+        <span className="noise"></span>
         <span className="orb orb-1"></span>
         <span className="orb orb-2"></span>
         <span className="orb orb-3"></span>
+        <span className="orb orb-4"></span>
       </div>
 
-      <header className="hero">
-        <span className="hero-chip">44/223-ФЗ</span>
+      <header className="hero sovereign-hero section-fade section-delay-0">
+        <div className="hero-spine" aria-hidden="true"></div>
+        <span className="hero-chip">44/223-ФЗ • Sovereign Workflow</span>
         <h1>Генератор ТЗ</h1>
-        <p>Премиальная рабочая среда закупок: спецификации, КТРУ/ОКПД2 и контроль комплаенса.</p>
+        <p>Премиальная рабочая среда закупок: спецификации, КТРУ/ОКПД2, поиск по интернету и ЕИС, комплаенс-контроль.</p>
+        <div className="hero-metrics">
+          <div className="hero-metric">
+            <span className="hero-metric-label">режим</span>
+            <strong>{backendAvailable ? 'Hybrid' : 'Local'}</strong>
+          </div>
+          <div className="hero-metric">
+            <span className="hero-metric-label">auth</span>
+            <strong>{backendUser ? 'Signed In' : 'Guest'}</strong>
+          </div>
+          <div className="hero-metric">
+            <span className="hero-metric-label">pipeline</span>
+            <strong>Specs / EIS / Export</strong>
+          </div>
+        </div>
       </header>
 
-      <AutomationPanel
-        value={automationSettings}
-        onSave={handleSaveAutomation}
-        onSendTest={async () => {
-          await webhookMutation.mutateAsync();
-        }}
-        onAutopilot={async () => {
-          appendAutomationLog({ at: new Date().toISOString(), event: 'autopilot.requested', ok: true });
-          setRefreshTick((x) => x + 1);
-        }}
-        onExportLearning={() => {
-          const json = exportLearningMap();
-          download(`learning_map_${Date.now()}.json`, json, 'application/json;charset=utf-8');
-          appendAutomationLog({ at: new Date().toISOString(), event: 'learning.export', ok: true });
-          setRefreshTick((x) => x + 1);
-        }}
-        onImportLearning={() => {
-          const raw = prompt('Вставьте JSON карты обучения');
-          if (!raw) return;
-          const result = importLearningMap(raw);
-          appendAutomationLog({
-            at: new Date().toISOString(),
-            event: 'learning.import',
-            ok: result.ok,
-            note: result.ok ? `items=${result.count}` : 'invalid_json'
-          });
-          setRefreshTick((x) => x + 1);
-        }}
-      />
+      <section className="sov-note section-fade section-delay-1">
+        <div>
+          <div className="micro-label">Sapphire Sovereign</div>
+          <h2>Тихий интерфейс для тяжёлых закупочных задач</h2>
+          <p>Оставили текущую бизнес-логику проекта и компоненты, но перевели оболочку в более “классический” premium-стиль с акцентом на рабочую область.</p>
+        </div>
+        <div className="sov-note-tags" aria-label="Возможности">
+          <span>DeepSeek / OpenRouter / Groq</span>
+          <span>ЕИС / 44-ФЗ / 223-ФЗ</span>
+          <span>DOCX / PDF / JSON</span>
+        </div>
+      </section>
 
-      <PlatformPanel
-        value={platformSettings}
-        onSave={handleSavePlatform}
-        onSendDraft={async () => {
-          await platformMutation.mutateAsync();
-        }}
-        onExportPack={() => {
-          const payload = {
-            app: 'tz_generator_react',
-            exportedAt: new Date().toISOString(),
-            profile: platformSettings.profile,
-            law: platformSettings.profile === 'eis_223' ? '223-FZ' : '44-FZ',
-            organization: platformSettings.orgName,
-            customerInn: platformSettings.customerInn,
-            items: []
-          };
-          download(`procurement_pack_${Date.now()}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
-          appendAutomationLog({ at: new Date().toISOString(), event: 'platform.export', ok: true });
-          setRefreshTick((x) => x + 1);
-        }}
-      />
+      <div className="section-fade section-delay-2">
+        <Workspace
+          automationSettings={automationSettings}
+          platformSettings={platformSettings}
+          backendUser={backendUser}
+        />
+      </div>
 
-      <Workspace
-        automationSettings={automationSettings}
-        platformSettings={platformSettings}
-        backendUser={backendUser}
-      />
+      <section className="sov-block section-fade section-delay-3">
+        <div className="sov-block-head">
+          <div>
+            <div className="micro-label">Control Layer</div>
+            <h2>Интеграции и автоматизация</h2>
+          </div>
+        </div>
+        <div className="control-grid">
+          <AutomationPanel
+            value={automationSettings}
+            onSave={handleSaveAutomation}
+            onSendTest={async () => {
+              await webhookMutation.mutateAsync();
+            }}
+            onAutopilot={async () => {
+              appendAutomationLog({ at: new Date().toISOString(), event: 'autopilot.requested', ok: true });
+              window.dispatchEvent(new CustomEvent('tz:autopilot:run'));
+              setRefreshTick((x) => x + 1);
+            }}
+            onExportLearning={() => {
+              const json = exportLearningMap();
+              download(`learning_map_${Date.now()}.json`, json, 'application/json;charset=utf-8');
+              appendAutomationLog({ at: new Date().toISOString(), event: 'learning.export', ok: true });
+              setRefreshTick((x) => x + 1);
+            }}
+            onImportLearning={() => {
+              const raw = prompt('Вставьте JSON карты обучения');
+              if (!raw) return;
+              const result = importLearningMap(raw);
+              appendAutomationLog({
+                at: new Date().toISOString(),
+                event: 'learning.import',
+                ok: result.ok,
+                note: result.ok ? `items=${result.count}` : 'invalid_json'
+              });
+              setRefreshTick((x) => x + 1);
+            }}
+          />
 
-      <EventLog
-        events={events}
-        onClear={() => {
-          clearAutomationLog();
-          setRefreshTick((x) => x + 1);
-        }}
-      />
+          <PlatformPanel
+            value={platformSettings}
+            onSave={handleSavePlatform}
+            onSendDraft={async () => {
+              await platformMutation.mutateAsync();
+            }}
+            onExportPack={() => {
+              const payload = {
+                app: 'tz_generator_react',
+                exportedAt: new Date().toISOString(),
+                profile: platformSettings.profile,
+                law: platformSettings.profile === 'eis_223' ? '223-FZ' : '44-FZ',
+                organization: platformSettings.orgName,
+                customerInn: platformSettings.customerInn,
+                items: []
+              };
+              download(`procurement_pack_${Date.now()}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+              appendAutomationLog({ at: new Date().toISOString(), event: 'platform.export', ok: true });
+              setRefreshTick((x) => x + 1);
+            }}
+          />
+        </div>
+      </section>
+
+      <section className="sov-block section-fade section-delay-4">
+        <div className="sov-block-head">
+          <div>
+            <div className="micro-label">Telemetry</div>
+            <h2>Журнал автоматизации</h2>
+          </div>
+        </div>
+        <EventLog
+          events={events}
+          onClear={() => {
+            clearAutomationLog();
+            setRefreshTick((x) => x + 1);
+          }}
+        />
+      </section>
     </main>
   );
 }

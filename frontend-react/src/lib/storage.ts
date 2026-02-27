@@ -30,6 +30,11 @@ function writeJson(key: string, value: unknown): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function emitAutomationLogUpdated(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent('tz:automation-log-updated'));
+}
+
 export function getAutomationSettings(): AutomationSettings {
   const parsed = automationSettingsSchema.safeParse(
     readJson(KEYS.automationSettings, defaultAutomationSettings)
@@ -61,10 +66,12 @@ export function appendAutomationLog(entry: AutomationEvent): void {
   const list = getAutomationLog();
   list.push(entry);
   writeJson(KEYS.automationLog, list.slice(-500));
+  emitAutomationLogUpdated();
 }
 
 export function clearAutomationLog(): void {
   writeJson(KEYS.automationLog, []);
+  emitAutomationLogUpdated();
 }
 
 export function exportLearningMap(): string {

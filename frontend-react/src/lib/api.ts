@@ -2,11 +2,23 @@ import axios from 'axios';
 import { appendAutomationLog } from './storage';
 import type { AutomationSettings } from '../types/schemas';
 
+const NON_LATIN1_RE = /[^\x00-\xff]/;
+
+function normalizeHeaderValue(name: string, value: string): string {
+  const cleaned = String(value || '').trim().replace(/[\r\n]+/g, ' ');
+  if (!cleaned) return '';
+  if (NON_LATIN1_RE.test(cleaned)) {
+    throw new Error(`Недопустимые символы в ${name}. Используйте только латиницу/цифры.`);
+  }
+  return cleaned;
+}
+
 export async function postWebhook(url: string, secret: string, payload: unknown): Promise<boolean> {
   if (!url) return false;
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (secret) headers['X-TZ-Secret'] = secret;
+    const safeSecret = normalizeHeaderValue('X-TZ-Secret', secret);
+    if (safeSecret) headers['X-TZ-Secret'] = safeSecret;
     await axios.post(url, payload, { headers, timeout: 10000 });
     appendAutomationLog({ at: new Date().toISOString(), event: 'webhook.sent', ok: true });
     return true;
@@ -20,7 +32,8 @@ export async function postPlatformDraft(endpoint: string, token: string, payload
   if (!endpoint) return false;
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    const safeToken = normalizeHeaderValue('Authorization token', token);
+    if (safeToken) headers.Authorization = `Bearer ${safeToken}`;
     await axios.post(endpoint, payload, { headers, timeout: 10000 });
     appendAutomationLog({ at: new Date().toISOString(), event: 'platform.sent', ok: true });
     return true;
@@ -45,13 +58,18 @@ export async function generateItemSpecs(
   prompt: string
 ): Promise<string> {
   const endpoint = API_ENDPOINTS[provider];
+  const safeApiKey = normalizeHeaderValue('API ключ', apiKey);
+  if (!safeApiKey) {
+    throw new Error('API-ключ пустой или некорректный');
+  }
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${apiKey}`,
+    Authorization: `Bearer ${safeApiKey}`,
     'Content-Type': 'application/json'
   };
   if (provider === 'openrouter') {
     headers['HTTP-Referer'] = 'https://openrouter.ai';
-    headers['X-Title'] = 'Генератор ТЗ React';
+    // Browser XHR rejects non ISO-8859-1 header values.
+    headers['X-Title'] = 'TZ Generator React';
   }
   const response = await axios.post(
     endpoint,
@@ -74,7 +92,8 @@ export async function sendEventThroughBestChannel(
   if (settings.useBackendQueueApi && settings.backendApiBase) {
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (settings.backendApiToken) headers.Authorization = `Bearer ${settings.backendApiToken}`;
+      const safeBackendToken = normalizeHeaderValue('backendApiToken', settings.backendApiToken || '');
+      if (safeBackendToken) headers.Authorization = `Bearer ${safeBackendToken}`;
       const idempotencyKey = `${eventName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       await axios.post(
         `${settings.backendApiBase.replace(/\/+$/, '')}/api/v1/integration/event`,

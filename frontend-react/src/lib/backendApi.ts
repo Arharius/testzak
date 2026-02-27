@@ -18,7 +18,8 @@ export function isBackendApiAvailable(): boolean {
   if (BACKEND_URL) return true;
   if (typeof window === 'undefined') return false;
   const host = String(window.location.hostname || '').toLowerCase();
-  return /\.netlify\.app$/.test(host);
+  // Netlify production or localhost with Vite proxy
+  return /\.netlify\.app$/.test(host) || host === 'localhost' || host === '127.0.0.1';
 }
 
 const AUTH_TOKEN_KEY = 'tz_backend_jwt';

@@ -12,6 +12,9 @@ type Props = {
   onAutopilot: () => Promise<void>;
   onExportLearning: () => void;
   onImportLearning: () => void;
+  queueSize: number;
+  onFlushQueue: () => Promise<void>;
+  flushPending?: boolean;
 };
 
 export function AutomationPanel({
@@ -20,7 +23,10 @@ export function AutomationPanel({
   onSendTest,
   onAutopilot,
   onExportLearning,
-  onImportLearning
+  onImportLearning,
+  queueSize,
+  onFlushQueue,
+  flushPending,
 }: Props) {
   const form = useForm<AutomationSettings>({
     resolver: zodResolver(automationSettingsSchema),
@@ -42,13 +48,15 @@ export function AutomationPanel({
         </label>
         <label>
           Бэкенд API URL
-          <input {...form.register('backendApiBase')} placeholder="https://api.example.com" />
+          <input {...form.register('backendApiBase')} placeholder="(пусто = текущий /api)" />
         </label>
         <label>
           Бэкенд API токен
-          <input {...form.register('backendApiToken')} placeholder="Bearer token" />
+          <input {...form.register('backendApiToken')} placeholder="token (можно с Bearer)" />
         </label>
       </div>
+      <div className="muted">По умолчанию можно оставить пусто: отправка пойдёт через `current-domain/api`.</div>
+      <div className="muted">Очередь событий: {queueSize}</div>
       <div className="checks">
         <label><input type="checkbox" {...form.register('autoSend')} /> Автоотправка webhook после генерации</label>
         <label><input type="checkbox" {...form.register('autopilot')} /> Режим автопилота</label>
@@ -61,6 +69,9 @@ export function AutomationPanel({
         <button onClick={() => void onAutopilot()} type="button">Запустить автопилот</button>
         <button onClick={onExportLearning} type="button">Экспорт обучения</button>
         <button onClick={onImportLearning} type="button">Импорт обучения</button>
+        <button onClick={() => void onFlushQueue()} type="button" disabled={flushPending}>
+          {flushPending ? 'Повтор...' : 'Повторить очередь'}
+        </button>
       </div>
     </section>
   );

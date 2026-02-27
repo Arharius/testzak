@@ -17,13 +17,26 @@ import {
 } from 'docx';
 import { saveAs } from 'file-saver';
 import { jsPDF } from 'jspdf';
-import { generateItemSpecs, postPlatformDraft, sendEventThroughBestChannel } from '../lib/api';
-import { generateWithBackend, searchInternetSpecs, searchEisSpecs, isBackendApiAvailable } from '../lib/backendApi';
-import { appendAutomationLog } from '../lib/storage';
-import type { AutomationSettings, PlatformIntegrationSettings } from '../types/schemas';
+import {
+  flushAutomationQueue,
+  flushPlatformQueue,
+  generateItemSpecs,
+  postPlatformDraft,
+  sendEventThroughBestChannel,
+} from '../lib/api';
+import {
+  generateWithBackend,
+  isBackendApiAvailable,
+  runEnterpriseAutopilot,
+  searchEisSpecs,
+  searchInternetSpecs,
+} from '../lib/backendApi';
+import { appendAutomationLog, appendImmutableAudit } from '../lib/storage';
+import type { AutomationSettings, EnterpriseSettings, PlatformIntegrationSettings } from '../types/schemas';
 import { GOODS_CATALOG, GOODS_GROUPS, detectGoodsType, type GoodsItem, type HardSpec } from '../data/goods-catalog';
 import { postProcessSpecs, parseAiResponse, type SpecItem } from '../utils/spec-processor';
 import { buildSection2Rows, buildSection4Rows, buildSection5Rows, type LawMode } from '../utils/npa-blocks';
+import { buildAntiFasReport, type ComplianceReport } from '../utils/compliance';
 
 type Provider = 'openrouter' | 'groq' | 'deepseek';
 
@@ -49,6 +62,31 @@ type GenerateOptions = {
   forceAutopilot?: boolean;
   trigger?: 'manual' | 'autopilot_button';
 };
+
+const NON_BRAND_LABEL = 'без указания товарного знака (эквивалент)';
+
+const PROCUREMENT_METHOD_LABELS: Record<string, string> = {
+  auction: 'Аукцион',
+  tender: 'Конкурс',
+  quotation: 'Запрос котировок',
+  proposal_request: 'Запрос предложений',
+  single_supplier: 'Единственный поставщик',
+};
+
+function EyeIcon({ open }: { open: boolean }) {
+  return open ? (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2 12c1.9-4.1 5.6-7 10-7s8.1 2.9 10 7c-1.9 4.1-5.6 7-10 7s-8.1-2.9-10-7Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2 12c1.9-4.1 5.6-7 10-7 2.2 0 4.2.7 5.9 2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M22 12c-1.9 4.1-5.6 7-10 7-2.2 0-4.2-.7-5.9-2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m3 3 18 18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 // ── Промпты по типу товара ────────────────────────────────────────────────────
 function buildPrompt(row: GoodsRow, lawMode: LawMode): string {
@@ -85,12 +123,13 @@ function buildPrompt(row: GoodsRow, lawMode: LawMode): string {
 Сформируй технические характеристики для товара по ${law}.
 
 Тип товара: ${goodsName}
-Модель/описание: ${row.model}
+Исходный пользовательский запрос (для ориентира, не копировать дословно): ${row.model}
 Количество: ${row.qty} шт.
 ОКПД2: ${okpd2}${ktru ? '\nКТРУ: ' + ktru : ''}
 
 Требования к ответу:
-- Все технические марки (Intel, AMD, Samsung и т.д.) сопровождать «или эквивалент»
+- НЕ указывать торговые марки, производителей, артикулы и точные модели
+- Использовать обезличенные формулировки «без указания товарного знака (эквивалент)»
 - Числовые значения с операторами: писать «не менее X» (а не ">= X")
 - Тип матрицы: «IPS или эквивалент (угол обзора не менее 178°)»
 - Разрешение: «не менее 1920x1080» (не точное значение)
@@ -128,14 +167,15 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   return `Ты — эксперт по ИТ-оборудованию и ПО. Найди точные технические характеристики конкретного товара.
 
-Товар (точное название / модель): "${row.model}"
+Исходный запрос (только для поиска, не копировать в ответ): "${row.model}"
 Тип: ${g.name}
 ОКПД2: ${g.okpd2}
 
 Задача: укажи реальные характеристики именно этой модели, как указаны у производителя (или ближайшего аналога по классу).
 
 Правила формулировок (44-ФЗ, ст. 33):
-- Торговые марки (Intel, AMD, Samsung...) → добавлять «или эквивалент»
+- Не указывать торговые марки, производителей, артикулы и точные модели
+- Использовать обезличенные формулировки «без указания товарного знака (эквивалент)»
 - Числа: «не менее X» (не «>= X»)
 - Единицы: ГГц, МГц, ГБ, МБ, ТБ (не GHz/GB/MB)
 - Тип матрицы: «IPS или эквивалент (угол обзора не менее 178°)»
@@ -214,14 +254,15 @@ function buildEisStylePrompt(row: GoodsRow, g: GoodsItem, eisContext: string): s
     : '\n(Контекст ЕИС недоступен — используй знания о типичных ТЗ из реестра ЕИС для данного класса товаров)';
   return `Ты — эксперт по госзакупкам РФ. Составь ТЗ для закупки по 44-ФЗ в стиле реальных документов ЕИС (zakupki.gov.ru).
 
-Запрос пользователя: "${row.model}"
+Исходный запрос (только для поиска и контекста, не копировать в ответ): "${row.model}"
 Тип товара: ${g.name}
 ОКПД2: ${g.okpd2}
 ${ctx}
 
 Требования к ТЗ:
 - Реалистичные характеристики для российского рынка поставщиков
-- Торговые марки → «или эквивалент»
+- Не указывать торговые марки, производителей, артикулы и точные модели
+- Использовать обезличенные формулировки «без указания товарного знака (эквивалент)»
 - Числа: «не менее X»
 - Единицы: ГГц, МГц, ГБ, МБ, ТБ
 - Сокеты процессора НЕ УКАЗЫВАТЬ${g.isSoftware ? '\n- ПО: реестр Минцифры (ПП РФ № 1236), сертификаты ФСТЭК/ФСБ где применимо' : ''}
@@ -413,7 +454,7 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
           margins: { top: 60, bottom: 60, left: 80, right: 80 },
         })],
       }),
-      new TableRow({ children: [s1LabelCell('Наименование объекта поставки:'), valueCell(g.name + (row.model ? '\n' + row.model : ''))] }),
+      new TableRow({ children: [s1LabelCell('Наименование объекта поставки:'), valueCell(g.name)] }),
       new TableRow({ children: [s1LabelCell('Заказчик:'), valueCell('')] }),
       new TableRow({ children: [s1LabelCell('Исполнитель:'), valueCell('Определяется по результатам закупочных процедур')] }),
       new TableRow({ children: [s1LabelCell('Код ОКПД2:'), valueCell(`${okpd2Code}${okpd2Name ? ' — ' + okpd2Name : ''}`)] }),
@@ -504,7 +545,7 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
     }
     // Совместимость с отечественными ОС для ПК/ноутбуков/серверов
     if (['pc','laptop','monoblock','server','tablet','thinClient'].includes(row.type)) {
-      children.push(regPara('Товар должен быть совместим с отечественными операционными системами, включёнными в Единый реестр российских программ для ЭВМ и баз данных Министерства цифрового развития, связи и массовых коммуникаций РФ, в том числе: Astra Linux Special Edition, ALT Linux, РЕД ОС или эквивалентными (ч. 3 ст. 33 Федерального закона от 05.04.2013 № 44-ФЗ).'));
+      children.push(regPara('Товар должен быть совместим с отечественными операционными системами, включёнными в Единый реестр российских программ для ЭВМ и баз данных Министерства цифрового развития, связи и массовых коммуникаций РФ, или эквивалентными (ч. 3 ст. 33 Федерального закона от 05.04.2013 № 44-ФЗ).'));
     }
 
     // ── ПУСКОНАЛАДОЧНЫЕ РАБОТЫ ──
@@ -585,10 +626,11 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
 type Props = {
   automationSettings: AutomationSettings;
   platformSettings: PlatformIntegrationSettings;
+  enterpriseSettings: EnterpriseSettings;
   backendUser?: { email: string; role: string; tz_count: number; tz_limit: number } | null;
 };
 
-export function Workspace({ automationSettings, platformSettings, backendUser }: Props) {
+export function Workspace({ automationSettings, platformSettings, enterpriseSettings, backendUser }: Props) {
   // Whether to use backend (logged in + backend URL configured)
   const useBackend = !!(backendUser && isBackendApiAvailable());
   const [lawMode, setLawMode] = useState<LawMode>('44');
@@ -599,6 +641,7 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
   const [showApiKey, setShowApiKey] = useState(false);
   const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
   const [docxReady, setDocxReady] = useState(false);
+  const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
 
   // Общий статус поиска по ЕИС
   const [eisSearching, setEisSearching] = useState(false);
@@ -626,30 +669,116 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
     () => (useBackend || hasUserApiKey) && rows.every((r) => r.model.trim().length > 0),
     [useBackend, hasUserApiKey, rows]
   );
+  const shouldRunEnterpriseAutopilot = useMemo(() => {
+    if (!useBackend) return false;
+    if (enterpriseSettings.simulationMode) return true;
+    return Boolean(
+      (enterpriseSettings.etpBidirectionalStatus && enterpriseSettings.etpEndpoint) ||
+      enterpriseSettings.ecmEndpoint ||
+      enterpriseSettings.erpEndpoint ||
+      enterpriseSettings.cryptoEndpoint
+    );
+  }, [
+    enterpriseSettings.cryptoEndpoint,
+    enterpriseSettings.ecmEndpoint,
+    enterpriseSettings.erpEndpoint,
+    enterpriseSettings.etpBidirectionalStatus,
+    enterpriseSettings.etpEndpoint,
+    enterpriseSettings.simulationMode,
+    useBackend,
+  ]);
+  const exportsBlockedByCompliance = !!(
+    enterpriseSettings.antiFasStrictMode &&
+    enterpriseSettings.blockExportsOnFail &&
+    complianceReport?.blocked
+  );
+
+  const runComplianceGate = useCallback((sourceRows: GoodsRow[]): ComplianceReport => {
+    const report = buildAntiFasReport(
+      sourceRows.map((row) => ({
+        id: row.id,
+        type: row.type,
+        status: row.status,
+        specs: row.specs,
+      })),
+      enterpriseSettings.antiFasMinScore
+    );
+    setComplianceReport(report);
+    appendAutomationLog({
+      at: new Date().toISOString(),
+      event: 'compliance.antifas.scored',
+      ok: !report.blocked,
+      note: `score=${report.score}; critical=${report.critical}; major=${report.major}; minor=${report.minor}`,
+    });
+    if (enterpriseSettings.immutableAudit) {
+      appendImmutableAudit('compliance.antifas.scored', {
+        score: report.score,
+        blocked: report.blocked,
+        critical: report.critical,
+        major: report.major,
+        minor: report.minor,
+      });
+    }
+    return report;
+  }, [
+    enterpriseSettings.antiFasMinScore,
+    enterpriseSettings.immutableAudit,
+  ]);
 
   const buildPayload = useCallback((sourceRows: GoodsRow[]) => ({
     law: lawMode === '223' ? '223-FZ' : '44-FZ',
     profile: platformSettings.profile,
+    procurementMethod: platformSettings.procurementMethod,
+    procurementMethodLabel: PROCUREMENT_METHOD_LABELS[platformSettings.procurementMethod] || platformSettings.procurementMethod,
     organization: platformSettings.orgName,
     customerInn: platformSettings.customerInn,
     items: sourceRows.map((r) => ({
       type: r.type,
-      model: r.model,
+      model: NON_BRAND_LABEL,
       qty: r.qty,
       status: r.status,
       okpd2: r.meta?.okpd2_code || GOODS_CATALOG[r.type]?.okpd2 || '',
       ktru: r.meta?.ktru_code || GOODS_CATALOG[r.type]?.ktruFixed || '',
     })),
-  }), [lawMode, platformSettings.profile, platformSettings.orgName, platformSettings.customerInn]);
+  }), [
+    lawMode,
+    platformSettings.profile,
+    platformSettings.procurementMethod,
+    platformSettings.orgName,
+    platformSettings.customerInn,
+  ]);
 
-  const exportPackage = useCallback((sourceRows: GoodsRow[] = rows) => {
+  const exportPackage = useCallback((sourceRows: GoodsRow[] = rows): boolean => {
+    if (
+      enterpriseSettings.antiFasStrictMode &&
+      enterpriseSettings.blockExportsOnFail &&
+      complianceReport?.blocked
+    ) {
+      showToast(`❌ Экспорт заблокирован Anti-ФАС: score ${complianceReport.score}/${complianceReport.minScore}`, false);
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event: 'compliance.antifas.blocked_export',
+        ok: false,
+        note: `score=${complianceReport.score}; min=${complianceReport.minScore}`,
+      });
+      if (enterpriseSettings.immutableAudit) {
+        appendImmutableAudit('compliance.antifas.blocked_export', {
+          score: complianceReport.score,
+          minScore: complianceReport.minScore,
+          format: 'json',
+        });
+      }
+      return false;
+    }
     const payload = {
       exportedAt: new Date().toISOString(),
       law: lawMode === '223' ? '223-FZ' : '44-FZ',
       profile: platformSettings.profile,
+      procurementMethod: platformSettings.procurementMethod,
+      procurementMethodLabel: PROCUREMENT_METHOD_LABELS[platformSettings.procurementMethod] || platformSettings.procurementMethod,
       items: sourceRows.map((r) => ({
         type: r.type,
-        model: r.model,
+        model: NON_BRAND_LABEL,
         qty: r.qty,
         okpd2: r.meta?.okpd2_code || GOODS_CATALOG[r.type]?.okpd2 || '',
         ktru: r.meta?.ktru_code || GOODS_CATALOG[r.type]?.ktruFixed || '',
@@ -663,7 +792,18 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
     a.download = `procurement_pack_${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [lawMode, platformSettings.profile, rows]);
+    return true;
+  }, [
+    complianceReport,
+    enterpriseSettings.antiFasStrictMode,
+    enterpriseSettings.blockExportsOnFail,
+    enterpriseSettings.immutableAudit,
+    lawMode,
+    platformSettings.profile,
+    platformSettings.procurementMethod,
+    rows,
+    showToast,
+  ]);
 
   const fetchInternetCandidateForRow = useCallback(async (row: GoodsRow): Promise<SpecsCandidate | null> => {
     if (!row.model.trim()) return null;
@@ -849,28 +989,106 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
           setRows([...next]);
         }
 
+        const doneRows = next.filter((r) => r.status === 'done');
+        const report = runComplianceGate(next);
+        const complianceBlocksIntegrations = (
+          enterpriseSettings.antiFasStrictMode &&
+          enterpriseSettings.blockIntegrationsOnFail &&
+          report.blocked
+        );
+        const complianceBlocksExports = (
+          enterpriseSettings.antiFasStrictMode &&
+          enterpriseSettings.blockExportsOnFail &&
+          report.blocked
+        );
         const payload = buildPayload(next);
-        let integrationsOk = true;
+        let integrationsOk = !complianceBlocksIntegrations;
 
-        if (automationSettings.autoSend) {
-          const ok = await sendEventThroughBestChannel(automationSettings, 'tz.generated.react', payload);
-          integrationsOk = integrationsOk && ok;
-        }
-        if (platformSettings.autoSendDraft) {
-          const ok = await postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload);
-          integrationsOk = integrationsOk && ok;
-        }
-        if (platformSettings.autoExport) {
-          try {
-            exportPackage(next);
-            appendAutomationLog({ at: new Date().toISOString(), event: 'platform.auto_export', ok: true });
-          } catch {
-            integrationsOk = false;
-            appendAutomationLog({ at: new Date().toISOString(), event: 'platform.auto_export', ok: false });
+        if (!complianceBlocksIntegrations) {
+          if (automationSettings.autoSend) {
+            const ok = await sendEventThroughBestChannel(automationSettings, 'tz.generated.react', payload);
+            integrationsOk = integrationsOk && ok;
+          }
+          if (platformSettings.autoSendDraft) {
+            const draftEndpoint = platformSettings.endpoint || '/api/v1/integration/draft';
+            const ok = await postPlatformDraft(
+              draftEndpoint,
+              platformSettings.apiToken,
+              payload,
+              { profile: platformSettings.profile }
+            );
+            integrationsOk = integrationsOk && ok;
+          }
+          if (platformSettings.autoExport) {
+            if (complianceBlocksExports) {
+              appendAutomationLog({
+                at: new Date().toISOString(),
+                event: 'platform.auto_export',
+                ok: false,
+                note: `blocked_by_compliance score=${report.score}/${report.minScore}`,
+              });
+            } else {
+              try {
+                const exported = exportPackage(next);
+                integrationsOk = integrationsOk && exported;
+                appendAutomationLog({ at: new Date().toISOString(), event: 'platform.auto_export', ok: exported });
+              } catch {
+                integrationsOk = false;
+                appendAutomationLog({ at: new Date().toISOString(), event: 'platform.auto_export', ok: false });
+              }
+            }
+          }
+          if (shouldRunEnterpriseAutopilot) {
+            try {
+              const enterprise = await runEnterpriseAutopilot(
+                payload as Record<string, unknown>,
+                enterpriseSettings as unknown as Record<string, unknown>,
+              );
+              const ok = !!enterprise?.result?.ok && (enterprise?.result?.stages_failed ?? 0) === 0;
+              integrationsOk = integrationsOk && ok;
+              appendAutomationLog({
+                at: new Date().toISOString(),
+                event: 'enterprise.autopilot',
+                ok,
+                note: `stages=${enterprise?.result?.stages_total ?? 0}; failed=${enterprise?.result?.stages_failed ?? 0}; queued=${enterprise?.result?.queued_retry_records?.length ?? 0}`,
+              });
+            } catch (e) {
+              integrationsOk = false;
+              appendAutomationLog({
+                at: new Date().toISOString(),
+                event: 'enterprise.autopilot',
+                ok: false,
+                note: e instanceof Error ? e.message.slice(0, 180) : 'enterprise_autopilot_failed',
+              });
+            }
+          }
+          const automationQueueResult = await flushAutomationQueue(automationSettings);
+          integrationsOk = integrationsOk && automationQueueResult.remaining === 0;
+          if (platformSettings.autoFlushQueue) {
+            const draftEndpoint = platformSettings.endpoint || '/api/v1/integration/draft';
+            const platformQueueResult = await flushPlatformQueue(
+              draftEndpoint,
+              platformSettings.apiToken,
+              platformSettings.profile
+            );
+            integrationsOk = integrationsOk && platformQueueResult.remaining === 0;
+          }
+        } else {
+          appendAutomationLog({
+            at: new Date().toISOString(),
+            event: 'compliance.antifas.blocked_integrations',
+            ok: false,
+            note: `score=${report.score}; min=${report.minScore}`,
+          });
+          if (enterpriseSettings.immutableAudit) {
+            appendImmutableAudit('compliance.antifas.blocked_integrations', {
+              score: report.score,
+              minScore: report.minScore,
+              critical: report.critical,
+            });
           }
         }
 
-        const doneRows = next.filter((r) => r.status === 'done');
         const totalSpecs = doneRows.reduce((s, r) => s + (r.specs?.length ?? 0), 0);
         const eventName = autopilotEnabled ? 'react.autopilot' : 'react.generate';
         appendAutomationLog({
@@ -883,7 +1101,9 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
         setDocxReady(doneRows.length > 0);
         if (doneRows.length > 0) {
           const prefix = autopilotEnabled ? 'Автопилот завершён' : 'ТЗ сформировано';
-          if (integrationsOk) {
+          if (complianceBlocksIntegrations) {
+            showToast(`⚠️ ${prefix}, но интеграции заблокированы Anti-ФАС (score ${report.score}/${report.minScore})`, false);
+          } else if (integrationsOk) {
             showToast(`✅ ${prefix}: ${doneRows.length} позиц., ${totalSpecs} характеристик`);
           } else {
             showToast(`⚠️ ${prefix}, но часть интеграций не отправлена`, false);
@@ -946,6 +1166,7 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
     const done = next.filter((r) => r.status === 'done');
     const totalSpecs = done.reduce((s, r) => s + (r.specs?.length ?? 0), 0);
     if (done.length > 0) {
+      runComplianceGate(next);
       setDocxReady(true);
       showToast(`✅ Характеристики добавлены в ТЗ: ${totalSpecs} параметров`);
       scrollToPreview();
@@ -958,7 +1179,7 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
         false
       );
     }
-  }, [useBackend, rows, apiKey, fetchInternetCandidateForRow, showToast, scrollToPreview]);
+  }, [useBackend, rows, apiKey, fetchInternetCandidateForRow, runComplianceGate, showToast, scrollToPreview]);
 
   // ── Найти ТЗ в ЕИС (zakupki.gov.ru) ─────────────────────────────────────────
   const searchZakupki = useCallback(async () => {
@@ -993,6 +1214,7 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
     const done2 = next.filter((r) => r.status === 'done');
     const totalSpecs2 = done2.reduce((s, r) => s + (r.specs?.length ?? 0), 0);
     if (done2.length > 0) {
+      runComplianceGate(next);
       setDocxReady(true);
       showToast(`✅ Данные из ЕИС добавлены в ТЗ: ${totalSpecs2} характеристик`);
       scrollToPreview();
@@ -1005,9 +1227,25 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
         false
       );
     }
-  }, [useBackend, rows, apiKey, fetchEisCandidateForRow, showToast, scrollToPreview]);
+  }, [useBackend, rows, apiKey, fetchEisCandidateForRow, runComplianceGate, showToast, scrollToPreview]);
 
   const exportDocx = async () => {
+    if (exportsBlockedByCompliance && complianceReport) {
+      showToast(`❌ Экспорт DOCX заблокирован Anti-ФАС: score ${complianceReport.score}/${complianceReport.minScore}`, false);
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event: 'compliance.antifas.blocked_export_docx',
+        ok: false,
+        note: `score=${complianceReport.score}; min=${complianceReport.minScore}`,
+      });
+      if (enterpriseSettings.immutableAudit) {
+        appendImmutableAudit('compliance.antifas.blocked_export_docx', {
+          score: complianceReport.score,
+          minScore: complianceReport.minScore,
+        });
+      }
+      return;
+    }
     try {
       const blob = await buildDocx(rows, lawMode);
       const date = new Date().toISOString().slice(0, 10);
@@ -1019,6 +1257,22 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
   };
 
   const exportPdf = () => {
+    if (exportsBlockedByCompliance && complianceReport) {
+      showToast(`❌ Экспорт PDF заблокирован Anti-ФАС: score ${complianceReport.score}/${complianceReport.minScore}`, false);
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event: 'compliance.antifas.blocked_export_pdf',
+        ok: false,
+        note: `score=${complianceReport.score}; min=${complianceReport.minScore}`,
+      });
+      if (enterpriseSettings.immutableAudit) {
+        appendImmutableAudit('compliance.antifas.blocked_export_pdf', {
+          score: complianceReport.score,
+          minScore: complianceReport.minScore,
+        });
+      }
+      return;
+    }
     const doc = new jsPDF({ unit: 'pt', format: 'a4', putOnlyUsedFonts: true });
     const margin = 40;
     const maxWidth = doc.internal.pageSize.getWidth() - margin * 2;
@@ -1042,7 +1296,7 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
 
     for (const row of rows.filter((r) => r.status === 'done' && r.specs)) {
       const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
-      addLine(`\n=== ${g.name} — ${row.model} (${row.qty} шт.) ===`, true);
+      addLine(`\n=== ${g.name} (${row.qty} шт.) ===`, true);
 
       // Раздел 2
       addLine('\n2. Требования к качеству и безопасности', true);
@@ -1114,7 +1368,7 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
                   <tr><th colSpan={2} style={{ border: '1px solid #ccc', padding: '4px 8px', background: '#1F5C8B', color: '#fff', textAlign: 'center' }}>Наименование, Заказчик, Исполнитель, сроки и адрес поставки</th></tr>
                 </thead>
                 <tbody>
-                  <tr><td style={tdL}>Наименование объекта поставки:</td><td style={tdR}>{g.name}{row.model ? '\n' + row.model : ''}</td></tr>
+                  <tr><td style={tdL}>Наименование объекта поставки:</td><td style={tdR}>{g.name}</td></tr>
                   <tr><td style={tdL}>Заказчик:</td><td style={tdR}></td></tr>
                   <tr><td style={tdL}>Исполнитель:</td><td style={tdR}>Определяется по результатам закупочных процедур</td></tr>
                   <tr><td style={tdL}>Код ОКПД2:</td><td style={tdR}>{okpd2Code}{okpd2Name ? ' — ' + okpd2Name : ''}</td></tr>
@@ -1218,7 +1472,7 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
                 <p style={pStyle}>Ограничения по стране происхождения для данного вида товара не установлены. Страна происхождения указывается в товаросопроводительных документах.</p>
               )}
               {['pc','laptop','monoblock','server','tablet','thinClient'].includes(row.type) && (
-                <p style={pStyle}>Товар должен быть совместим с отечественными операционными системами, включёнными в Единый реестр российских программ для ЭВМ и баз данных Министерства цифрового развития, связи и массовых коммуникаций РФ, в том числе: Astra Linux Special Edition, ALT Linux, РЕД ОС или эквивалентными (ч. 3 ст. 33 Федерального закона от 05.04.2013 № 44-ФЗ).</p>
+                <p style={pStyle}>Товар должен быть совместим с отечественными операционными системами, включёнными в Единый реестр российских программ для ЭВМ и баз данных Министерства цифрового развития, связи и массовых коммуникаций РФ, или эквивалентными (ч. 3 ст. 33 Федерального закона от 05.04.2013 № 44-ФЗ).</p>
               )}
 
               {/* Пусконаладочные работы */}
@@ -1375,7 +1629,8 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
                         aria-label={showApiKey ? 'Скрыть API-ключ' : 'Показать API-ключ'}
                         title={showApiKey ? 'Скрыть ключ' : 'Показать ключ'}
                       >
-                        {showApiKey ? 'Скрыть' : 'Показать'}
+                        <EyeIcon open={showApiKey} />
+                        <span className="sr-only">{showApiKey ? 'Скрыть' : 'Показать'}</span>
                       </button>
                     </div>
                   </label>
@@ -1417,7 +1672,8 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
                         aria-label={showApiKey ? 'Скрыть API-ключ' : 'Показать API-ключ'}
                         title={showApiKey ? 'Скрыть ключ' : 'Показать ключ'}
                       >
-                        {showApiKey ? 'Скрыть' : 'Показать'}
+                        <EyeIcon open={showApiKey} />
+                        <span className="sr-only">{showApiKey ? 'Скрыть' : 'Показать'}</span>
                       </button>
                     </div>
                   </label>
@@ -1520,6 +1776,32 @@ export function Workspace({ automationSettings, platformSettings, backendUser }:
           </tbody>
         </table>
       </div>
+
+      {complianceReport && (
+        <div className={`compliance-box ${complianceReport.blocked ? 'is-blocked' : 'is-ok'}`}>
+          <div className="compliance-head">
+            <strong>
+              Anti-ФАС score: {complianceReport.score}/{complianceReport.minScore}
+            </strong>
+            <span className={complianceReport.blocked ? 'warn' : 'ok'}>
+              {complianceReport.blocked ? 'Блокирующие нарушения' : 'Комплаенс пройден'}
+            </span>
+          </div>
+          <div className="muted">
+            Критичных: {complianceReport.critical} · Существенных: {complianceReport.major} · Незначительных: {complianceReport.minor}
+          </div>
+          {complianceReport.issues.length > 0 && (
+            <div className="compliance-list">
+              {complianceReport.issues.slice(0, 8).map((issue, idx) => (
+                <div className="compliance-item" key={`${issue.rowId}-${idx}`}>
+                  <span className={`compliance-sev ${issue.severity}`}>{issue.severity}</span>
+                  <span>Строка #{issue.rowId}, «{issue.specName || 'характеристика'}»: {issue.reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Кнопки действий */}
       <div className="actions">

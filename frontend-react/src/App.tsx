@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { AutomationPanel } from './components/AutomationPanel';
+import { EnterprisePanel } from './components/EnterprisePanel';
 import { PlatformPanel } from './components/PlatformPanel';
 import { EventLog } from './components/EventLog';
 import { Workspace } from './components/Workspace';
-import { postPlatformDraft, postWebhook } from './lib/api';
+import {
+  flushAutomationQueue,
+  flushPlatformQueue,
+  getAutomationQueueSize,
+  getPlatformQueueSize,
+  postPlatformDraft,
+  postWebhook,
+} from './lib/api';
 import {
   sendMagicLink,
   verifyMagicToken,
@@ -15,16 +23,19 @@ import {
 } from './lib/backendApi';
 import {
   appendAutomationLog,
+  appendImmutableAudit,
   clearAutomationLog,
   exportLearningMap,
   getAutomationLog,
   getAutomationSettings,
+  getEnterpriseSettings,
   getPlatformSettings,
   importLearningMap,
   setAutomationSettings,
+  setEnterpriseSettings,
   setPlatformSettings
 } from './lib/storage';
-import type { AutomationSettings, PlatformIntegrationSettings } from './types/schemas';
+import type { AutomationSettings, EnterpriseSettings, PlatformIntegrationSettings } from './types/schemas';
 
 type UiTheme = 'sapphire' | 'contrast';
 
@@ -42,6 +53,7 @@ export function App() {
   const backendAvailable = isBackendApiAvailable();
   const [automationSettings, setAutomationState] = useState<AutomationSettings>(getAutomationSettings());
   const [platformSettings, setPlatformState] = useState<PlatformIntegrationSettings>(getPlatformSettings());
+  const [enterpriseSettings, setEnterpriseState] = useState<EnterpriseSettings>(getEnterpriseSettings());
   const [refreshTick, setRefreshTick] = useState(0);
   const [theme, setTheme] = useState<UiTheme>(() => {
     try {
@@ -121,6 +133,10 @@ export function App() {
   };
 
   const events = useMemo(() => getAutomationLog(), [refreshTick]);
+  const queueStats = useMemo(() => ({
+    automation: getAutomationQueueSize(),
+    platform: getPlatformQueueSize(),
+  }), [refreshTick]);
 
   const webhookMutation = useMutation({
     mutationFn: async () => {
@@ -141,15 +157,31 @@ export function App() {
         app: 'tz_generator_react',
         event: 'draft.send',
         at: new Date().toISOString(),
-        law: '44-FZ',
+        law: platformSettings.profile === 'eis_223' ? '223-FZ' : '44-FZ',
         profile: platformSettings.profile,
+        procurementMethod: platformSettings.procurementMethod,
         organization: platformSettings.orgName,
         customerInn: platformSettings.customerInn,
         items: []
       };
-      return postPlatformDraft(platformSettings.endpoint, platformSettings.apiToken, payload);
+      const endpoint = platformSettings.endpoint || '/api/v1/integration/draft';
+      return postPlatformDraft(endpoint, platformSettings.apiToken, payload, { profile: platformSettings.profile });
     },
     onSuccess: () => setRefreshTick((x) => x + 1)
+  });
+
+  const flushAutomationMutation = useMutation({
+    mutationFn: async () => flushAutomationQueue(automationSettings),
+    onSuccess: () => setRefreshTick((x) => x + 1),
+  });
+
+  const flushPlatformMutation = useMutation({
+    mutationFn: async () => flushPlatformQueue(
+      platformSettings.endpoint || '/api/v1/integration/draft',
+      platformSettings.apiToken,
+      platformSettings.profile
+    ),
+    onSuccess: () => setRefreshTick((x) => x + 1),
   });
 
   const handleSaveAutomation = (next: AutomationSettings) => {
@@ -166,6 +198,58 @@ export function App() {
     setRefreshTick((x) => x + 1);
   };
 
+  const handleSaveEnterprise = (next: EnterpriseSettings) => {
+    setEnterpriseState(next);
+    setEnterpriseSettings(next);
+    appendAutomationLog({ at: new Date().toISOString(), event: 'enterprise.settings.saved', ok: true });
+    if (next.immutableAudit) {
+      appendImmutableAudit('enterprise.settings.saved', {
+        simulationMode: next.simulationMode,
+        antiFasStrictMode: next.antiFasStrictMode,
+        antiFasMinScore: next.antiFasMinScore,
+        deploymentMode: next.deploymentMode,
+      });
+    }
+    setRefreshTick((x) => x + 1);
+  };
+
+  useEffect(() => {
+    let running = false;
+    const timer = window.setInterval(() => {
+      if (running) return;
+      running = true;
+      (async () => {
+        try {
+          let touched = false;
+          if (getAutomationQueueSize() > 0) {
+            const result = await flushAutomationQueue(automationSettings);
+            touched = touched || result.sent > 0 || result.remaining > 0;
+          }
+          if (platformSettings.autoFlushQueue && getPlatformQueueSize() > 0) {
+            const result = await flushPlatformQueue(
+              platformSettings.endpoint || '/api/v1/integration/draft',
+              platformSettings.apiToken,
+              platformSettings.profile
+            );
+            touched = touched || result.sent > 0 || result.remaining > 0;
+          }
+          if (touched) {
+            setRefreshTick((x) => x + 1);
+          }
+        } finally {
+          running = false;
+        }
+      })();
+    }, 45000);
+    return () => window.clearInterval(timer);
+  }, [
+    automationSettings,
+    platformSettings.autoFlushQueue,
+    platformSettings.apiToken,
+    platformSettings.endpoint,
+    platformSettings.profile,
+  ]);
+
   const backendTierLabel = backendUser
     ? (backendUser.role === 'admin'
       ? 'Admin'
@@ -173,6 +257,18 @@ export function App() {
         ? 'Pro'
         : `Free (${backendUser.tz_count}/${backendUser.tz_limit})`)
     : '';
+
+  const themeNote = theme === 'contrast'
+    ? {
+      label: 'Amber Pulse',
+      title: 'Контрастный режим для интенсивной работы',
+      description: 'Тот же функционал проекта с акцентом на янтарно-киановую палитру, более яркие маркеры состояния и повышенную читаемость рабочих блоков.',
+    }
+    : {
+      label: 'Sapphire Sovereign',
+      title: 'Тихий интерфейс для тяжёлых закупочных задач',
+      description: 'Оставили текущую бизнес-логику проекта и компоненты, но перевели оболочку в более “классический” premium-стиль с акцентом на рабочую область.',
+    };
 
   return (
     <main className="layout sovereign-layout">
@@ -235,7 +331,7 @@ export function App() {
           onClick={() => setTheme('contrast')}
           aria-pressed={theme === 'contrast'}
         >
-          Контраст
+          Янтарь
         </button>
       </div>
 
@@ -326,9 +422,9 @@ export function App() {
 
       <section className="sov-note section-fade section-delay-1">
         <div>
-          <div className="micro-label">Sapphire Sovereign</div>
-          <h2>Тихий интерфейс для тяжёлых закупочных задач</h2>
-          <p>Оставили текущую бизнес-логику проекта и компоненты, но перевели оболочку в более “классический” premium-стиль с акцентом на рабочую область.</p>
+          <div className="micro-label">{themeNote.label}</div>
+          <h2>{themeNote.title}</h2>
+          <p>{themeNote.description}</p>
         </div>
         <div className="sov-note-tags" aria-label="Возможности">
           <span>DeepSeek / OpenRouter / Groq</span>
@@ -341,6 +437,7 @@ export function App() {
         <Workspace
           automationSettings={automationSettings}
           platformSettings={platformSettings}
+          enterpriseSettings={enterpriseSettings}
           backendUser={backendUser}
         />
       </div>
@@ -382,6 +479,11 @@ export function App() {
               });
               setRefreshTick((x) => x + 1);
             }}
+            queueSize={queueStats.automation}
+            onFlushQueue={async () => {
+              await flushAutomationMutation.mutateAsync();
+            }}
+            flushPending={flushAutomationMutation.isPending}
           />
 
           <PlatformPanel
@@ -395,6 +497,7 @@ export function App() {
                 app: 'tz_generator_react',
                 exportedAt: new Date().toISOString(),
                 profile: platformSettings.profile,
+                procurementMethod: platformSettings.procurementMethod,
                 law: platformSettings.profile === 'eis_223' ? '223-FZ' : '44-FZ',
                 organization: platformSettings.orgName,
                 customerInn: platformSettings.customerInn,
@@ -404,6 +507,16 @@ export function App() {
               appendAutomationLog({ at: new Date().toISOString(), event: 'platform.export', ok: true });
               setRefreshTick((x) => x + 1);
             }}
+            queueSize={queueStats.platform}
+            onFlushQueue={async () => {
+              await flushPlatformMutation.mutateAsync();
+            }}
+            flushPending={flushPlatformMutation.isPending}
+          />
+
+          <EnterprisePanel
+            value={enterpriseSettings}
+            onSave={handleSaveEnterprise}
           />
         </div>
       </section>

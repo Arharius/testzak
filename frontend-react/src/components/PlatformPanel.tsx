@@ -10,9 +10,20 @@ type Props = {
   onSave: (next: PlatformIntegrationSettings) => void;
   onSendDraft: () => Promise<void>;
   onExportPack: () => void;
+  queueSize: number;
+  onFlushQueue: () => Promise<void>;
+  flushPending?: boolean;
 };
 
-export function PlatformPanel({ value, onSave, onSendDraft, onExportPack }: Props) {
+export function PlatformPanel({
+  value,
+  onSave,
+  onSendDraft,
+  onExportPack,
+  queueSize,
+  onFlushQueue,
+  flushPending,
+}: Props) {
   const form = useForm<PlatformIntegrationSettings>({
     resolver: zodResolver(platformIntegrationSchema),
     defaultValues: value,
@@ -40,17 +51,28 @@ export function PlatformPanel({ value, onSave, onSendDraft, onExportPack }: Prop
         </label>
         <label>
           Endpoint коннектора
-          <input {...form.register('endpoint')} placeholder="https://connector.example/api/eis/drafts" />
+          <input {...form.register('endpoint')} placeholder="(пусто = текущий /api/v1/integration/draft)" />
+        </label>
+        <label>
+          Способ закупки
+          <select {...form.register('procurementMethod')}>
+            <option value="auction">Аукцион</option>
+            <option value="tender">Конкурс</option>
+            <option value="quotation">Запрос котировок</option>
+            <option value="proposal_request">Запрос предложений</option>
+            <option value="single_supplier">Единственный поставщик</option>
+          </select>
         </label>
         <label>
           API токен
-          <input {...form.register('apiToken')} placeholder="Bearer token" />
+          <input {...form.register('apiToken')} placeholder="token (можно с Bearer)" />
         </label>
         <label>
           ИНН
           <input {...form.register('customerInn')} placeholder="7700000000" />
         </label>
       </div>
+      <div className="muted">Если endpoint пустой, черновик отправляется в `/api/v1/integration/draft` текущего домена.</div>
       <label>
         Организация
         <input {...form.register('orgName')} placeholder="Наименование заказчика" />
@@ -58,11 +80,16 @@ export function PlatformPanel({ value, onSave, onSendDraft, onExportPack }: Prop
       <div className="checks">
         <label><input type="checkbox" {...form.register('autoExport')} /> Автоэкспорт пакета после генерации</label>
         <label><input type="checkbox" {...form.register('autoSendDraft')} /> Автоотправка черновика в коннектор</label>
+        <label><input type="checkbox" {...form.register('autoFlushQueue')} /> Автоповтор очереди коннектора</label>
       </div>
+      <div className="muted">Очередь коннектора: {queueSize}</div>
       <div className="actions">
         <button onClick={form.handleSubmit(onSave)} type="button">Сохранить профиль</button>
         <button onClick={onExportPack} type="button">Экспорт пакета</button>
         <button onClick={() => void onSendDraft()} type="button">Отправить черновик</button>
+        <button onClick={() => void onFlushQueue()} type="button" disabled={flushPending}>
+          {flushPending ? 'Повтор...' : 'Повторить очередь'}
+        </button>
       </div>
     </section>
   );

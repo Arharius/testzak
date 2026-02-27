@@ -2,18 +2,31 @@ import {
   automationEventSchema,
   automationSettingsSchema,
   defaultAutomationSettings,
+  defaultEnterpriseSettings,
   defaultPlatformSettings,
+  enterpriseSettingsSchema,
   platformIntegrationSchema,
   type AutomationEvent,
   type AutomationSettings,
+  type EnterpriseSettings,
   type PlatformIntegrationSettings
 } from '../types/schemas';
 
 const KEYS = {
   automationSettings: 'tz_automation_settings_v1',
   platformSettings: 'tz_platform_integration_settings_v1',
+  enterpriseSettings: 'tz_enterprise_settings_v1',
   automationLog: 'tz_automation_log_v1',
-  learnedTypeMap: 'tz_learned_type_map_v1'
+  learnedTypeMap: 'tz_learned_type_map_v1',
+  immutableAudit: 'tz_immutable_audit_v1',
+};
+
+export type ImmutableAuditRecord = {
+  at: string;
+  action: string;
+  payload: Record<string, unknown>;
+  prevHash: string;
+  hash: string;
 };
 
 function readJson<T>(key: string, fallback: T): T {
@@ -39,7 +52,26 @@ export function getAutomationSettings(): AutomationSettings {
   const parsed = automationSettingsSchema.safeParse(
     readJson(KEYS.automationSettings, defaultAutomationSettings)
   );
-  return parsed.success ? parsed.data : defaultAutomationSettings;
+  const data = parsed.success ? parsed.data : defaultAutomationSettings;
+  const looksUnconfigured =
+    !data.webhookUrl &&
+    !data.backendApiBase &&
+    !data.backendApiToken &&
+    !data.autoSend &&
+    !data.autopilot &&
+    !data.useBackendQueueApi;
+  if (looksUnconfigured) {
+    const upgraded: AutomationSettings = {
+      ...data,
+      useBackendQueueApi: true,
+      autoSend: true,
+      autopilot: true,
+      autoPickTopCandidate: true,
+    };
+    writeJson(KEYS.automationSettings, upgraded);
+    return upgraded;
+  }
+  return data;
 }
 
 export function setAutomationSettings(value: AutomationSettings): void {
@@ -50,11 +82,37 @@ export function getPlatformSettings(): PlatformIntegrationSettings {
   const parsed = platformIntegrationSchema.safeParse(
     readJson(KEYS.platformSettings, defaultPlatformSettings)
   );
-  return parsed.success ? parsed.data : defaultPlatformSettings;
+  const data = parsed.success ? parsed.data : defaultPlatformSettings;
+  const looksUnconfigured =
+    !data.endpoint &&
+    !data.apiToken &&
+    !data.customerInn &&
+    !data.orgName &&
+    !data.autoSendDraft;
+  if (looksUnconfigured) {
+    const upgraded: PlatformIntegrationSettings = {
+      ...data,
+      autoSendDraft: true,
+    };
+    writeJson(KEYS.platformSettings, upgraded);
+    return upgraded;
+  }
+  return data;
 }
 
 export function setPlatformSettings(value: PlatformIntegrationSettings): void {
   writeJson(KEYS.platformSettings, value);
+}
+
+export function getEnterpriseSettings(): EnterpriseSettings {
+  const parsed = enterpriseSettingsSchema.safeParse(
+    readJson(KEYS.enterpriseSettings, defaultEnterpriseSettings)
+  );
+  return parsed.success ? parsed.data : defaultEnterpriseSettings;
+}
+
+export function setEnterpriseSettings(value: EnterpriseSettings): void {
+  writeJson(KEYS.enterpriseSettings, value);
 }
 
 export function getAutomationLog(): AutomationEvent[] {
@@ -89,4 +147,35 @@ export function importLearningMap(raw: string): { ok: boolean; count: number } {
   } catch {
     return { ok: false, count: 0 };
   }
+}
+
+function hashString(input: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
+  }
+  return `h${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+export function getImmutableAuditLog(): ImmutableAuditRecord[] {
+  const raw = readJson<ImmutableAuditRecord[]>(KEYS.immutableAudit, []);
+  return Array.isArray(raw) ? raw : [];
+}
+
+export function appendImmutableAudit(action: string, payload: Record<string, unknown>): ImmutableAuditRecord {
+  const list = getImmutableAuditLog();
+  const at = new Date().toISOString();
+  const prevHash = list.length ? list[list.length - 1].hash : 'genesis';
+  const base = JSON.stringify({ at, action, payload, prevHash });
+  const record: ImmutableAuditRecord = {
+    at,
+    action,
+    payload,
+    prevHash,
+    hash: hashString(base),
+  };
+  list.push(record);
+  writeJson(KEYS.immutableAudit, list.slice(-5000));
+  return record;
 }

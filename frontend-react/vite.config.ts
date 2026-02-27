@@ -1,9 +1,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// NETLIFY_BUILD=1 or NETLIFY=true → base '/', otherwise '/testzak/' (GH Pages)
-const isNetlify = !!(process.env.NETLIFY || process.env.NETLIFY_BUILD);
-const base = isNetlify ? '/' : '/testzak/';
+// Hosted builds (Netlify/Vercel) use root base. Local GH Pages flow keeps /testzak/.
+const isHostedBuild = !!(
+  process.env.NETLIFY ||
+  process.env.NETLIFY_BUILD ||
+  process.env.VERCEL ||
+  process.env.VERCEL_ENV
+);
+const base = isHostedBuild ? '/' : '/testzak/';
 
 export default defineConfig({
   base,

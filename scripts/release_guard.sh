@@ -14,6 +14,7 @@ make test
 
 echo "[3/5] python syntax check"
 python3 -m py_compile backend/app.py
+python3 -m py_compile backend/main.py backend/auth.py backend/database.py backend/search.py
 
 echo "[4/5] backend smoke"
 bash scripts/backend_smoke.sh

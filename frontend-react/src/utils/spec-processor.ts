@@ -8,7 +8,7 @@ export interface SpecItem {
   [key: string]: unknown;
 }
 
-const BRAND_PATTERN   = /\b(Intel|AMD|Nvidia|Samsung|Micron|Kingston|WD|Western Digital|Seagate|Toshiba|Qualcomm|Broadcom|Realtek|Marvell|Mellanox|Hynix|SK Hynix)\b/i;
+const BRAND_TOKEN_PATTERN = /\b(Intel|AMD|Nvidia|Samsung|Micron|Kingston|WD|Western\s+Digital|Seagate|Toshiba|Qualcomm|Broadcom|Realtek|Marvell|Mellanox|Hynix|SK\s*Hynix|Lenovo|Huawei|Cisco|Dell|Acer|Asus|Apple|MSI|Gigabyte|Supermicro|HP|HPE|Интел|Самсунг|Леново|Хуавей|Делл)\b/gi;
 const MAX_PARAMS      = ['вес', 'масса', 'толщина', 'высота корпуса', 'уровень шума'];
 const BATTERY_PARAMS  = ['ёмкость аккумулятора', 'емкость аккумулятора', 'ёмкость батареи', 'емкость батареи', 'аккумулятор'];
 const SOCKET_PATTERN  = /\b(LGA\s*\d{3,4}|AM[345][+]?|FM[12]|BGA\s*\d+)\b/i;
@@ -17,17 +17,36 @@ const RESOLUTION_PARAMS = ['разрешение экрана', 'разреше�
 const MATRIX_PARAMS   = ['тип матрицы', 'матрица', 'тип экрана', 'тип дисплея', 'тип панели'];
 const RAM_TYPE_PARAMS = ['тип памяти', 'тип озу', 'тип оперативной'];
 
+function stripBrandWords(raw: string): { text: string; changed: boolean } {
+  const source = String(raw || '');
+  let text = source;
+  text = text.replace(BRAND_TOKEN_PATTERN, ' ');
+  text = text.replace(/[«»"]/g, ' ');
+  text = text.replace(/\s{2,}/g, ' ').trim();
+  text = text.replace(/^[,;:.\-]+|[,;:.\-]+$/g, '').trim();
+  return { text, changed: text !== source };
+}
+
 export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
   return specs.map((item) => {
+    let name = String(item.name ?? '');
+    let group = String(item.group ?? '');
     let value = String(item.value ?? '');
     let unit  = String(item.unit  ?? '');
-    const nameLower  = String(item.name  ?? '').toLowerCase();
-    const groupLower = String(item.group ?? '').toLowerCase();
 
-    // 1. Торговые марки без «или эквивалент»
-    if (BRAND_PATTERN.test(value) && !/или эквивалент/i.test(value)) {
-      value = value + ' или эквивалент';
+    const nameStripped = stripBrandWords(name);
+    const groupStripped = stripBrandWords(group);
+    const valueStripped = stripBrandWords(value);
+    name = nameStripped.text;
+    group = groupStripped.text;
+    value = valueStripped.text;
+    if (valueStripped.changed && !value) {
+      value = 'эквивалент';
+      (item as SpecItem)._fixed = true;
     }
+
+    const nameLower  = name.toLowerCase();
+    const groupLower = group.toLowerCase();
 
     // 2. Сокет процессора — предупреждение (нарушает ст. 33 44-ФЗ)
     if (
@@ -116,7 +135,7 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
     value = value.replace(/(?<!не )более\s+/gi, 'не менее ');
     value = value.replace(/(?<!не )менее\s+/gi, 'не более ');
 
-    return { ...item, value, unit };
+    return { ...item, group, name, value, unit };
   });
 }
 

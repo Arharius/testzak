@@ -9,9 +9,19 @@
 // allows Netlify to proxy API calls to the backend service.
 const VITE_ENV = ((import.meta as any)?.env ?? {}) as Record<string, unknown>;
 export const BACKEND_URL = (String(VITE_ENV.VITE_BACKEND_URL || '')).replace(/\/$/, '');
+const NON_LATIN1_RE = /[^\x00-\xff]/;
 
 function buildApiUrl(path: string): string {
   return `${BACKEND_URL}${path}`;
+}
+
+function normalizeBearerToken(value: string): string {
+  const cleaned = String(value || '').trim().replace(/[\r\n]+/g, ' ');
+  if (!cleaned) return '';
+  if (NON_LATIN1_RE.test(cleaned)) {
+    throw new Error('Токен авторизации содержит недопустимые символы. Выйдите и войдите заново.');
+  }
+  return cleaned.replace(/^bearer\s+/i, '').trim();
 }
 
 export function isBackendApiAvailable(): boolean {
@@ -58,7 +68,8 @@ async function apiPost<T>(path: string, body: object, auth: boolean | 'optional'
   if (auth) {
     const token = getStoredToken();
     if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+      const safeToken = normalizeBearerToken(token);
+      if (safeToken) headers['Authorization'] = `Bearer ${safeToken}`;
     } else if (auth !== 'optional') {
       throw new Error('Требуется авторизация');
     }
@@ -74,7 +85,9 @@ async function apiGet<T>(path: string, auth = false): Promise<T> {
   if (auth) {
     const token = getStoredToken();
     if (!token) throw new Error('Требуется авторизация');
-    headers['Authorization'] = `Bearer ${token}`;
+    const safeToken = normalizeBearerToken(token);
+    if (!safeToken) throw new Error('Требуется авторизация');
+    headers['Authorization'] = `Bearer ${safeToken}`;
   }
   const resp = await fetch(buildApiUrl(path), { headers });
   const data = await resp.json();
@@ -156,4 +169,55 @@ export async function createPayment(plan: 'pro' | 'annual'): Promise<{
   status: string;
 }> {
   return apiPost('/api/payment/create', { plan }, true);
+}
+
+// ── Enterprise automation hub ──────────────────────────────────────────────
+
+export type EnterpriseAutopilotStage = {
+  name: string;
+  ok: boolean;
+  detail: string;
+  data?: Record<string, unknown>;
+};
+
+export type EnterpriseAutopilotResult = {
+  ok: boolean;
+  stages_total: number;
+  stages_success: number;
+  stages_failed: number;
+  stages_skipped: number;
+  queued_retry_records: string[];
+  stages: EnterpriseAutopilotStage[];
+};
+
+export async function getEnterpriseHealth(): Promise<{
+  ok: boolean;
+  access: string;
+  queue_total: number;
+  history_total: number;
+  enterprise_status_total: number;
+}> {
+  return apiGet('/api/v1/enterprise/health', true);
+}
+
+export async function runEnterpriseAutopilot(
+  payload: Record<string, unknown>,
+  settings: Record<string, unknown>,
+  procedureId = '',
+): Promise<{
+  ok: boolean;
+  access: string;
+  result: EnterpriseAutopilotResult;
+  immutable_audit?: { at: string; action: string; prev_hash: string; hash: string } | null;
+}> {
+  return apiPost(
+    '/api/v1/enterprise/autopilot',
+    {
+      payload,
+      settings,
+      procedure_id: procedureId,
+      idempotency_key: `enterprise-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    },
+    true,
+  );
 }

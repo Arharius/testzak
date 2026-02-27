@@ -1,0 +1,16 @@
+{
+  "name": "tz_generator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "docx.min.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

@@ -28,6 +28,7 @@ INTEGRATION_API_TOKEN = (
     or os.getenv("BACKEND_API_TOKEN", "").strip()
     or os.getenv("TZ_BACKEND_API_TOKEN", "").strip()
 )
+INTEGRATION_ALLOW_ANON = os.getenv("INTEGRATION_ALLOW_ANON", "").strip().lower() in {"1", "true", "yes", "on"}
 AI_PROXY_API_TOKEN = (
     os.getenv("AI_PROXY_API_TOKEN", "").strip()
     or INTEGRATION_API_TOKEN
@@ -216,7 +217,13 @@ def _extract_request_token(request: FastAPIRequest) -> str:
 
 def require_api_token(request: FastAPIRequest, expected_token: str, scope: str) -> None:
     if not expected_token:
-        return
+        if scope == "integration" and INTEGRATION_ALLOW_ANON:
+            return
+        raise HTTPException(
+            status_code=401,
+            detail=f"{scope}_auth_required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     got = _extract_request_token(request)
     if got and hmac.compare_digest(got, expected_token):
         return
@@ -405,6 +412,7 @@ def health() -> dict[str, Any]:
         "history": len(store.get("history", [])),
         "target_configured": bool(TARGET_WEBHOOK_URL),
         "integration_auth_configured": bool(INTEGRATION_API_TOKEN),
+        "integration_allow_anon": INTEGRATION_ALLOW_ANON,
         "ai_proxy_auth_configured": bool(AI_PROXY_API_TOKEN),
         "ai_proxy_configured_providers": [
             name

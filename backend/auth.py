@@ -3,7 +3,11 @@ from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import jwt
-from database import User, MagicToken, get_db
+
+try:
+    from .database import User, MagicToken, get_db  # type: ignore
+except ImportError:
+    from database import User, MagicToken, get_db
 
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-prod")
 JWT_ALGORITHM = "HS256"

@@ -7,9 +7,11 @@ import os
 import json
 import logging
 import asyncio
+import re
+from html import unescape
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, parse_qs, unquote, urlparse
 from html.parser import HTMLParser
 from typing import Any
 
@@ -93,6 +95,46 @@ def _serper_search(query: str, num: int = 5) -> list[dict]:
     except Exception as e:
         logger.error(f"Serper search error: {e}")
         return []
+
+
+def _strip_tags(text: str) -> str:
+    return re.sub(r"<[^>]+>", " ", text or "").replace("\n", " ").strip()
+
+
+def _duckduckgo_search(query: str, num: int = 5) -> list[dict]:
+    """
+    Keyless fallback search for specs when SERPER_API_KEY is unavailable.
+    Uses DuckDuckGo HTML results page and extracts top links/snippets.
+    """
+    url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
+    html = _fetch_url(url, timeout=15)
+    if not html:
+        return []
+
+    results: list[dict] = []
+    blocks = re.findall(r"<div class=\"result.*?</div>\s*</div>", html, flags=re.S)
+    for block in blocks:
+        if len(results) >= max(1, num):
+            break
+        link_match = re.search(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', block, flags=re.S)
+        snippet_match = re.search(r'class="result__snippet"[^>]*>(.*?)</a>', block, flags=re.S)
+        if not link_match:
+            continue
+        raw_href = unescape(link_match.group(1))
+        href = raw_href
+        if "/l/?" in raw_href and "uddg=" in raw_href:
+            query_params = parse_qs(urlparse(raw_href).query)
+            href = unquote(query_params.get("uddg", [""])[0]) or raw_href
+        title = _strip_tags(unescape(link_match.group(2)))
+        snippet = _strip_tags(unescape(snippet_match.group(1) if snippet_match else ""))
+        if not href.startswith("http"):
+            continue
+        results.append({
+            "title": title[:180],
+            "link": href[:500],
+            "snippet": snippet[:500],
+        })
+    return results
 
 
 def _ai_extract_specs(context_text: str, product: str) -> list[dict]:
@@ -184,6 +226,8 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
 
     # Step 1: Get search results
     results = await loop.run_in_executor(None, lambda: _serper_search(query, num=5))
+    if not results:
+        results = await loop.run_in_executor(None, lambda: _duckduckgo_search(query, num=5))
     if not results:
         logger.warning(f"No search results for: {query}")
         return []

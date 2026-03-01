@@ -43,6 +43,43 @@ class TZDocument(Base):
     specs_json = Column(Text)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+
+class IntegrationState(Base):
+    __tablename__ = "integration_state"
+    id = Column(Integer, primary_key=True, default=1)
+    queue_json = Column(Text, default="[]")
+    history_json = Column(Text, default="[]")
+    enterprise_status_json = Column(Text, default="[]")
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class IntegrationAuditLog(Base):
+    __tablename__ = "integration_audit_log"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(String, nullable=False)
+    action = Column(String, nullable=False)
+    status = Column(String, nullable=False)
+    record_id = Column(String, nullable=True)
+    note = Column(String, nullable=True)
+    payload_json = Column(Text, default="{}")
+
+
+class IntegrationIdempotencyKey(Base):
+    __tablename__ = "integration_idempotency_keys"
+    idem_key = Column(String, primary_key=True)
+    created_at = Column(String, nullable=False)
+    response_json = Column(Text, nullable=False)
+
+
+class ImmutableAuditChain(Base):
+    __tablename__ = "immutable_audit_chain"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    at = Column(String, nullable=False)
+    action = Column(String, nullable=False)
+    payload_json = Column(Text, nullable=False)
+    prev_hash = Column(String, nullable=False)
+    hash = Column(String, nullable=False)
+
 def get_db():
     db = SessionLocal()
     try:

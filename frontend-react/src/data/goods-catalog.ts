@@ -926,7 +926,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['монитор','monitor','aqmon','f2200','benq','viewsonic','philips 24','dell p24','dell u24','dell s24','lg 24','samsung s24'], type: 'monitor' },
 
   // ── Принтеры ──
-  { tokens: ['принтер','printer','xerox b2','hp laser','pantum p','ricoh sp','brother hl','canon lbp'], type: 'printer' },
+  { tokens: ['принтер','printer','xerox b2','hp laser','laserjet','pantum p','ricoh sp','brother hl','canon lbp','kyocera ecosys p'], type: 'printer' },
 
   // ── МФУ ──
   { tokens: ['мфу','мфд','multifunction','pantum bm','xerox b2','brother mfc','brother dcp','canon mf','ricoh mp','ricoh m','kyocera ecosys m'], type: 'mfu' },
@@ -961,7 +961,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   // ── Коммутаторы ──
   { tokens: [
     'коммутатор','switch','свитч',
-    'eltex mes','cisco sg','cisco c29','d-link dgs','d-link des','tp-link tl-sg',
+    'eltex mes','cisco sg','cisco c29','cisco catalyst','catalyst 29','catalyst 39','d-link dgs','d-link des','tp-link tl-sg',
     'mikrotik css','mikrotik crs','juniper ex','aruba','huawei s57','huawei s67',
     'snr-s2','qtech qsw','zyxel gs','netgear gs',
   ], type: 'switch' },
@@ -1000,13 +1000,13 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['медиаконвертер','медиа конвертер','media converter'], type: 'mediaConverter' },
 
   // ── SSD ──
-  { tokens: ['ssd','твердотельн','nvme','m.2 накопитель'], type: 'ssd' },
+  { tokens: ['ssd','твердотельн','nvme','m.2 накопитель','870 evo','860 evo','980 pro','990 pro','samsung evo','kingston a400','crucial mx','wd blue sn','wd black sn'], type: 'ssd' },
 
   // ── HDD ──
   { tokens: ['hdd','жёсткий диск','жесткий диск','seagate','western digital','wd purple','wd red','wd gold','toshiba enterprise'], type: 'hdd' },
 
   // ── RAM ──
-  { tokens: ['оперативная память','озу','ram','dimm','so-dimm','ecc dimm','rdimm','lrdimm'], type: 'ram' },
+  { tokens: ['оперативная память','озу','ram','dimm','so-dimm','ecc dimm','rdimm','lrdimm','ddr4','ddr5','kingston fury','crucial ballistix','samsung m3','hynix hma'], type: 'ram' },
 
   // ── Флешки ──
   { tokens: ['флеш-накопитель','флешка','flash drive','usb flash','usb накопитель','transcend jetflash','sandisk cruzer'], type: 'flashDrive' },

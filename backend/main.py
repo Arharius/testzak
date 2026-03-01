@@ -18,9 +18,7 @@ import hmac
 import base64
 import hashlib
 import logging
-import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional, Any
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError, URLError
@@ -33,7 +31,17 @@ from sqlalchemy.orm import Session
 
 # Package-safe imports (works for both `uvicorn backend.main:app` and `uvicorn main:app`)
 try:
-    from .database import get_db, init_db, User, MagicToken  # type: ignore
+    from .database import (  # type: ignore
+        get_db,
+        init_db,
+        SessionLocal,
+        User,
+        MagicToken,
+        IntegrationState,
+        IntegrationAuditLog,
+        IntegrationIdempotencyKey,
+        ImmutableAuditChain,
+    )
     from .auth import (  # type: ignore
         send_magic_link,
         create_magic_token,
@@ -44,7 +52,17 @@ try:
         sync_user_entitlements,
     )
 except ImportError:
-    from database import get_db, init_db, User, MagicToken
+    from database import (
+        get_db,
+        init_db,
+        SessionLocal,
+        User,
+        MagicToken,
+        IntegrationState,
+        IntegrationAuditLog,
+        IntegrationIdempotencyKey,
+        ImmutableAuditChain,
+    )
     from auth import (
         send_magic_link,
         create_magic_token,
@@ -86,8 +104,6 @@ AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "60"))
 FREE_TZ_LIMIT = int(os.getenv("FREE_TZ_LIMIT", "3"))
 
 # ── Integration / Enterprise automation env ───────────────────
-INTEGRATION_STORE_FILE = Path(os.getenv("INTEGRATION_STORE_FILE", "/tmp/tz_integration_store_main.json"))
-INTEGRATION_AUDIT_DB = Path(os.getenv("INTEGRATION_AUDIT_DB", "/tmp/tz_integration_audit_main.db"))
 INTEGRATION_TARGET_WEBHOOK_URL = os.getenv("INTEGRATION_TARGET_WEBHOOK_URL", "").strip()
 INTEGRATION_TARGET_TIMEOUT = float(os.getenv("INTEGRATION_TARGET_TIMEOUT", "12"))
 INTEGRATION_API_TOKEN = (
@@ -101,6 +117,7 @@ ENTERPRISE_SIMULATION_MODE = os.getenv("ENTERPRISE_SIMULATION_MODE", "1").strip(
 
 _cors_raw = os.getenv("CORS_ALLOW_ORIGINS", "")
 CORS_ORIGINS = [s.strip() for s in _cors_raw.split(",") if s.strip()] if _cors_raw else [
+    "https://tz-generator.onrender.com",
     "https://arharius.github.io",
     "http://localhost:5173",
     "http://localhost:5174",
@@ -238,67 +255,92 @@ def _default_integration_store() -> dict[str, Any]:
     return {"queue": [], "history": [], "enterprise_status": []}
 
 
-def load_integration_store() -> dict[str, Any]:
-    if not INTEGRATION_STORE_FILE.exists():
-        return _default_integration_store()
-    try:
-        raw = json.loads(INTEGRATION_STORE_FILE.read_text(encoding="utf-8"))
-        if not isinstance(raw, dict):
-            return _default_integration_store()
-        raw.setdefault("queue", [])
-        raw.setdefault("history", [])
-        raw.setdefault("enterprise_status", [])
+def _safe_json_list(raw: Any) -> list[Any]:
+    if isinstance(raw, list):
         return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            return []
+    return []
+
+
+def _ensure_integration_state(db: Session) -> IntegrationState:
+    state = db.query(IntegrationState).filter_by(id=1).first()
+    if state:
+        return state
+    state = IntegrationState(
+        id=1,
+        queue_json="[]",
+        history_json="[]",
+        enterprise_status_json="[]",
+        updated_at=datetime.now(timezone.utc),
+    )
+    db.add(state)
+    db.commit()
+    db.refresh(state)
+    return state
+
+
+def _lock_integration_state(db: Session) -> IntegrationState:
+    query = db.query(IntegrationState).filter_by(id=1)
+    try:
+        state = query.with_for_update().first()
+    except Exception:
+        state = query.first()
+    if state:
+        return state
+    state = IntegrationState(
+        id=1,
+        queue_json="[]",
+        history_json="[]",
+        enterprise_status_json="[]",
+        updated_at=datetime.now(timezone.utc),
+    )
+    db.add(state)
+    db.flush()
+    return state
+
+
+def load_integration_store() -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        state = _ensure_integration_state(db)
+        return {
+            "queue": _safe_json_list(state.queue_json),
+            "history": _safe_json_list(state.history_json),
+            "enterprise_status": _safe_json_list(state.enterprise_status_json),
+        }
     except Exception:
         return _default_integration_store()
+    finally:
+        db.close()
 
 
 def save_integration_store(data: dict[str, Any]) -> None:
-    INTEGRATION_STORE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    INTEGRATION_STORE_FILE.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    db = SessionLocal()
+    try:
+        state = _ensure_integration_state(db)
+        state.queue_json = json.dumps(_safe_json_list(data.get("queue", [])), ensure_ascii=False)
+        state.history_json = json.dumps(_safe_json_list(data.get("history", [])), ensure_ascii=False)
+        state.enterprise_status_json = json.dumps(_safe_json_list(data.get("enterprise_status", [])), ensure_ascii=False)
+        state.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 def init_integration_db() -> None:
-    INTEGRATION_AUDIT_DB.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(INTEGRATION_AUDIT_DB) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS integration_audit_log (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              at TEXT NOT NULL,
-              action TEXT NOT NULL,
-              status TEXT NOT NULL,
-              record_id TEXT,
-              note TEXT,
-              payload_json TEXT
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS integration_idempotency_keys (
-              idem_key TEXT PRIMARY KEY,
-              created_at TEXT NOT NULL,
-              response_json TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS immutable_audit_chain (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              at TEXT NOT NULL,
-              action TEXT NOT NULL,
-              payload_json TEXT NOT NULL,
-              prev_hash TEXT NOT NULL,
-              hash TEXT NOT NULL
-            )
-            """
-        )
-        conn.commit()
+    db = SessionLocal()
+    try:
+        _ensure_integration_state(db)
+    finally:
+        db.close()
 
 
 def log_integration_audit(
@@ -308,71 +350,81 @@ def log_integration_audit(
     note: str = "",
     payload: dict[str, Any] | None = None
 ) -> None:
+    db = SessionLocal()
     try:
-        with sqlite3.connect(INTEGRATION_AUDIT_DB) as conn:
-            conn.execute(
-                "INSERT INTO integration_audit_log (at, action, status, record_id, note, payload_json) VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    utc_now(),
-                    action,
-                    status,
-                    record_id,
-                    note[:400],
-                    json.dumps(payload or {}, ensure_ascii=False),
-                ),
+        db.add(
+            IntegrationAuditLog(
+                at=utc_now(),
+                action=action,
+                status=status,
+                record_id=record_id,
+                note=note[:400],
+                payload_json=json.dumps(payload or {}, ensure_ascii=False),
             )
-            conn.commit()
+        )
+        db.commit()
     except Exception:
-        pass
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _get_idempotency_response(idem_key: str) -> dict[str, Any] | None:
+    db = SessionLocal()
     try:
-        with sqlite3.connect(INTEGRATION_AUDIT_DB) as conn:
-            row = conn.execute(
-                "SELECT response_json FROM integration_idempotency_keys WHERE idem_key = ?",
-                (idem_key,),
-            ).fetchone()
-            if not row:
-                return None
-            return json.loads(row[0])
+        row = db.query(IntegrationIdempotencyKey).filter_by(idem_key=idem_key).first()
+        if not row:
+            return None
+        return json.loads(row.response_json or "{}")
     except Exception:
         return None
+    finally:
+        db.close()
 
 
 def _store_idempotency_response(idem_key: str, response: dict[str, Any]) -> None:
+    db = SessionLocal()
     try:
-        with sqlite3.connect(INTEGRATION_AUDIT_DB) as conn:
-            conn.execute(
-                "INSERT OR REPLACE INTO integration_idempotency_keys (idem_key, created_at, response_json) VALUES (?, ?, ?)",
-                (idem_key, utc_now(), json.dumps(response, ensure_ascii=False)),
-            )
-            conn.commit()
+        row = db.query(IntegrationIdempotencyKey).filter_by(idem_key=idem_key).first()
+        if not row:
+            row = IntegrationIdempotencyKey(idem_key=idem_key, created_at=utc_now(), response_json="{}")
+            db.add(row)
+        row.created_at = utc_now()
+        row.response_json = json.dumps(response, ensure_ascii=False)
+        db.commit()
     except Exception:
-        pass
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _append_immutable_audit(action: str, payload: dict[str, Any]) -> dict[str, Any]:
     at = utc_now()
-    with sqlite3.connect(INTEGRATION_AUDIT_DB) as conn:
-        prev_row = conn.execute(
-            "SELECT hash FROM immutable_audit_chain ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        prev_hash = str(prev_row[0]) if prev_row else "genesis"
+    db = SessionLocal()
+    try:
+        prev_row = db.query(ImmutableAuditChain).order_by(ImmutableAuditChain.id.desc()).first()
+        prev_hash = str(prev_row.hash) if prev_row else "genesis"
         payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         base = f"{at}|{action}|{payload_json}|{prev_hash}"
         digest = hashlib.sha256(base.encode("utf-8")).hexdigest()
-        conn.execute(
-            "INSERT INTO immutable_audit_chain (at, action, payload_json, prev_hash, hash) VALUES (?, ?, ?, ?, ?)",
-            (at, action, payload_json, prev_hash, digest),
+        db.add(
+            ImmutableAuditChain(
+                at=at,
+                action=action,
+                payload_json=payload_json,
+                prev_hash=prev_hash,
+                hash=digest,
+            )
         )
-        conn.commit()
+        db.commit()
         return {
             "at": at,
             "action": action,
             "prev_hash": prev_hash,
             "hash": digest,
         }
+    finally:
+        db.close()
 
 
 def _extract_api_token(authorization: Optional[str], x_api_token: Optional[str]) -> str:
@@ -502,7 +554,6 @@ def append_integration_record(
     source: str,
     transport: dict[str, Any],
 ) -> dict[str, Any]:
-    store = load_integration_store()
     record = {
         "id": str(uuid.uuid4()),
         "kind": kind,
@@ -513,10 +564,21 @@ def append_integration_record(
         "payload": payload,
         "transport": transport,
     }
-    store["queue"].append(record)
-    if len(store["queue"]) > 3000:
-        store["queue"] = store["queue"][-3000:]
-    save_integration_store(store)
+    db = SessionLocal()
+    try:
+        state = _lock_integration_state(db)
+        queue = _safe_json_list(state.queue_json)
+        queue.append(record)
+        if len(queue) > 3000:
+            queue = queue[-3000:]
+        state.queue_json = json.dumps(queue, ensure_ascii=False)
+        state.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception as err:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"integration_queue_write_error: {err}")
+    finally:
+        db.close()
     log_integration_audit("queue.append", "ok", record_id=record["id"], note=kind, payload={"source": source})
     return record
 
@@ -553,39 +615,49 @@ def _dispatch_record(record: dict[str, Any]) -> tuple[bool, str]:
 
 
 def flush_integration_queue(limit: int = 100) -> dict[str, Any]:
-    store = load_integration_store()
-    queue = store.get("queue", [])
+    db = SessionLocal()
     processed = 0
     success = 0
     failed = 0
     remained: list[dict[str, Any]] = []
-    for idx, item in enumerate(queue):
-        if idx >= limit:
-            remained.append(item)
-            continue
-        processed += 1
-        item["attempts"] = int(item.get("attempts", 0)) + 1
-        item["last_attempt_at"] = utc_now()
-        ok, note = _dispatch_record(item)
-        if ok:
-            success += 1
-            item["status"] = "sent"
-            item["sent_at"] = utc_now()
-            item["last_result"] = note
-            store["history"].append(item)
-            log_integration_audit("queue.flush_item", "sent", record_id=item.get("id", ""), note=note)
-        else:
-            failed += 1
-            item["status"] = "queued"
-            item["last_result"] = note
-            remained.append(item)
-            log_integration_audit("queue.flush_item", "queued", record_id=item.get("id", ""), note=note)
-    if len(remained) > 3000:
-        remained = remained[-3000:]
-    store["queue"] = remained
-    if len(store["history"]) > 10000:
-        store["history"] = store["history"][-10000:]
-    save_integration_store(store)
+    try:
+        state = _lock_integration_state(db)
+        queue = _safe_json_list(state.queue_json)
+        history = _safe_json_list(state.history_json)
+        for idx, item in enumerate(queue):
+            if idx >= limit:
+                remained.append(item)
+                continue
+            processed += 1
+            item["attempts"] = int(item.get("attempts", 0)) + 1
+            item["last_attempt_at"] = utc_now()
+            ok, note = _dispatch_record(item)
+            if ok:
+                success += 1
+                item["status"] = "sent"
+                item["sent_at"] = utc_now()
+                item["last_result"] = note
+                history.append(item)
+                log_integration_audit("queue.flush_item", "sent", record_id=item.get("id", ""), note=note)
+            else:
+                failed += 1
+                item["status"] = "queued"
+                item["last_result"] = note
+                remained.append(item)
+                log_integration_audit("queue.flush_item", "queued", record_id=item.get("id", ""), note=note)
+        if len(remained) > 3000:
+            remained = remained[-3000:]
+        if len(history) > 10000:
+            history = history[-10000:]
+        state.queue_json = json.dumps(remained, ensure_ascii=False)
+        state.history_json = json.dumps(history, ensure_ascii=False)
+        state.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception as err:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"integration_queue_flush_error: {err}")
+    finally:
+        db.close()
     return {
         "processed": processed,
         "success": success,
@@ -792,22 +864,29 @@ def run_enterprise_autopilot(
         "queued_retry_records": queued_ids,
         "stages": stages,
     }
-    store = load_integration_store()
-    history = store.get("enterprise_status", [])
-    history.append({
-        "at": utc_now(),
-        "procedure_id": procedure_id,
-        "summary": {
-            "success": success,
-            "failed": failed,
-            "skipped": skipped,
-        },
-        "stages": stages,
-    })
-    if len(history) > 2000:
-        history = history[-2000:]
-    store["enterprise_status"] = history
-    save_integration_store(store)
+    db = SessionLocal()
+    try:
+        state = _lock_integration_state(db)
+        history = _safe_json_list(state.enterprise_status_json)
+        history.append({
+            "at": utc_now(),
+            "procedure_id": procedure_id,
+            "summary": {
+                "success": success,
+                "failed": failed,
+                "skipped": skipped,
+            },
+            "stages": stages,
+        })
+        if len(history) > 2000:
+            history = history[-2000:]
+        state.enterprise_status_json = json.dumps(history, ensure_ascii=False)
+        state.updated_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
     return result
 
 
@@ -933,6 +1012,11 @@ def health():
     }
 
 
+@app.get("/api/v1/ping")
+def ping():
+    return {"ok": True, "message": "pong"}
+
+
 # ── Integration queue API ─────────────────────────────────────
 @app.post("/api/v1/integration/event")
 def integration_event(
@@ -1035,29 +1119,33 @@ def integration_audit(
     x_api_token: Optional[str] = Header(default=None),
 ):
     require_integration_access(user, authorization, x_api_token)
+    db = SessionLocal()
     try:
-        with sqlite3.connect(INTEGRATION_AUDIT_DB) as conn:
-            rows = conn.execute(
-                "SELECT id, at, action, status, record_id, note FROM integration_audit_log ORDER BY id DESC LIMIT ?",
-                (body.limit,),
-            ).fetchall()
+        rows = (
+            db.query(IntegrationAuditLog)
+            .order_by(IntegrationAuditLog.id.desc())
+            .limit(body.limit)
+            .all()
+        )
         return {
             "ok": True,
             "total": len(rows),
             "items": [
                 {
-                    "id": row[0],
-                    "at": row[1],
-                    "action": row[2],
-                    "status": row[3],
-                    "record_id": row[4],
-                    "note": row[5],
+                    "id": row.id,
+                    "at": row.at,
+                    "action": row.action,
+                    "status": row.status,
+                    "record_id": row.record_id,
+                    "note": row.note,
                 }
                 for row in rows
             ],
         }
     except Exception as err:
         raise HTTPException(status_code=500, detail=f"integration_audit_read_error: {err}")
+    finally:
+        db.close()
 
 
 @app.post("/api/v1/integration/flush")

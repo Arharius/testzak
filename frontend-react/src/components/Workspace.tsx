@@ -855,7 +855,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     const prompt = buildSpecSearchPrompt(row, g);
     let raw: string;
     if (useBackendAi) {
-      raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
+      raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 4096);
     } else {
       raw = await generateItemSpecs(provider, apiKey, model, prompt);
     }
@@ -902,7 +902,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     const prompt = buildEisStylePrompt(row, g, eisContext);
     let raw: string;
     if (useBackendAi) {
-      raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048);
+      raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 4096);
     } else {
       raw = await generateItemSpecs(provider, apiKey, model, prompt);
     }

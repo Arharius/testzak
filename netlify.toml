@@ -5,6 +5,8 @@
 
 [build.environment]
   NODE_VERSION = "20"
+  VITE_BACKEND_URL = "https://backend-production-f736.up.railway.app"
+  BACKEND_API_BASE_URL = "https://backend-production-f736.up.railway.app"
 
 # Unified API on the same Netlify domain (frontend -> backend service).
 [[redirects]]

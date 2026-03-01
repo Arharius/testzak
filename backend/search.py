@@ -80,22 +80,30 @@ def _extract_text_from_html(html: str, max_chars: int = 8000) -> str:
         return html[:max_chars]
 
 
+_ssl_ctx_unverified = ssl._create_unverified_context()
+
+
 def _fetch_url(url: str, timeout: int = 12) -> str:
-    """Fetch URL, return text content."""
+    """Fetch URL, return text content. Retries with unverified SSL on cert errors."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
         "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
     }
     req = URLRequest(url, headers=headers, method="GET")
-    try:
-        with urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
-            raw = resp.read()
-            encoding = resp.headers.get_content_charset("utf-8") or "utf-8"
-            return raw.decode(encoding, errors="replace")
-    except Exception as e:
-        logger.warning(f"fetch_url failed {url}: {e}")
-        return ""
+    for ctx in (_ssl_ctx, _ssl_ctx_unverified):
+        try:
+            with urlopen(req, timeout=timeout, context=ctx) as resp:
+                raw = resp.read()
+                encoding = resp.headers.get_content_charset("utf-8") or "utf-8"
+                return raw.decode(encoding, errors="replace")
+        except ssl.SSLError:
+            continue  # retry with unverified context
+        except Exception as e:
+            logger.warning(f"fetch_url failed {url}: {e}")
+            return ""
+    logger.warning(f"fetch_url SSL failed for both contexts: {url}")
+    return ""
 
 
 def _strip_tags(text: str) -> str:

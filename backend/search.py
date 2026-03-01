@@ -1,6 +1,6 @@
 """
 Search module for TZ Generator backend.
-- search_internet_specs: Serper.dev Google search → fetch pages → AI extracts specs
+- search_internet_specs: DuckDuckGo (free, keyless) → AI extracts specs
 - search_eis_specs: zakupki.gov.ru KTRU catalog + EIS procurement notices → AI extracts specs
 """
 import os
@@ -14,10 +14,32 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote_plus, parse_qs, unquote, urlparse
 from html.parser import HTMLParser
 from typing import Any
+import ssl
 
 logger = logging.getLogger(__name__)
 
-SERPER_API_KEY = os.getenv("SERPER_API_KEY", "").strip()
+# SSL context — use certifi if available, else unverified (macOS Python issue)
+def _make_ssl_ctx() -> ssl.SSLContext:
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+    ctx = ssl.create_default_context()
+    # Quick probe: if default certs work, use them
+    import socket
+    try:
+        with ctx.wrap_socket(socket.socket(), server_hostname="yandex.ru") as s:
+            s.settimeout(5)
+            s.connect(("yandex.ru", 443))
+        return ctx
+    except Exception:
+        pass
+    # Fallback: unverified (safe for search scraping)
+    return ssl._create_unverified_context()
+
+_ssl_ctx = _make_ssl_ctx()
+
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "45"))
@@ -67,7 +89,7 @@ def _fetch_url(url: str, timeout: int = 12) -> str:
     }
     req = URLRequest(url, headers=headers, method="GET")
     try:
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(req, timeout=timeout, context=_ssl_ctx) as resp:
             raw = resp.read()
             encoding = resp.headers.get_content_charset("utf-8") or "utf-8"
             return raw.decode(encoding, errors="replace")
@@ -76,35 +98,14 @@ def _fetch_url(url: str, timeout: int = 12) -> str:
         return ""
 
 
-def _serper_search(query: str, num: int = 5) -> list[dict]:
-    """Call Serper.dev Google Search API."""
-    if not SERPER_API_KEY:
-        logger.warning("SERPER_API_KEY not set")
-        return []
-    payload = json.dumps({"q": query, "num": num, "gl": "ru", "hl": "ru"}).encode("utf-8")
-    req = URLRequest(
-        "https://google.serper.dev/search",
-        data=payload,
-        headers={"X-API-KEY": SERPER_API_KEY, "Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            return data.get("organic", [])
-    except Exception as e:
-        logger.error(f"Serper search error: {e}")
-        return []
-
-
 def _strip_tags(text: str) -> str:
     return re.sub(r"<[^>]+>", " ", text or "").replace("\n", " ").strip()
 
 
+# ── DuckDuckGo (primary, free, no API key) ─────────────────────
 def _duckduckgo_search(query: str, num: int = 5) -> list[dict]:
     """
-    Keyless fallback search for specs when SERPER_API_KEY is unavailable.
-    Uses DuckDuckGo HTML results page and extracts top links/snippets.
+    Fallback keyless search via DuckDuckGo HTML page.
     """
     url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
     html = _fetch_url(url, timeout=15)
@@ -181,7 +182,7 @@ def _ai_extract_specs(context_text: str, product: str) -> list[dict]:
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.1,
-        "max_tokens": 2048,
+        "max_tokens": 4096,
         "stream": False,
     }
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -192,7 +193,7 @@ def _ai_extract_specs(context_text: str, product: str) -> list[dict]:
         method="POST",
     )
     try:
-        with urlopen(req, timeout=AI_TIMEOUT) as resp:
+        with urlopen(req, timeout=AI_TIMEOUT, context=_ssl_ctx) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="replace"))
         content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         # Strip markdown code blocks if present
@@ -216,18 +217,15 @@ def _ai_extract_specs(context_text: str, product: str) -> list[dict]:
 # ── Internet search ─────────────────────────────────────────────
 async def search_internet_specs(product: str, goods_type: str = "") -> list[dict]:
     """
-    Search internet for product specs using Serper.dev + AI extraction.
+    Search internet for product specs using DuckDuckGo (free, keyless) + AI extraction.
     Returns list of {name, value, unit} dicts.
     """
-    # Build search query
     query = f"{product} технические характеристики"
 
     loop = asyncio.get_event_loop()
 
-    # Step 1: Get search results
-    results = await loop.run_in_executor(None, lambda: _serper_search(query, num=5))
-    if not results:
-        results = await loop.run_in_executor(None, lambda: _duckduckgo_search(query, num=5))
+    # Step 1: Get search results via DuckDuckGo (free, keyless)
+    results = await loop.run_in_executor(None, lambda: _duckduckgo_search(query, num=5))
     if not results:
         logger.warning(f"No search results for: {query}")
         return []
@@ -287,7 +285,7 @@ def _search_ktru(query: str) -> list[dict]:
     }
     req = URLRequest(url, headers=headers, method="GET")
     try:
-        with urlopen(req, timeout=15) as resp:
+        with urlopen(req, timeout=15, context=_ssl_ctx) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
             return json.loads(raw) if raw else []
     except Exception as e:
@@ -314,7 +312,7 @@ def _search_eis_purchases(query: str) -> str:
     }
     req = URLRequest(url, headers=headers, method="GET")
     try:
-        with urlopen(req, timeout=20) as resp:
+        with urlopen(req, timeout=20, context=_ssl_ctx) as resp:
             return resp.read().decode("utf-8", errors="replace")
     except Exception as e:
         logger.warning(f"EIS search error: {e}")

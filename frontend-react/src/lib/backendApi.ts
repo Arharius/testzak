@@ -28,8 +28,8 @@ export function isBackendApiAvailable(): boolean {
   if (BACKEND_URL) return true;
   if (typeof window === 'undefined') return false;
   const host = String(window.location.hostname || '').toLowerCase();
-  // Netlify production or localhost with Vite proxy
-  return /\.netlify\.app$/.test(host) || host === 'localhost' || host === '127.0.0.1';
+  // Local dev with Vite proxy
+  return host === 'localhost' || host === '127.0.0.1';
 }
 
 const AUTH_TOKEN_KEY = 'tz_backend_jwt';
@@ -122,7 +122,7 @@ export async function generateWithBackend(
   model: string,
   messages: { role: string; content: string }[],
   temperature = 0.1,
-  maxTokens = 2048,
+  maxTokens = 4096,
 ): Promise<string> {
   const result = await apiPost<{ ok: boolean; data: { choices?: { message?: { content?: string } }[] } }>(
     '/api/ai/generate',
@@ -197,7 +197,7 @@ export async function getEnterpriseHealth(): Promise<{
   history_total: number;
   enterprise_status_total: number;
 }> {
-  return apiGet('/api/v1/enterprise/health', true);
+  return apiGet('/api/v1/enterprise/health', false);
 }
 
 export async function runEnterpriseAutopilot(
@@ -218,6 +218,6 @@ export async function runEnterpriseAutopilot(
       procedure_id: procedureId,
       idempotency_key: `enterprise-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     },
-    true,
+    'optional',
   );
 }

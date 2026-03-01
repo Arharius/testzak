@@ -139,16 +139,47 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
   });
 }
 
+/**
+ * Попытка восстановить обрезанный JSON (когда ИИ не уложился в max_tokens).
+ * Стратегия: убираем последнюю неполную запись и закрываем скобки.
+ */
+function repairTruncatedJson(raw: string): string {
+  let s = raw.trim();
+  // Убираем trailing запятую и незавершённый объект
+  // Пример: ...}, {"group":"Foo","name":"Ba  ← обрезано
+  // Ищем последний полный объект в массиве specs
+  const lastFullObj = s.lastIndexOf('}');
+  if (lastFullObj < 0) return s;
+
+  s = s.slice(0, lastFullObj + 1);
+
+  // Закрываем незакрытые скобки
+  const opens = { '{': 0, '[': 0 };
+  for (const ch of s) {
+    if (ch === '{') opens['{']++;
+    if (ch === '}') opens['{']--;
+    if (ch === '[') opens['[']++;
+    if (ch === ']') opens['[']--;
+  }
+  // Закрываем в обратном порядке
+  for (let i = 0; i < opens['[']; i++) s += ']';
+  for (let i = 0; i < opens['{']; i++) s += '}';
+
+  return s;
+}
+
 export function parseAiResponse(text: string): {
   meta: Record<string, string>;
   specs: SpecItem[];
 } {
+  const cleaned = text
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  // 1. Пробуем распарсить напрямую
   try {
-    const cleaned = text
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```\s*$/i, '')
-      .trim();
     const obj = JSON.parse(cleaned);
     if (obj && Array.isArray(obj.specs)) {
       return { meta: obj.meta || {}, specs: obj.specs as SpecItem[] };
@@ -157,7 +188,40 @@ export function parseAiResponse(text: string): {
       return { meta: {}, specs: obj as SpecItem[] };
     }
   } catch {
+    // JSON невалиден — пробуем починить
+  }
+
+  // 2. Пробуем восстановить обрезанный JSON
+  try {
+    const repaired = repairTruncatedJson(cleaned);
+    const obj = JSON.parse(repaired);
+    if (obj && Array.isArray(obj.specs)) {
+      return { meta: obj.meta || {}, specs: obj.specs as SpecItem[] };
+    }
+    if (Array.isArray(obj)) {
+      return { meta: {}, specs: obj as SpecItem[] };
+    }
+  } catch {
+    // всё равно не удалось
+  }
+
+  // 3. Последняя попытка — вытащить specs массив регуляркой
+  try {
+    const specsMatch = cleaned.match(/"specs"\s*:\s*\[[\s\S]*$/);
+    if (specsMatch) {
+      let arr = specsMatch[0].replace(/^"specs"\s*:\s*/, '');
+      arr = repairTruncatedJson(arr);
+      const specs = JSON.parse(arr);
+      if (Array.isArray(specs)) {
+        // Пробуем вытащить meta
+        const metaMatch = cleaned.match(/"meta"\s*:\s*(\{[^}]*\})/);
+        const meta = metaMatch ? JSON.parse(metaMatch[1]) : {};
+        return { meta, specs: specs as SpecItem[] };
+      }
+    }
+  } catch {
     // ignore
   }
+
   return { meta: {}, specs: [] };
 }

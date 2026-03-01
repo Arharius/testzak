@@ -339,7 +339,7 @@ export async function generateItemSpecs(
       model,
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.1,
-      max_tokens: 1800
+      max_tokens: 4096
     },
     { headers, timeout: 60000 }
   );

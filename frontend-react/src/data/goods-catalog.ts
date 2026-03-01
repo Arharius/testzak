@@ -886,50 +886,261 @@ export function getNacRegime(goodsType: string): NacRegime {
 
 // Определение типа по строке модели
 const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
-  { tokens: ['vivobook','zenbook','thinkpad','macbook','matebook','probook','elitebook','inspiron','latitude','notebook','ноутбук','laptop'], type: 'laptop' },
-  { tokens: ['монитор','monitor','aqmon','f2200'], type: 'monitor' },
-  { tokens: ['коммут','switch','eltex mes','cisco sg'], type: 'switch' },
-  { tokens: ['маршрутиз','router','eltex esr'], type: 'router' },
-  { tokens: ['utp','stp','cat5e','cat6','cat6a','витая пара','патч-корд','patchcord'], type: 'patchCord' },
-  { tokens: ['оптоволокон','fiber','om3','om4','оксм','окс'], type: 'fiberCable' },
-  { tokens: ['hdmi','displayport','dp кабель'], type: 'hdmiCable' },
-  { tokens: ['dvd','cd-r','bd-r','blu-ray','оптический диск','lto-','lto7','lto8','lto9','ultrium','стриммер'], type: 'dvd' },
-  { tokens: ['принтер','printer','xerox b2','hp laser'], type: 'printer' },
-  { tokens: ['мфу','мфд','multifunction'], type: 'mfu' },
-  { tokens: ['сервер','server','vegman r','aquarius server'], type: 'server' },
-  { tokens: ['гравитон','graviton','aquarius','iru','yadro vegman n','irbis'], type: 'pc' },
+  // ── Ноутбуки (бренды + линейки) ──
+  { tokens: [
+    'ноутбук','notebook','laptop',
+    'vivobook','zenbook','thinkpad','macbook','matebook','probook','elitebook',
+    'inspiron','latitude','pavilion','envy','spectre','ideapad','legion',
+    'travelmate','extensa','swift','spin','chromebook','predator','nitro',
+    'victus','omen','xps','vostro','precision','lifebook','portege',
+    'tecra','dynabook','yoga','thinkbook','gram',
+    'graviton n15','graviton n17','гравитон н15','гравитон н17',
+    'aquarius cmp ns','aquarius ns',
+  ], type: 'laptop' },
+
+  // ── Системные блоки / десктопы ──
+  { tokens: [
+    'системный блок','десктоп','desktop','nettop','мини-пк','mini pc','неттоп',
+    'гравитон','graviton','iru ','iru офис','iru office',
+    'aquarius pro','aquarius cmp','yadro vegman n','irbis','nuc','optiplex',
+    'prodesk','elitedesk','thinkcentre','thinkstation',
+  ], type: 'pc' },
+
+  // ── Моноблоки ──
+  { tokens: ['моноблок','моно блок','all-in-one','aio ','imac'], type: 'monoblock' },
+
+  // ── Планшеты ──
+  { tokens: ['планшет','tablet','ipad','galaxy tab','aquarius cmp t','irbis tw'], type: 'tablet' },
+
+  // ── Тонкие клиенты ──
+  { tokens: ['тонкий клиент','thin client','wyse','hp t6','hp t4','kraftway тонк'], type: 'thinClient' },
+
+  // ── Серверы ──
+  { tokens: [
+    'сервер','server','poweredge','proliant','primergy',
+    'vegman r','aquarius server','yadro vegman r','yadro tatlin',
+    'supermicro','supermicro sys-',
+  ], type: 'server' },
+
+  // ── Мониторы ──
+  { tokens: ['монитор','monitor','aqmon','f2200','benq','viewsonic','philips 24','dell p24','dell u24','dell s24','lg 24','samsung s24'], type: 'monitor' },
+
+  // ── Принтеры ──
+  { tokens: ['принтер','printer','xerox b2','hp laser','pantum p','ricoh sp','brother hl','canon lbp'], type: 'printer' },
+
+  // ── МФУ ──
+  { tokens: ['мфу','мфд','multifunction','pantum bm','xerox b2','brother mfc','brother dcp','canon mf','ricoh mp','ricoh m','kyocera ecosys m'], type: 'mfu' },
+
+  // ── Сканеры ──
+  { tokens: ['сканер','scanner','fujitsu fi','canon dr','kodak s2','avision','epson ds'], type: 'scanner' },
+
+  // ── Проекторы ──
+  { tokens: ['проектор','projector','epson eb','benq m','viewsonic p','acer x1','casio xj'], type: 'projector' },
+
+  // ── Интерактивные доски ──
+  { tokens: ['интерактивная доска','интерактивный дисплей','interactive board','smart board','newline','promethean'], type: 'interactive' },
+
+  // ── Веб-камеры ──
+  { tokens: ['веб-камера','вебкамера','webcam','logitech c9','logitech brio','hikvision ds-u'], type: 'webcam' },
+
+  // ── Гарнитуры ──
+  { tokens: ['гарнитура','headset','наушники с микрофон','jabra evolve','poly blackwire','plantronics'], type: 'headset' },
+
+  // ── Клавиатуры ──
+  { tokens: ['клавиатура','keyboard','клав'], type: 'keyboard' },
+
+  // ── Мыши ──
+  { tokens: ['мышь','мышка','mouse','манипулятор'], type: 'mouse' },
+
+  // ── KVM ──
+  { tokens: ['kvm','кvm'], type: 'kvm' },
+
+  // ── ИБП ──
+  { tokens: ['ибп','ups','бесперебойн','apc smart','eaton','powercom','ippon'], type: 'ups' },
+
+  // ── Коммутаторы ──
+  { tokens: [
+    'коммутатор','switch','свитч',
+    'eltex mes','cisco sg','cisco c29','d-link dgs','d-link des','tp-link tl-sg',
+    'mikrotik css','mikrotik crs','juniper ex','aruba','huawei s57','huawei s67',
+    'snr-s2','qtech qsw','zyxel gs','netgear gs',
+  ], type: 'switch' },
+
+  // ── Маршрутизаторы ──
+  { tokens: [
+    'маршрутизатор','router','роутер',
+    'eltex esr','mikrotik rb','mikrotik hex','mikrotik ccr',
+    'cisco isr','cisco rv','d-link dir','tp-link tl-er','tp-link archer',
+    'keenetic','zyxel','huawei ar','juniper srx',
+  ], type: 'router' },
+
+  // ── Межсетевые экраны (аппаратные) ──
+  { tokens: [
+    'межсетевой экран','firewall','фаервол','брандмауэр',
+    'usergate','континент','ideco','cisco asa','cisco ftd',
+    'fortinet','fortigate','palo alto','checkpoint',
+    'eltex esr fw','snr fw','s-terra','с-терра',
+  ], type: 'firewall' },
+
+  // ── Точки доступа Wi-Fi ──
+  { tokens: [
+    'точка доступа','access point','wifi','wi-fi точка',
+    'ubiquiti','unifi','tp-link eap','d-link dap',
+    'eltex wep','eltex wop','aruba ap','ruckus','cisco air',
+    'huawei ap','zyxel wax',
+  ], type: 'accessPoint' },
+
+  // ── NAS ──
+  { tokens: ['nas','сетевое хранилище','synology','qnap','wd my cloud','netgear readynas'], type: 'nas' },
+
+  // ── Патч-панели ──
+  { tokens: ['патч-панель','патч панель','patch panel','коммутационная панель'], type: 'patchPanel' },
+
+  // ── Медиаконвертеры ──
+  { tokens: ['медиаконвертер','медиа конвертер','media converter'], type: 'mediaConverter' },
+
+  // ── SSD ──
+  { tokens: ['ssd','твердотельн','nvme','m.2 накопитель'], type: 'ssd' },
+
+  // ── HDD ──
+  { tokens: ['hdd','жёсткий диск','жесткий диск','seagate','western digital','wd purple','wd red','wd gold','toshiba enterprise'], type: 'hdd' },
+
+  // ── RAM ──
+  { tokens: ['оперативная память','озу','ram','dimm','so-dimm','ecc dimm','rdimm','lrdimm'], type: 'ram' },
+
+  // ── Флешки ──
+  { tokens: ['флеш-накопитель','флешка','flash drive','usb flash','usb накопитель','transcend jetflash','sandisk cruzer'], type: 'flashDrive' },
+
+  // ── Оптические носители / ленточные ──
+  { tokens: ['dvd','cd-r','bd-r','blu-ray','оптический диск','lto-','lto7','lto8','lto9','ultrium','стриммер','ленточная библиотека','tape library'], type: 'dvd' },
+
+  // ── Кабели и коммутация ──
+  { tokens: ['utp','stp','s/ftp','cat5e','cat6','cat6a','cat7','витая пара','патч-корд','patchcord','patch cord','rj45 кабель','ethernet кабель','lan кабель'], type: 'patchCord' },
+  { tokens: ['оптоволокон','optical cable','fiber','om3','om4','om5','оксм','окс','волоконно-оптич','оптический кабель','sfp кабель'], type: 'fiberCable' },
+  { tokens: ['hdmi кабель','hdmi-кабель','displayport кабель','dp кабель','кабель hdmi','кабель displayport','кабель dp'], type: 'hdmiCable' },
+  { tokens: ['кабель питания','сетевой кабель питания','power cable','power cord','iec c13','iec c14','шнур питания'], type: 'powerCable' },
+
+  // ── Телекоммуникационные шкафы и стойки ──
+  { tokens: ['телекоммуникац шкаф','серверный шкаф','шкаф 19','шкаф 42u','шкаф 22u','шкаф настенный','rack cabinet','цмо','ntss'], type: 'rackCabinet' },
+  { tokens: ['серверная стойка','серверная рама','server rack','open rack','открытая стойка'], type: 'serverRack' },
+
+  // ── Серверное оборудование ──
+  { tokens: ['блейд-сервер','blade server','блейд сервер'], type: 'serverBlade' },
+  { tokens: ['схд','san','система хранения данных','storage area','yadro tatlin','dell emc','netapp','huawei oceanstor'], type: 'san' },
+  { tokens: ['pdu','распределитель питания','блок распредел','power distribution'], type: 'pdu' },
+  { tokens: ['kvm серверный','kvm-сервер','aten kvm','raritan'], type: 'kvm_server' },
+
+  // ── Расходные материалы ──
+  { tokens: ['картридж','cartridge','тонер-картридж','drum-картридж'], type: 'cartridge' },
+  { tokens: ['бумага','svetocopy','снегурочка','кбс','ballet','бумага офисная','a4 бумага','бумага a4'], type: 'paper' },
+  { tokens: ['тонер','toner','тонер для','порошок для принтера'], type: 'toner' },
+  { tokens: ['фотобарабан','drum','фотовал','imaging unit','блок формирования'], type: 'drum' },
+
+  // ── Комплектующие ──
+  { tokens: ['процессор','cpu','intel core','amd ryzen','intel xeon','amd epyc','эльбрус','байкал-м'], type: 'cpu' },
+  { tokens: ['видеокарта','gpu','graphics card','geforce','radeon','nvidia a','nvidia t','quadro'], type: 'gpu' },
+  { tokens: ['материнская плата','motherboard','mainboard','системная плата'], type: 'motherboard' },
+  { tokens: ['блок питания пк','блок питания для','psu','power supply','бп 500w','бп 650w','бп 750w','бп 850w'], type: 'psu' },
+  { tokens: ['система охлаждения','кулер','cooler','радиатор','вентилятор','fan 120','fan 140','thermalright','noctua','deepcool','be quiet'], type: 'cooling' },
+
+  // ── ПО: Операционные системы ──
+  { tokens: ['astra linux','астра линукс','alt linux','альт линукс','ред ос','редос','rosa linux','роса линукс','операционная система','windows server','windows 1','ubuntu','debian','centos','rhel'], type: 'os' },
+
+  // ── ПО: Офисные пакеты ──
+  { tokens: ['мойофис','мой офис','р7-офис','r7-офис','libreoffice','microsoft office','office 365','microsoft 365','офисный пакет'], type: 'office' },
+
+  // ── ПО: Виртуализация ──
+  { tokens: ['виртуализаци','базис.vcore','zvirt','р-виртуализация','vmware','hyper-v','proxmox','гипервизор'], type: 'virt' },
+
+  // ── ПО: VDI ──
+  { tokens: ['termidesk','базис.workplace','rudesktop','vdi','виртуальные рабочие места','виртуальные рабочие столы'], type: 'vdi' },
+
+  // ── ПО: СУБД ──
+  { tokens: ['postgresql','postgres pro','tantor','jatoba','субд','mysql','mariadb','oracle db','ms sql','microsoft sql'], type: 'dbms' },
+
+  // ── ПО: ERP ──
+  { tokens: ['1с:предприятие','1с предприятие','1с:бухгалтерия','1с бухгалтерия','галактика erp','парус erp','erp система'], type: 'erp' },
+
+  // ── ПО: САПР ──
+  { tokens: ['компас-3d','компас 3d','nanocad','нанокад','autocad','solidworks','сапр','t-flex'], type: 'cad' },
+
+  // ── ПО: Антивирус / EDR ──
+  { tokens: ['касперский','kaspersky','dr.web','drweb','доктор веб','антивирус'], type: 'antivirus' },
+  { tokens: ['edr','endpoint detection','pt sandbox','kaspersky edr','защита конечных точек'], type: 'edr' },
+
+  // ── ПО: Межсетевой экран (софт) ──
+  { tokens: ['usergate fw','usergate межсетев','континент по','ideco utm','межсетевой экран по','программный межсетевой'], type: 'firewall_sw' },
+
+  // ── ПО: DLP / SIEM ──
+  { tokens: ['dlp','infowatch','solar dozor','защита от утечек','staffcop','searchinform'], type: 'dlp' },
+  { tokens: ['siem','maxpatrol siem','rusiem','ankey siem','pt siem'], type: 'siem' },
+
+  // ── ПО: Криптография ──
+  { tokens: ['криптопро','cryptopro','vipnet','випнет','скзи','vipnet client','vipnet coordinator'], type: 'crypto' },
+
+  // ── ПО: WAF / PAM / IAM / PKI ──
+  { tokens: ['waf','pt application firewall','solar appscreener','web application firewall','защита веб'], type: 'waf' },
+  { tokens: ['pam','привилегированный доступ','indeed pam','senhasegura','cyberark'], type: 'pam' },
+  { tokens: ['iam','idm','управление доступом','indeed access','solar inrights','avanpost'], type: 'iam' },
+  { tokens: ['pki','удостоверяющий центр','криптопро уц','vipnet pki','электронная подпись','эцп'], type: 'pki' },
+
+  // ── ПО: Коммуникации ──
+  { tokens: ['trueconf','trueконф','видеомост','imind','мтс линк','vk teams','вкс','видеоконференц'], type: 'vks' },
+  { tokens: ['рупост','rupost','mailion','communigate','почтовый сервер','communigate pro','mail сервер'], type: 'email' },
+
+  // ── ПО: СЭД / порталы / BPM ──
+  { tokens: ['тезис','directum','docsvision','сэд','документооборот','1с:документооборот'], type: 'ecm' },
+  { tokens: ['битрикс24','битрикс 24','1с-битрикс','корпоративный портал','битрикс портал'], type: 'portal' },
+  { tokens: ['яндекс.трекер','яндекс трекер','kaiten','управление проектами','jira','youtrack'], type: 'project_sw' },
+  { tokens: ['elma bpm','elma365','comindware','bpm','бизнес-процесс'], type: 'bpm' },
+
+  // ── ПО: Резервное копирование / ITSM / Мониторинг ──
+  { tokens: ['rubackup','рубэкап','кибер бэкап','кибербэкап','bacula','acronis','резервное копирование','backup'], type: 'backup_sw' },
+  { tokens: ['simpleone','naumen service desk','naumen sd','itsm','service desk','сервис деск'], type: 'itsm' },
+  { tokens: ['zabbix','maxpatrol vm','nagios','мониторинг ит','grafana','prometheus','мониторинг серверов'], type: 'monitoring' },
+
+  // ── ПО: MDM / HRM / ГИС ──
+  { tokens: ['safephone','мобилдок','mdm','mobile device management','управление мобильн'], type: 'mdm' },
+  { tokens: ['1с:зуп','1с зуп','добыто hrm','hrm','управление персоналом','hr система'], type: 'hr' },
+  { tokens: ['nextgis','панорама гис','гис','геоинформац','mapinfo','qgis'], type: 'gis' },
+
+  // ── Прочие расходные/периферия ──
   { tokens: ['батарейк','battery','duracell','energizer','gp ultra','lr6','lr03','aa щелоч','aaa щелоч'], type: 'battery' },
   { tokens: ['cr2032','cr2025','cr2016','литиевый элемент','coin cell'], type: 'batteryLithium' },
   { tokens: ['термопаста','термоинтерфейс','noctua nt-h','arctic mx','кпт-8','thermal compound'], type: 'thermalPaste' },
   { tokens: ['чистящий набор','набор чистящ','антистатическ','compressed air','сжатый воздух'], type: 'cleaningSet' },
-  { tokens: ['usb-хаб','usb хаб','usb hub','концентратор usb','квадро usb'], type: 'usbHub' },
+  { tokens: ['usb-хаб','usb хаб','usb hub','концентратор usb'], type: 'usbHub' },
   { tokens: ['кабель usb','usb-кабель','usb a-b','usb a-c','microusb','micro-usb','usb type-c кабель'], type: 'usbCable' },
   { tokens: ['этикетк','label tape','dk-2','dymo','ql-'], type: 'labelTape' },
-  { tokens: ['astra linux','астра линукс','alt linux','ред ос','rosa linux'], type: 'os' },
-  { tokens: ['мойофис','мой офис','р7-офис','r7-офис','libreoffice'], type: 'office' },
-  { tokens: ['trueconf','trueконф','видеомост','imind','мтс линк','vk teams'], type: 'vks' },
-  { tokens: ['rubackup','рубэкап','кибер бэкап','кибербэкап','bacula'], type: 'backup_sw' },
-  { tokens: ['termidesk','базис.workplace','rudesktop'], type: 'vdi' },
-  { tokens: ['рупост','mailion','communigate','почтовый сервер'], type: 'email' },
-  { tokens: ['тезис','directum','docsvision','сэд'], type: 'ecm' },
-  { tokens: ['касперский','kaspersky','dr.web','drweb'], type: 'antivirus' },
-  { tokens: ['криптопро','crryptopro','vipnet','випнет','скзи'], type: 'crypto' },
-  { tokens: ['postgresql','tantor','jatoba','субд'], type: 'dbms' },
-  { tokens: ['1с:предприятие','1с предприятие','галактика erp','парус erp'], type: 'erp' },
-  { tokens: ['компас-3d','nanocad','нанокад'], type: 'cad' },
-  { tokens: ['ибп','ups','бесперебойн'], type: 'ups' },
-  { tokens: ['сканер','scanner','fujitsu fi'], type: 'scanner' },
-  { tokens: ['ssd','твердотельн'], type: 'ssd' },
-  { tokens: ['hdd','жёсткий диск','жесткий диск','seagate','western digital'], type: 'hdd' },
-  { tokens: ['картридж','cartridge','тонер-картридж'], type: 'cartridge' },
-  { tokens: ['бумага','svetocopy','снегурочка','кбс'], type: 'paper' },
+  { tokens: ['лицензия','license','подписка на по','renewal','продление лицензии'], type: 'license' },
 ];
 
+function normalizeText(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[\u00AB\u00BB\u201C\u201D\u201E\u2018\u2019]/g, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function detectGoodsType(model: string, fallback: string): string {
-  const text = model.toLowerCase().trim();
-  if (text.length < 3) return fallback;
+  const text = normalizeText(model);
+  if (text.length < 2) return fallback;
+
+  // Точные совпадения коротких токенов (до 4 символов) требуют границ слова
   for (const hint of TYPE_HINTS) {
-    if (hint.tokens.some((t) => text.includes(t))) return hint.type;
+    for (const t of hint.tokens) {
+      const tn = normalizeText(t);
+      if (tn.length <= 3) {
+        // Для коротких токенов (ups, nas, ssd, hdd, ram и т.д.) - проверяем границу слова
+        const re = new RegExp(`(?:^|\\s|[^а-яa-z])${tn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s|[^а-яa-z])`);
+        if (re.test(` ${text} `)) return hint.type;
+      } else {
+        if (text.includes(tn)) return hint.type;
+      }
+    }
   }
   return fallback;
 }

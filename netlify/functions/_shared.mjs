@@ -141,7 +141,7 @@ function aiProviderConfig(providerRaw = 'deepseek') {
   throw new Error(`UNSUPPORTED_PROVIDER_${provider}`);
 }
 
-export async function aiChatCompletion({ provider = 'deepseek', model, messages, temperature = 0.1, max_tokens = 2048 }) {
+export async function aiChatCompletion({ provider = 'deepseek', model, messages, temperature = 0.1, max_tokens = 4096 }) {
   const cfg = aiProviderConfig(provider);
   if (!cfg.apiKey) throw new Error(`AI_KEY_NOT_SET_${cfg.provider.toUpperCase()}`);
   const payload = {
@@ -197,7 +197,7 @@ export async function aiExtractSpecs({ product, contextText, sourceLabel = 'ис
       { role: 'user', content: userPrompt },
     ],
     temperature: 0.1,
-    max_tokens: 2048,
+    max_tokens: 4096,
   });
   let content = upstream?.choices?.[0]?.message?.content || '';
   content = String(content).trim();

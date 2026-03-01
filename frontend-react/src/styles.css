@@ -648,8 +648,9 @@ html[data-theme='contrast'] .hero-chip {
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 16px;
   align-items: start;
+  overflow: hidden;
 }
-.control-grid > * { min-width: 0; }
+.control-grid > * { min-width: 0; overflow: hidden; }
 
 /* ═══════════════════════════════════════════════════════════════
    PANEL (cards)
@@ -666,6 +667,7 @@ html[data-theme='contrast'] .hero-chip {
   box-shadow: var(--shadow-md), var(--shadow-warm);
   backdrop-filter: blur(12px);
   transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+  overflow: hidden;
 }
 .panel::before {
   content: '';
@@ -693,6 +695,9 @@ html[data-theme='contrast'] .hero-chip {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+.grid.two > * {
+  min-width: 0;
+}
 
 /* ═══════════════════════════════════════════════════════════════
    FORM ELEMENTS
@@ -704,6 +709,8 @@ label {
   font-weight: 600;
   color: var(--text-soft);
   letter-spacing: 0.02em;
+  min-width: 0;
+  word-break: break-word;
 }
 
 input, select, button, textarea {
@@ -715,6 +722,7 @@ input, select, button, textarea {
   color: var(--text);
   background: var(--input-bg);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  min-width: 0;
 }
 input::placeholder, textarea::placeholder {
   color: var(--text-muted);

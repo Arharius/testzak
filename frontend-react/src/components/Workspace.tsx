@@ -1362,13 +1362,13 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     if (done.length === 0) return null;
     const contractWord = lawMode === '44' ? 'контракта' : 'договора';
     const currentYear = new Date().getFullYear();
-    const tdL = { border: '1px solid #ccc', padding: '4px 8px', background: '#EEF2FF', fontWeight: 600, width: '38%', color: '#1F2937' } as const;
-    const tdR = { border: '1px solid #ccc', padding: '4px 8px', color: '#1F2937' } as const;
-    const pStyle = { margin: '4px 0', lineHeight: 1.5 } as const;
-    const boldStyle = { fontWeight: 700, margin: '10px 0 4px' } as const;
+    const tdL = { border: '1px solid #555', padding: '4px 8px', background: '#2A3444', fontWeight: 600, width: '38%', color: '#F5F0E8' } as const;
+    const tdR = { border: '1px solid #555', padding: '4px 8px', color: '#F5F0E8' } as const;
+    const pStyle = { margin: '4px 0', lineHeight: 1.5, color: '#F5F0E8' } as const;
+    const boldStyle = { fontWeight: 700, margin: '10px 0 4px', color: '#F5F0E8' } as const;
 
     return (
-      <div className="tz-preview" style={{ marginTop: 24, fontSize: 12, fontFamily: 'Times New Roman, serif', lineHeight: 1.5 }}>
+      <div className="tz-preview" style={{ marginTop: 24, fontSize: 12, fontFamily: 'Times New Roman, serif', lineHeight: 1.5, color: '#F5F0E8' }}>
         {done.map((row, idx) => {
           const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
           const meta = row.meta ?? {};
@@ -1385,14 +1385,14 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               {idx > 0 && <hr style={{ borderTop: '2px dashed #93C5FD', margin: '24px 0' }} />}
 
               {/* Заголовок */}
-              <div style={{ textAlign: 'center', color: '#6B7280', fontSize: 11, marginBottom: 4 }}>Приложение к документации о закупке</div>
-              <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 16, margin: '4px 0 2px' }}>ТЕХНИЧЕСКОЕ ЗАДАНИЕ</div>
-              <div style={{ textAlign: 'center', color: '#6B7280', fontSize: 12, marginBottom: 12 }}>на поставку товара: {g.name}</div>
+              <div style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 11, marginBottom: 4 }}>Приложение к документации о закупке</div>
+              <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 16, margin: '4px 0 2px', color: '#F5F0E8' }}>ТЕХНИЧЕСКОЕ ЗАДАНИЕ</div>
+              <div style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 12, marginBottom: 12 }}>на поставку товара: {g.name}</div>
 
               {/* Сводная таблица */}
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
                 <thead>
-                  <tr><th colSpan={2} style={{ border: '1px solid #ccc', padding: '4px 8px', background: '#1F5C8B', color: '#fff', textAlign: 'center' }}>Наименование, Заказчик, Исполнитель, сроки и адрес поставки</th></tr>
+                  <tr><th colSpan={2} style={{ border: '1px solid #555', padding: '4px 8px', background: '#1F5C8B', color: '#fff', textAlign: 'center' }}>Наименование, Заказчик, Исполнитель, сроки и адрес поставки</th></tr>
                 </thead>
                 <tbody>
                   <tr><td style={tdL}>Наименование объекта поставки:</td><td style={tdR}>{g.name}</td></tr>
@@ -1411,8 +1411,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                 ? `1.1. Требования к количеству поставляемого Товара: ${row.qty} (${numText(row.qty)}) лицензий.`
                 : `1.1. Требования к количеству поставляемого Товара: ${row.qty} (${numText(row.qty)}) штук.`}
               </p>
-              <p style={{ ...pStyle, fontWeight: 600 }}>1.2. Требования к качеству поставляемого Товара:</p>
-              <p style={{ ...pStyle, textAlign: 'center', fontWeight: 700 }}>{g.name}</p>
+              <p style={{ ...pStyle, fontWeight: 600, color: '#F5F0E8' }}>1.2. Требования к качеству поставляемого Товара:</p>
+              <p style={{ ...pStyle, textAlign: 'center', fontWeight: 700, color: '#F5F0E8' }}>{g.name}</p>
 
               {/* Таблица характеристик (3 колонки) */}
               {specs.length > 0 && (() => {
@@ -1421,9 +1421,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
                     <thead>
                       <tr style={{ background: '#1F5C8B', color: '#fff' }}>
-                        <th style={{ border: '1px solid #ccc', padding: '4px 8px' }}>Наименование характеристики</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px 8px' }}>Значение характеристики</th>
-                        <th style={{ border: '1px solid #ccc', padding: '4px 8px', width: 90 }}>Единица измерения</th>
+                        <th style={{ border: '1px solid #555', padding: '4px 8px' }}>Наименование характеристики</th>
+                        <th style={{ border: '1px solid #555', padding: '4px 8px' }}>Значение характеристики</th>
+                        <th style={{ border: '1px solid #555', padding: '4px 8px', width: 90 }}>Единица измерения</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1433,18 +1433,18 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                           curGroup = s.group;
                           rows2.push(
                             <tr key={`g-${si}`}>
-                              <td colSpan={3} style={{ border: '1px solid #ccc', padding: '4px 8px', background: '#C7D2FE', fontWeight: 700, textAlign: 'center' }}>{curGroup}</td>
+                              <td colSpan={3} style={{ border: '1px solid #555', padding: '4px 8px', background: '#2D3A5C', fontWeight: 700, textAlign: 'center', color: '#F5F0E8' }}>{curGroup}</td>
                             </tr>
                           );
                         }
                         rows2.push(
-                          <tr key={si} style={{ background: s._warning ? '#FFF7ED' : undefined }}>
-                            <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{s.name ?? ''}</td>
-                            <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>
+                          <tr key={si} style={{ background: s._warning ? '#3D3020' : undefined }}>
+                            <td style={{ border: '1px solid #555', padding: '4px 8px', color: '#F5F0E8' }}>{s.name ?? ''}</td>
+                            <td style={{ border: '1px solid #555', padding: '4px 8px', color: '#F5F0E8' }}>
                               {s.value ?? ''}
-                              {s._warning && <span style={{ color: '#D97706', fontSize: 10, display: 'block' }}>⚠️ {s._warning}</span>}
+                              {s._warning && <span style={{ color: '#FBBF24', fontSize: 10, display: 'block' }}>⚠️ {s._warning}</span>}
                             </td>
-                            <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>{s.unit ?? ''}</td>
+                            <td style={{ border: '1px solid #555', padding: '4px 8px', color: '#F5F0E8' }}>{s.unit ?? ''}</td>
                           </tr>
                         );
                         return rows2;
@@ -1452,9 +1452,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                       {/* ТОРП для аппаратного товара */}
                       {!isSW && (nacRegime === 'pp878' || nacRegime === 'pp616') && (
                         <tr>
-                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>ТОРП</td>
-                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}>Да</td>
-                          <td style={{ border: '1px solid #ccc', padding: '4px 8px' }}></td>
+                          <td style={{ border: '1px solid #555', padding: '4px 8px', color: '#F5F0E8' }}>ТОРП</td>
+                          <td style={{ border: '1px solid #555', padding: '4px 8px', color: '#F5F0E8' }}>Да</td>
+                          <td style={{ border: '1px solid #555', padding: '4px 8px', color: '#F5F0E8' }}></td>
                         </tr>
                       )}
                     </tbody>
@@ -1560,8 +1560,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 20, fontSize: 12 }}>
                 <tbody>
                   <tr>
-                    <td style={{ padding: '4px 8px', width: '60%' }}>Заказчик: _________________________ / _________________________</td>
-                    <td style={{ padding: '4px 8px' }}>«____» _______________ {currentYear} г.</td>
+                    <td style={{ padding: '4px 8px', width: '60%', color: '#F5F0E8' }}>Заказчик: _________________________ / _________________________</td>
+                    <td style={{ padding: '4px 8px', color: '#F5F0E8' }}>«____» _______________ {currentYear} г.</td>
                   </tr>
                 </tbody>
               </table>

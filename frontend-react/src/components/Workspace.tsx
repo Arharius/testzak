@@ -21,6 +21,7 @@ import { jsPDF } from 'jspdf';
 import {
   flushAutomationQueue,
   flushPlatformQueue,
+  detectBrandTypesAI,
   generateItemSpecs,
   postPlatformDraft,
   sendEventThroughBestChannel,
@@ -774,7 +775,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   // Автодетект: ID строки, где только что сменился тип (для подсветки)
   const [autoDetectedRow, setAutoDetectedRow] = useState<number | null>(null);
   // Выпадающая таблица типов при вводе бренда
-  const [typeSuggestions, setTypeSuggestions] = useState<{ rowId: number; items: Array<{ type: string; name: string; okpd2: string }>; rect?: { top: number; left: number; width: number } } | null>(null);
+  const [typeSuggestions, setTypeSuggestions] = useState<{ rowId: number; items: Array<{ type: string; name: string; okpd2: string }>; loading?: boolean; rect?: { top: number; left: number; width: number } } | null>(null);
+  const aiSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const aiSearchCacheRef = useRef<Record<string, string[]>>({});
   // Ref для скролла к превью
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -1927,15 +1930,68 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                     placeholder={GOODS_CATALOG[row.type]?.placeholder ?? 'Модель / описание...'}
                     onChange={(e) => {
                       const value = e.target.value;
-                      // Универсальный поиск: ищем все типы по всему каталогу
+                      const inputEl = e.target as HTMLElement;
+                      const inputRect = inputEl.getBoundingClientRect();
+                      const rectData = { top: inputRect.bottom + 4, left: inputRect.left, width: Math.max(inputRect.width, 460) };
+
+                      // 1. Локальный поиск (мгновенный)
                       const allTypes = detectAllGoodsTypes(value);
                       if (allTypes.length > 1) {
-                        const inputRect = (e.target as HTMLElement).getBoundingClientRect();
-                        setTypeSuggestions({ rowId: row.id, items: allTypes, rect: { top: inputRect.bottom + 4, left: inputRect.left, width: Math.max(inputRect.width, 420) } });
+                        setTypeSuggestions({ rowId: row.id, items: allTypes, rect: rectData });
+                      } else if (value.trim().length >= 3) {
+                        // Показываем loading пока ждём AI
+                        setTypeSuggestions({ rowId: row.id, items: allTypes, loading: true, rect: rectData });
                       } else {
                         setTypeSuggestions(null);
                       }
-                      // Автодетект (первый результат или fallback)
+
+                      // 2. AI-поиск с debounce (600ms)
+                      if (aiSearchTimerRef.current) clearTimeout(aiSearchTimerRef.current);
+                      if (value.trim().length >= 3 && (apiKey.trim() || useBackend)) {
+                        const query = value.trim().toLowerCase();
+                        aiSearchTimerRef.current = setTimeout(async () => {
+                          // Проверяем кэш
+                          if (aiSearchCacheRef.current[query]) {
+                            const cached = aiSearchCacheRef.current[query];
+                            const items = cached.map(k => ({ type: k, name: GOODS_CATALOG[k]?.name ?? k, okpd2: GOODS_CATALOG[k]?.okpd2 ?? '' }));
+                            if (items.length > 0) {
+                              const el2 = document.querySelector(`input[placeholder*="Например"]`) as HTMLElement;
+                              const r2 = el2 ? el2.getBoundingClientRect() : inputRect;
+                              setTypeSuggestions({ rowId: row.id, items, rect: { top: r2.bottom + 4, left: r2.left, width: Math.max(r2.width, 460) } });
+                            }
+                            return;
+                          }
+                          // Формируем список ключей и лейблов
+                          const keys = Object.keys(GOODS_CATALOG);
+                          const labels: Record<string, string> = {};
+                          keys.forEach(k => { labels[k] = GOODS_CATALOG[k]?.name ?? k; });
+                          try {
+                            const aiTypes = await detectBrandTypesAI(provider, apiKey, model, query, keys, labels);
+                            aiSearchCacheRef.current[query] = aiTypes;
+                            if (aiTypes.length > 0) {
+                              // Мерджим с локальными результатами
+                              const seen = new Set(allTypes.map(t => t.type));
+                              const merged = [...allTypes];
+                              for (const k of aiTypes) {
+                                if (!seen.has(k) && GOODS_CATALOG[k]) {
+                                  seen.add(k);
+                                  merged.push({ type: k, name: GOODS_CATALOG[k].name, okpd2: GOODS_CATALOG[k].okpd2 });
+                                }
+                              }
+                              const el2 = document.querySelector(`input[placeholder*="Например"]`) as HTMLElement;
+                              const r2 = el2 ? el2.getBoundingClientRect() : inputRect;
+                              setTypeSuggestions({ rowId: row.id, items: merged, rect: { top: r2.bottom + 4, left: r2.left, width: Math.max(r2.width, 460) } });
+                            } else if (allTypes.length <= 1) {
+                              setTypeSuggestions(null);
+                            }
+                          } catch {
+                            // AI не отвечает — оставляем локальные результаты
+                            if (allTypes.length <= 1) setTypeSuggestions(null);
+                          }
+                        }, 600);
+                      }
+
+                      // 3. Автодетект (первый результат или fallback)
                       const detected = allTypes.length > 0 ? allTypes[0].type : detectGoodsType(value, row.type);
                       if (detected !== row.type) {
                         setAutoDetectedRow(row.id);
@@ -1949,7 +2005,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                         )
                       );
                     }}
-                    onBlur={() => setTimeout(() => setTypeSuggestions(null), 250)}
+                    onBlur={() => setTimeout(() => setTypeSuggestions(null), 300)}
                   />
                   {/* Дропдаун типов рендерится отдельно через fixed-portal ниже */}
                 </td>
@@ -2068,17 +2124,17 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       {/* Предварительный просмотр */}
       <div ref={previewRef}>{renderPreview()}</div>
 
-      {/* ═══ Дропдаун типов — Portal в document.body (обходит transform/overflow) ═══ */}
-      {typeSuggestions && typeSuggestions.items.length > 1 && typeSuggestions.rect && createPortal(
+      {/* ═══ Дропдаун типов — Portal в document.body ═══ */}
+      {typeSuggestions && (typeSuggestions.items.length > 1 || typeSuggestions.loading) && typeSuggestions.rect && createPortal(
         <div
           style={{
             position: 'fixed',
             top: typeSuggestions.rect.top,
             left: typeSuggestions.rect.left,
-            width: Math.max(typeSuggestions.rect.width, 440),
+            width: Math.max(typeSuggestions.rect.width, 460),
             zIndex: 99999,
             background: '#1A1F2E', border: '1px solid #3B4255', borderRadius: 8,
-            boxShadow: '0 12px 32px rgba(0,0,0,0.6)', maxHeight: 320, overflowY: 'auto',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.6)', maxHeight: 340, overflowY: 'auto',
             fontSize: 12,
           }}
           onMouseDown={(e) => e.preventDefault()}
@@ -2132,8 +2188,15 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               </div>
             );
           })}
+          {/* Loading / AI-поиск */}
+          {typeSuggestions.loading && (
+            <div style={{ padding: '8px 12px', color: '#FBBF24', fontSize: 11, textAlign: 'center' }}>
+              🔍 Поиск через ИИ...
+            </div>
+          )}
+          {/* Футер */}
           <div style={{ padding: '5px 12px', color: '#5A6478', fontSize: 10, borderTop: '1px solid #2A3040', textAlign: 'center' }}>
-            Найдено: {typeSuggestions.items.length} · Кликните для выбора
+            {typeSuggestions.items.length > 0 ? `Найдено: ${typeSuggestions.items.length}` : 'Ожидание ИИ...'} · Кликните для выбора
           </div>
         </div>,
         document.body

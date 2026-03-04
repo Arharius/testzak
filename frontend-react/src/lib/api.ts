@@ -346,6 +346,71 @@ export async function generateItemSpecs(
   return response.data?.choices?.[0]?.message?.content || '';
 }
 
+/**
+ * AI-поиск: определяет типы товаров по бренду/модели через провайдера.
+ * Возвращает массив ключей из GOODS_CATALOG.
+ */
+export async function detectBrandTypesAI(
+  provider: Provider,
+  apiKey: string,
+  aiModel: string,
+  brandQuery: string,
+  catalogKeys: string[],
+  catalogLabels: Record<string, string>
+): Promise<string[]> {
+  const endpoint = API_ENDPOINTS[provider];
+  const safeApiKey = normalizeHeaderValue('API ключ', apiKey);
+  if (!safeApiKey) return [];
+
+  // Формируем список доступных типов
+  const typeList = catalogKeys.map(k => `${k}: ${catalogLabels[k] || k}`).join('\n');
+
+  const prompt = `Ты эксперт по ИТ-оборудованию и ПО. Пользователь вводит "${brandQuery}".
+Определи, какие ТИПЫ товаров выпускает этот бренд/производитель (или к какому типу относится данный продукт).
+
+Доступные типы:
+${typeList}
+
+Ответь ТОЛЬКО JSON-массивом ключей (без пояснений):
+["key1","key2","key3"]
+
+Если бренд неизвестен или не относится ни к одному типу — верни пустой массив [].
+Верни от 1 до 10 наиболее релевантных типов.`;
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${safeApiKey}`,
+    'Content-Type': 'application/json'
+  };
+  if (provider === 'openrouter') {
+    headers['HTTP-Referer'] = 'https://openrouter.ai';
+    headers['X-Title'] = 'TZ Generator React';
+  }
+
+  try {
+    const response = await axios.post(
+      endpoint,
+      {
+        model: aiModel,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.0,
+        max_tokens: 256
+      },
+      { headers, timeout: 10000 }
+    );
+    const raw = response.data?.choices?.[0]?.message?.content || '[]';
+    // Извлекаем JSON-массив
+    const match = raw.match(/\[[\s\S]*?\]/);
+    if (!match) return [];
+    const parsed = JSON.parse(match[0]);
+    if (!Array.isArray(parsed)) return [];
+    // Фильтруем: оставляем только валидные ключи из каталога
+    const validKeys = new Set(catalogKeys);
+    return parsed.filter((k: unknown) => typeof k === 'string' && validKeys.has(k));
+  } catch {
+    return [];
+  }
+}
+
 export async function sendEventThroughBestChannel(
   settings: AutomationSettings,
   eventName: string,

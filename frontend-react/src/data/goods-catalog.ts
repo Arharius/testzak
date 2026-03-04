@@ -896,6 +896,15 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
     'tecra','dynabook','yoga','thinkbook','gram',
     'graviton n15','graviton n17','гравитон н15','гравитон н17',
     'aquarius cmp ns','aquarius ns',
+    // Добавлено: популярные линейки
+    'aspire','bravo','acer aspire','acer nitro','acer swift',
+    'hp 250','hp 255','hp 15','hp 14','hp 17',
+    'lenovo v14','lenovo v15','lenovo v17','lenovo e14','lenovo e15',
+    'dell g15','dell g16','dell inspiron','dell vostro',
+    'huawei d15','huawei d16','honor magicbook',
+    'depo vnb','depo vip','iru patriot','iru novia',
+    'msi modern','msi prestige','msi katana','msi bravo','msi gf',
+    'asus rog','asus tuf',
   ], type: 'laptop' },
 
   // ── Системные блоки / десктопы ──
@@ -904,6 +913,14 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
     'гравитон','graviton','iru ','iru офис','iru office',
     'aquarius pro','aquarius cmp','yadro vegman n','irbis','nuc','optiplex',
     'prodesk','elitedesk','thinkcentre','thinkstation',
+    // Добавлено: популярные десктопы
+    'hp eliteone','hp 290','hp slimline','hp pro tower','hp pro sff',
+    'lenovo v530','lenovo v50','lenovo m70','lenovo m90','lenovo neo 50',
+    'dell vostro desktop','dell precision tower',
+    'acer veriton','veriton',
+    'depo ego','depo race','depo neos',
+    'iru corp','iru home',
+    'kraftway','компьютер в сборе','рабочая станция',
   ], type: 'pc' },
 
   // ── Моноблоки ──
@@ -923,7 +940,14 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   ], type: 'server' },
 
   // ── Мониторы ──
-  { tokens: ['монитор','monitor','aqmon','f2200','benq','viewsonic','philips 24','dell p24','dell u24','dell s24','lg 24','samsung s24'], type: 'monitor' },
+  { tokens: [
+    'монитор','monitor','aqmon','f2200','benq','viewsonic',
+    'philips 24','philips 27','dell p24','dell u24','dell s24','dell p27','dell u27',
+    'lg 24','lg 27','lg 32','samsung s24','samsung s27',
+    'aoc 24','aoc 27','iiyama','hp p24','hp e24','hp z24','hp m24','hp m27',
+    'lenovo l24','lenovo l27','lenovo thinkvision',
+    'acer v24','acer v27','acer ka24',
+  ], type: 'monitor' },
 
   // ── Принтеры ──
   { tokens: ['принтер','printer','xerox b2','hp laser','laserjet','pantum p','ricoh sp','brother hl','canon lbp','kyocera ecosys p'], type: 'printer' },

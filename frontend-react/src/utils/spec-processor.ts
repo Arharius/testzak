@@ -135,6 +135,38 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
     value = value.replace(/(?<!не )более\s+/gi, 'не менее ');
     value = value.replace(/(?<!не )менее\s+/gi, 'не более ');
 
+    // 11. Слабый язык → императивный (44-ФЗ требует определённости)
+    value = value.replace(/рекомендуется\s*/gi, '');
+    value = value.replace(/желательно\s*/gi, '');
+    value = value.replace(/предпочтительно\s*/gi, '');
+    value = value.replace(/опционально\s*/gi, '');
+    if (/^\s*$/.test(value)) value = 'Да'; // если после очистки пусто
+
+    // 12. Единицы в тексте значения → русские
+    value = value.replace(/(\d)\s*GHz\b/gi, '$1 ГГц');
+    value = value.replace(/(\d)\s*MHz\b/gi, '$1 МГц');
+    value = value.replace(/(\d)\s*GB\b/gi,  '$1 ГБ');
+    value = value.replace(/(\d)\s*MB\b/gi,  '$1 МБ');
+    value = value.replace(/(\d)\s*TB\b/gi,  '$1 ТБ');
+
+    // 13. Конкретные артикулы / part numbers → предупреждение
+    const ARTICLE_PATTERN = /\b[A-Z]{2,}\d{3,}[A-Z0-9\-]*\b/;
+    if (ARTICLE_PATTERN.test(value) && !nameLower.includes('окпд') && !nameLower.includes('ктру') && !nameLower.includes('код')) {
+      const hasEquiv = /или\s+эквивалент/i.test(value);
+      if (!hasEquiv) {
+        value = value + ' или эквивалент';
+        (item as SpecItem)._warning = (item._warning ? item._warning + '; ' : '') +
+          'Обнаружен артикул/part number — добавлено «или эквивалент» (ст. 33 44-ФЗ)';
+      }
+    }
+
+    // 14. Голые числовые значения для ёмкости/размера → «не менее N»
+    const NUMERIC_PARAMS = ['объем','объём','ёмкость','емкость','размер','диагональ','яркость','контрастность','частота','скорость','пропускная','производительность'];
+    if (NUMERIC_PARAMS.some(p => nameLower.includes(p)) && /^\d+(\.\d+)?$/.test(value.trim()) && !/не менее|не более/i.test(value)) {
+      value = 'не менее ' + value;
+      (item as SpecItem)._fixed = true;
+    }
+
     return { ...item, group, name, value, unit };
   });
 }

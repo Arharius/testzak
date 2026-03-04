@@ -226,6 +226,7 @@ def _ai_extract_specs(context_text: str, product: str) -> list[dict]:
 async def search_internet_specs(product: str, goods_type: str = "") -> list[dict]:
     """
     Search internet for product specs using DuckDuckGo (free, keyless) + AI extraction.
+    Also searches rostender.info, zakupki.gov.ru, zakupki.mos.ru for existing TZ.
     Returns list of {name, value, unit} dicts.
     """
     query = f"{product} технические характеристики"
@@ -234,6 +235,11 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
 
     # Step 1: Get search results via DuckDuckGo (free, keyless)
     results = await loop.run_in_executor(None, lambda: _duckduckgo_search(query, num=5))
+    # Also search procurement portals for existing TZ documents
+    tz_query = f"{product} техническое задание site:rostender.info OR site:zakupki.gov.ru OR site:zakupki.mos.ru"
+    tz_results = await loop.run_in_executor(None, lambda: _duckduckgo_search(tz_query, num=3))
+    if tz_results:
+        results = (results or []) + tz_results
     if not results:
         logger.warning(f"No search results for: {query}")
         return []
@@ -375,6 +381,27 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
         eis_text = _extract_eis_context(eis_html, query)
         if eis_text:
             context_parts.append(f"Закупки ЕИС по запросу '{query}':\n{eis_text}")
+
+    # Step 3: Search additional sources via DuckDuckGo site: filters
+    for site, label in [
+        ("rostender.info", "РосТендер"),
+        ("zakupki.mos.ru", "Закупки Москвы"),
+        ("zakupki.gov.ru", "ЕИС"),
+    ]:
+        site_query = f"site:{site} {query} техническое задание характеристики"
+        site_results = await loop.run_in_executor(None, lambda q=site_query: _duckduckgo_search(q, num=3))
+        for sr in (site_results or [])[:2]:
+            snippet = sr.get("snippet", "")
+            title = sr.get("title", "")
+            link = sr.get("link", "")
+            if snippet:
+                context_parts.append(f"[{label}] {title}: {snippet}")
+            if link:
+                html = await loop.run_in_executor(None, lambda u=link: _fetch_url(u, timeout=10))
+                if html:
+                    page_text = _extract_text_from_html(html, max_chars=3000)
+                    if page_text and len(page_text) > 100:
+                        context_parts.append(f"[{label} — {link}]:\n{page_text}")
 
     if not context_parts:
         logger.warning(f"No EIS data found for: {query}")

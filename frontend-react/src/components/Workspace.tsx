@@ -1525,8 +1525,6 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     const contractWord = lawMode === '44' ? 'контракта' : 'договора';
     const currentYear = new Date().getFullYear();
     const bdr = '1px solid #555';
-    const tdL = { border: bdr, padding: '4px 8px', background: '#2A3444', fontWeight: 600, width: '38%', color: '#F5F0E8' } as const;
-    const tdR = { border: bdr, padding: '4px 8px', color: '#F5F0E8' } as const;
     const tdC = { border: bdr, padding: '4px 8px', color: '#F5F0E8' } as const;
     const pStyle = { margin: '4px 0', lineHeight: 1.5, color: '#F5F0E8' } as const;
     const boldStyle = { fontWeight: 700, margin: '10px 0 4px', color: '#F5F0E8' } as const;
@@ -1569,38 +1567,15 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
     return (
       <div className="tz-preview" style={{ marginTop: 24, fontSize: 12, fontFamily: 'Times New Roman, serif', lineHeight: 1.5, color: '#F5F0E8' }}>
-        {/* === Заголовок ТЗ (один на все позиции) === */}
-        <div style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 11, marginBottom: 4 }}>Приложение к документации о закупке</div>
-        <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 16, margin: '4px 0 2px', color: '#F5F0E8' }}>ТЕХНИЧЕСКОЕ ЗАДАНИЕ</div>
-        <div style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 12, marginBottom: 12 }}>
-          на поставку товар{multi ? 'ов' : 'а'}: {multi ? `${done.length} позиций` : (GOODS_CATALOG[done[0].type]?.name ?? '')}
-        </div>
 
-        {/* === Раздел 1: Общие сведения (всегда) === */}
-        <div style={boldStyle}>1. Общие сведения</div>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
-          <thead><tr><th colSpan={2} style={{ border: bdr, padding: '4px 8px', background: '#1F5C8B', color: '#fff', textAlign: 'center' }}>Наименование, Заказчик, Исполнитель, сроки и адрес поставки</th></tr></thead>
-          <tbody>
-            <tr><td style={tdL}>Наименование объекта поставки:</td><td style={tdR}>{multi ? `Комплект товаров (${done.length} позиций)` : (GOODS_CATALOG[done[0].type]?.name ?? '')}</td></tr>
-            <tr><td style={tdL}>Заказчик:</td><td style={tdR}></td></tr>
-            <tr><td style={tdL}>Исполнитель:</td><td style={tdR}>Определяется по результатам закупочных процедур</td></tr>
-            {!multi && (() => {
-              const g0 = GOODS_CATALOG[done[0].type] ?? GOODS_CATALOG['pc'];
-              const okpd2Code = done[0].meta?.okpd2_code || g0.okpd2;
-              const okpd2Name = done[0].meta?.okpd2_name || g0.okpd2name;
-              const ktru = done[0].meta?.ktru_code || g0.ktruFixed || '';
-              return <>
-                <tr><td style={tdL}>Код ОКПД2:</td><td style={tdR}>{okpd2Code}{okpd2Name ? ' — ' + okpd2Name : ''}</td></tr>
-                {ktru && <tr><td style={tdL}>Код КТРУ:</td><td style={tdR}>{ktru}</td></tr>}
-              </>;
-            })()}
-            <tr><td style={tdL}>Срок поставки:</td><td style={tdR}>Не более 60 (шестидесяти) календарных дней с даты заключения {contractWord}</td></tr>
-            <tr><td style={tdL}>Адрес поставки:</td><td style={tdR}></td></tr>
-          </tbody>
-        </table>
+        {/* === ШАПКА: Наименование, Заказчик, Исполнитель === */}
+        <div style={{ ...boldStyle, fontSize: 13 }}>Наименование, Заказчик, Исполнитель, сроки и адрес поставки</div>
+        <p style={pStyle}>Наименование объекта поставки: {multi ? `комплект товаров (${done.length} позиций)` : (GOODS_CATALOG[done[0].type]?.name ?? '').toLowerCase()}.</p>
+        <p style={pStyle}>Заказчик: </p>
+        <p style={pStyle}>Исполнитель: определяется по результатам закупочных процедур.</p>
 
-        {/* === Раздел 2: Объём поставки === */}
-        <div style={boldStyle}>2. Объём поставки</div>
+        {/* === ТРЕБОВАНИЯ К ПОСТАВКЕ ТОВАРА === */}
+        <div style={{ ...boldStyle, fontSize: 13 }}>Требования к поставке Товара</div>
         {multi ? (
           <>
             <p style={pStyle}>Количество и наименование поставляемого Товара — согласно таблице. Технические характеристики каждой позиции приведены в Приложениях 1–{done.length}.</p>
@@ -1637,24 +1612,15 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           </p>
         )}
 
-        {/* === Раздел 3: Технические характеристики === */}
-        <div style={boldStyle}>3. Технические характеристики</div>
-        {multi ? (
-          <p style={pStyle}>Технические характеристики каждой позиции приведены в Приложениях 1–{done.length} к настоящему Техническому заданию.</p>
-        ) : (() => {
+        {/* Требования к качеству → таблица характеристик (одна позиция — прямо здесь) */}
+        <p style={{ ...pStyle, fontWeight: 600 }}>Требования к качеству поставляемого Товара:</p>
+        {!multi && (() => {
           const row = done[0]; const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
           const isSW = !!g.isSoftware; const nacRegime = row.meta?.nac_regime || getNacRegime(row.type);
-          return (
-            <>
-              <p style={{ ...pStyle, textAlign: 'center', fontWeight: 700, color: '#F5F0E8' }}>{g.name}{row.model ? ` (${row.model})` : ''}</p>
-              {renderSpecsTable(row, row.specs ?? [], isSW, nacRegime)}
-            </>
-          );
+          return renderSpecsTable(row, row.specs ?? [], isSW, nacRegime);
         })()}
 
-        {/* === Раздел 4: Требования к качеству === */}
-        <div style={boldStyle}>4. Требования к качеству поставляемого Товара</div>
-        {/* Текстовые требования к качеству (зависят от наличия HW/SW) */}
+        {/* Текстовые требования к качеству */}
         {hasHW && (
           <>
             <p style={pStyle}>Все поставляемые технические средства должны быть полнофункциональными и не лимитированными по сроку использования (не быть демонстрационными).</p>
@@ -1662,6 +1628,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             <p style={pStyle}>Товар должен отвечать требованиям качества, безопасности и другим требованиям, предъявленным законодательством Российской Федерации и настоящим {lawMode === '44' ? 'Контрактом' : 'Договором'}.</p>
             <p style={pStyle}>Поставляемый Товар должен быть заводской сборки, серийным, новым (не бывшим в эксплуатации, не восстановленным и не собранным из восстановленных компонентов).</p>
             <p style={pStyle}>Товар не должен находиться в залоге, под арестом или под иным обременением.</p>
+            <p style={pStyle}>На поставляемом Товаре не должно быть следов механических повреждений, изменений вида комплектующих, а также других несоответствующих официальному техническому описанию.</p>
+            <p style={pStyle}>Поставляемый Товар должен быть обеспечен необходимыми кабельными соединениями для осуществления эксплуатации.</p>
+            <p style={pStyle}>В момент получения Заказчик имеет право в присутствии представителя Поставщика осуществить проверку качества поставляемого Товара. Замена забракованного Товара осуществляется Поставщиком в течение 3 (трёх) рабочих дней с момента проверки.</p>
             <p style={pStyle}>Товар должен сопровождаться комплектом документации на русском языке, поставляемой производителем.</p>
           </>
         )}
@@ -1673,59 +1642,65 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           </>
         )}
 
-        {/* === Раздел 5: Требования соответствия (нацрежим по ПП 1875) === */}
-        <div style={boldStyle}>5. Требования соответствия (национальный режим)</div>
-        <p style={pStyle}>Закупка осуществляется с применением мер национального режима в соответствии с Постановлением Правительства РФ от 23.12.2024 № 1875 (далее — ПП РФ № 1875).</p>
-        {regimes.has('pp1236') && (
-          <>
-            <p style={{ ...pStyle, fontWeight: 600, color: '#FBBF24' }}>Для программного обеспечения:</p>
-            <p style={pStyle}>ПО должно быть включено в Единый реестр российских программ (реестр Минцифры) в соответствии с ПП РФ от 16.11.2015 № 1236. Поставщик обязан представить реестровую запись (выписку) из реестра Минцифры.</p>
-          </>
-        )}
-        {regimes.has('pp878') && (
-          <>
-            <p style={{ ...pStyle, fontWeight: 600, color: '#FBBF24' }}>Для радиоэлектронной продукции:</p>
-            <p style={pStyle}>Товар должен быть включён в единый реестр российской радиоэлектронной продукции (РЭПР) либо евразийский реестр промышленных товаров. Подтверждение происхождения — выписка из ГИСП или реестровая запись по ПП РФ № 1875.</p>
-          </>
-        )}
-        {regimes.has('pp616') && (
-          <>
-            <p style={{ ...pStyle, fontWeight: 600, color: '#FBBF24' }}>Для промышленных товаров:</p>
-            <p style={pStyle}>Товар должен иметь подтверждение производства на территории государств — членов ЕАЭС. Подтверждение — документы по ПП РФ № 1875 и ПП РФ от 17.07.2015 № 719 (при применимости).</p>
-          </>
-        )}
+        {/* Требования соответствия */}
+        <p style={{ ...pStyle, fontWeight: 600 }}>Требования соответствия.</p>
+        <p style={pStyle}>Закупка осуществляется с применением мер национального режима в соответствии с ПП РФ от 23.12.2024 № 1875.</p>
+        {regimes.has('pp878') && <p style={pStyle}>Товар должен быть включён в единый реестр российской радиоэлектронной продукции (РЭПР) либо евразийский реестр промышленных товаров. Подтверждение происхождения — выписка из ГИСП или реестровая запись по ПП РФ № 1875.</p>}
+        {regimes.has('pp1236') && <p style={pStyle}>ПО должно быть включено в Единый реестр российских программ (реестр Минцифры) в соответствии с ПП РФ от 16.11.2015 № 1236. Поставщик обязан представить реестровую запись (выписку) из реестра Минцифры.</p>}
+        {regimes.has('pp616') && <p style={pStyle}>Товар должен иметь подтверждение производства на территории государств — членов ЕАЭС. Подтверждение — документы по ПП РФ № 1875 и ПП РФ от 17.07.2015 № 719 (при применимости).</p>}
         {done.some((r) => ['pc','laptop','monoblock','server','tablet','thinClient'].includes(r.type)) && (
-          <p style={pStyle}>Вычислительная техника должна быть совместима с отечественными операционными системами, включёнными в реестр Минцифры, или эквивалентными (ч. 3 ст. 33 44-ФЗ).</p>
+          <p style={pStyle}>Товар должен быть совместим с отечественными операционными системами, включёнными в реестр Минцифры, или эквивалентными (ч. 3 ст. 33 44-ФЗ).</p>
         )}
 
-        {/* === Раздел 6: Гарантия === */}
-        <div style={boldStyle}>6. Требования к гарантии качества</div>
-        {hasHW && <p style={pStyle}>Гарантийный срок на оборудование — не менее 12 (двенадцати) месяцев с даты подписания акта приёмки. Дата выпуска Товара — не ранее 1 января {currentYear} г.</p>}
-        {hasSW && <p style={pStyle}>Техническая поддержка ПО — не менее 12 (двенадцати) месяцев с даты передачи лицензии. Режим: 5×8 (рабочие дни, 09:00–18:00 МСК).</p>}
-        <p style={pStyle}>В случае обнаружения дефектов Поставщик обязан устранить их за свой счёт в течение 30 дней с момента уведомления.</p>
+        {/* Пуско-наладочные работы */}
+        <p style={{ ...pStyle, fontWeight: 600 }}>Требования к пуско-наладочным работам.</p>
+        <p style={pStyle}>{hasSW && !hasHW ? 'Пуско-наладочные работы включают установку программного обеспечения и первоначальную настройку.' : 'Пуско-наладочные работы не требуются.'}</p>
 
-        {/* === Раздел 7: Поставка === */}
-        <div style={boldStyle}>7. Место, сроки и условия поставки товара</div>
-        <p style={pStyle}>Место доставки: _______________________________________________</p>
-        <p style={pStyle}>Срок поставки: не более 60 (шестидесяти) календарных дней с даты заключения {contractWord}.</p>
-        <p style={pStyle}>Поставщик согласовывает дату и время поставки не позднее чем за 2 рабочих дня. Поставка — пн–пт, 09:00–13:00, 14:00–17:00.</p>
-
+        {/* === ГАРАНТИЯ === */}
+        <div style={{ ...boldStyle, fontSize: 13 }}>Требования к сроку предоставления гарантии качества</div>
         {hasHW && (
           <>
-            <div style={boldStyle}>8. Требования к таре и упаковке</div>
-            <p style={pStyle}>Товар поставляется в заводской таре и упаковке, обеспечивающей сохранность при транспортировке.</p>
+            <p style={pStyle}>Поставщик обязан предоставить Заказчику оригинал документа, подтверждающего предоставление гарантии производителя Товара на срок не менее 12 (двенадцати) месяцев.</p>
+            <p style={pStyle}>При обнаружении дефектов Товара в течение гарантийного срока Поставщик обязан обеспечить прибытие своего представителя не позднее 7 дней с момента уведомления. При невозможности ремонта — замена в течение 30 дней. Возврат и замена — за счёт Поставщика.</p>
+            <p style={pStyle}>В случае замены неисправного носителя информации у Заказчика не возникает обязанность по возврату Поставщику неисправного носителя информации.</p>
+            <p style={pStyle}>Дата выпуска поставляемого Товара должна быть не ранее 1 января {currentYear} г.</p>
+          </>
+        )}
+        {hasSW && <p style={pStyle}>Техническая поддержка ПО — не менее 12 (двенадцати) месяцев с даты передачи лицензии. Режим: 5×8 (рабочие дни, 09:00–18:00 МСК).</p>}
+
+        {/* === ТАРА И УПАКОВКА === */}
+        {hasHW && (
+          <>
+            <div style={{ ...boldStyle, fontSize: 13 }}>Требования к таре и упаковке товара</div>
+            <p style={pStyle}>Поставщик обязан поставить Товар в таре и упаковке, обеспечивающей его сохранность, товарный вид и предохраняющей от повреждений при транспортировке.</p>
+            <p style={pStyle}>Товар должен быть упакован и маркирован в соответствии с документацией производителя. Маркировка — чёткая, сохраняющаяся в течение всего срока эксплуатации.</p>
+            <p style={pStyle}>Эксплуатационная документация должна быть вложена в тару вместе с Товаром.</p>
           </>
         )}
 
-        {/* === Подпись === */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 20, fontSize: 12 }}>
-          <tbody>
-            <tr>
-              <td style={{ padding: '4px 8px', width: '60%', color: '#F5F0E8' }}>Заказчик: _________________________ / _________________________</td>
-              <td style={{ padding: '4px 8px', color: '#F5F0E8' }}>«____» _______________ {currentYear} г.</td>
-            </tr>
-          </tbody>
-        </table>
+        {/* === ТРЕБОВАНИЯ К ГАРАНТИИ (детали) === */}
+        <div style={{ ...boldStyle, fontSize: 13 }}>Требования к гарантии</div>
+        <p style={{ ...pStyle, fontWeight: 600 }}>Требования к нормативно-техническому обеспечению.</p>
+        {hasHW && (
+          <>
+            <p style={pStyle}>Поставщик обязан предоставить Заказчику оригиналы документов при поставке:</p>
+            <p style={pStyle}>— документ, подтверждающий предоставление гарантии производителя на срок не менее 12 мес.;</p>
+            <p style={pStyle}>— документ, подтверждающий страну происхождения.</p>
+          </>
+        )}
+        {hasSW && <p style={pStyle}>Поставщик обязан предоставить: лицензионный договор (сублицензионное соглашение); выписку из реестра Минцифры.</p>}
+        <p style={pStyle}>В течение срока гарантии качества Поставщик гарантирует надлежащее качество Товара.</p>
+        <p style={pStyle}>В случае обнаружения недостатков Поставщик своими силами и за свой счёт устраняет дефекты в сроки, установленные Заказчиком.</p>
+        <p style={pStyle}>Все сопутствующие гарантийному обслуживанию мероприятия осуществляются силами и за счёт Поставщика.</p>
+
+        {/* === МЕСТО, СРОКИ И УСЛОВИЯ ПОСТАВКИ === */}
+        <div style={{ ...boldStyle, fontSize: 13 }}>Место, сроки и условия поставки товара.</div>
+        <p style={pStyle}>Место доставки товара: _______________________________________________</p>
+        <p style={pStyle}>Срок поставки Товара: не более 60 (шестидесяти) календарных дней с даты заключения {contractWord}.</p>
+        <p style={pStyle}>Поставщик обязан согласовать дату и время поставки не позднее чем за 2 (два) рабочих дня. Поставка — пн–пт, 09:00–13:00, 14:00–17:00.</p>
+
+        {/* === Дата === */}
+        <p style={{ ...pStyle, marginTop: 24 }}>«___» _______ {currentYear} г.</p>
 
         {/* === ПРИЛОЖЕНИЯ (по одному на каждую позицию, если > 1) === */}
         {multi && done.map((row, idx) => {
@@ -1733,23 +1708,14 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           const isSW = !!g.isSoftware;
           const nacRegime = row.meta?.nac_regime || getNacRegime(row.type);
           const specs = row.specs ?? [];
-          const ktru = row.meta?.ktru_code || g.ktruFixed || '';
           return (
             <div key={row.id} style={{ marginTop: 32, pageBreakBefore: 'always' }}>
               <hr style={{ borderTop: '2px dashed #93C5FD', margin: '24px 0' }} />
               <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 14, color: '#FBBF24', marginBottom: 4 }}>Приложение {idx + 1}</div>
-              <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 13, marginBottom: 2, color: '#F5F0E8' }}>
-                Технические характеристики: {g.name}
+              <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#F5F0E8' }}>
+                {g.name}{row.model ? ` (${row.model})` : ''} — {row.qty} {isSW ? 'лиценз.' : 'шт.'}
               </div>
-              {row.model && <div style={{ textAlign: 'center', fontSize: 11, color: '#9CA3AF', marginBottom: 8 }}>({row.model})</div>}
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
-                <tbody>
-                  <tr><td style={tdL}>Наименование:</td><td style={tdR}>{g.name}</td></tr>
-                  <tr><td style={tdL}>ОКПД2:</td><td style={tdR}>{row.meta?.okpd2_code || g.okpd2}{g.okpd2name ? ' — ' + g.okpd2name : ''}</td></tr>
-                  {ktru && <tr><td style={tdL}>КТРУ:</td><td style={tdR}>{ktru}</td></tr>}
-                  <tr><td style={tdL}>Количество:</td><td style={tdR}>{row.qty} {isSW ? 'лиценз.' : 'шт.'}</td></tr>
-                </tbody>
-              </table>
+              <p style={{ ...pStyle, fontWeight: 600 }}>Требования к качеству поставляемого Товара:</p>
               {renderSpecsTable(row, specs, isSW, nacRegime)}
             </div>
           );

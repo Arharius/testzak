@@ -1297,7 +1297,21 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         if (!candidate || candidate.specs.length === 0) {
           throw new Error('данные ЕИС не найдены');
         }
-        next[i] = { ...next[i], status: 'done', specs: candidate.specs, meta: candidate.meta };
+        // Валидация нацрежима и ОКПД2 по каталогу (ПП 1875)
+        const catEis = GOODS_CATALOG[next[i].type];
+        const regimeEis = getNacRegime(next[i].type);
+        const eisMeta = { ...candidate.meta };
+        if (!eisMeta.nac_regime || eisMeta.nac_regime !== regimeEis) {
+          eisMeta.nac_regime = regimeEis;
+        }
+        if (catEis?.okpd2) {
+          eisMeta.okpd2_code = catEis.okpd2;
+          if (catEis.okpd2name) eisMeta.okpd2_name = catEis.okpd2name;
+        }
+        if (catEis?.ktruFixed && !eisMeta.ktru_code) {
+          eisMeta.ktru_code = catEis.ktruFixed;
+        }
+        next[i] = { ...next[i], status: 'done', specs: candidate.specs, meta: eisMeta };
       } catch (e) {
         next[i] = { ...next[i], status: 'error', error: e instanceof Error ? e.message : 'error' };
       }

@@ -1168,3 +1168,236 @@ export function detectGoodsType(model: string, fallback: string): string {
   }
   return fallback;
 }
+
+// ── Словарь брендов → типы товаров (расширенный) ──
+// Покрывает случаи, когда бренд выпускает несколько категорий товаров,
+// и не все из них упомянуты в placeholder каталога.
+const BRAND_TYPES: Record<string, string[]> = {
+  // Периферия
+  'logitech':     ['mouse','keyboard','webcam','headset'],
+  'a4tech':       ['mouse','keyboard'],
+  'sven':         ['mouse','keyboard','headset','ups'],
+  'defender':     ['mouse','keyboard','headset'],
+  'genius':       ['mouse','keyboard','webcam'],
+  'oklick':       ['mouse','keyboard'],
+  'оклик':        ['mouse','keyboard'],
+  'гарда':        ['mouse','keyboard'],
+  'razer':        ['mouse','keyboard','headset'],
+  'steelseries':  ['mouse','keyboard','headset'],
+  'corsair':      ['mouse','keyboard','headset','ram','psu','cooling'],
+  'hyperx':       ['mouse','keyboard','headset','ram'],
+  'jabra':        ['headset','webcam'],
+  'poly':         ['headset','webcam'],
+  'plantronics':  ['headset'],
+  'microlab':     ['headset'],       // акустика → ближайшее — гарнитура
+  'edifier':      ['headset'],
+  'sennheiser':   ['headset'],
+  'jbl':          ['headset'],
+  'sony':         ['headset','monitor','webcam'],
+  // Крупные вендоры (PC + периферия + серверы)
+  'hp':           ['pc','laptop','monitor','printer','mfu','scanner','keyboard','mouse','headset','server','thinClient'],
+  'dell':         ['pc','laptop','monitor','server','keyboard','mouse'],
+  'lenovo':       ['pc','laptop','monitor','server','monoblock','tablet','keyboard','mouse','thinClient'],
+  'asus':         ['laptop','pc','monitor','motherboard','router','accessPoint','gpu'],
+  'acer':         ['laptop','pc','monitor','projector'],
+  'apple':        ['laptop','tablet','monoblock'],
+  'microsoft':    ['keyboard','mouse','office','os'],
+  'huawei':       ['laptop','switch','router','accessPoint','server'],
+  // Печать
+  'samsung':      ['monitor','ssd','hdd','ram','printer','tablet'],
+  'epson':        ['printer','mfu','scanner','projector'],
+  'canon':        ['printer','mfu','scanner','cartridge'],
+  'brother':      ['printer','mfu','scanner'],
+  'xerox':        ['printer','mfu','cartridge'],
+  'kyocera':      ['printer','mfu','cartridge'],
+  'ricoh':        ['printer','mfu'],
+  'pantum':       ['printer','mfu','cartridge'],
+  'sharp':        ['printer','mfu'],
+  'oki':          ['printer','mfu','drum'],
+  // Мониторы и проекторы
+  'lg':           ['monitor'],
+  'benq':         ['monitor','projector','interactive'],
+  'viewsonic':    ['monitor','projector','interactive'],
+  'philips':      ['monitor'],
+  'iiyama':       ['monitor'],
+  'aoc':          ['monitor'],
+  'optoma':       ['projector'],
+  'casio':        ['projector'],
+  'newline':      ['interactive'],
+  // Сеть
+  'tp-link':      ['router','switch','accessPoint','mediaConverter'],
+  'tp link':      ['router','switch','accessPoint','mediaConverter'],
+  'd-link':       ['router','switch','accessPoint','kvm','mediaConverter'],
+  'd link':       ['router','switch','accessPoint','kvm','mediaConverter'],
+  'cisco':        ['switch','router','firewall','accessPoint','server'],
+  'mikrotik':     ['router','switch','accessPoint'],
+  'zyxel':        ['router','switch','accessPoint'],
+  'ubiquiti':     ['accessPoint','switch','router'],
+  'eltex':        ['switch','router','accessPoint','mediaConverter'],
+  'snr':          ['switch','router','accessPoint','patchPanel'],
+  'juniper':      ['switch','router','firewall'],
+  'aruba':        ['switch','accessPoint'],
+  // Накопители и память
+  'kingston':     ['ssd','hdd','ram','flashDrive'],
+  'western digital': ['hdd','ssd'],
+  'wd':           ['hdd','ssd'],
+  'seagate':      ['hdd','ssd'],
+  'toshiba':      ['hdd','ssd','laptop','printer','mfu'],
+  'crucial':      ['ssd','ram'],
+  'transcend':    ['ssd','flashDrive','ram'],
+  'sandisk':      ['ssd','flashDrive'],
+  'patriot':      ['ram','ssd','flashDrive'],
+  // Комплектующие
+  'intel':        ['cpu','ssd','server','motherboard'],
+  'amd':          ['cpu','gpu'],
+  'nvidia':       ['gpu'],
+  'gigabyte':     ['motherboard','gpu'],
+  'msi':          ['motherboard','gpu','laptop','monitor'],
+  'asrock':       ['motherboard'],
+  'be quiet':     ['psu','cooling'],
+  'seasonic':     ['psu'],
+  'noctua':       ['cooling'],
+  // ИБП и PDU
+  'apc':          ['ups','pdu'],
+  'ippon':        ['ups'],
+  'eaton':        ['ups','pdu'],
+  'cyberpower':   ['ups'],
+  'systeme electric': ['ups'],
+  // Серверное
+  'hpe':          ['server','serverBlade','san','tapeLib'],
+  'supermicro':   ['server','motherboard'],
+  'yadro':        ['server','san','pc','laptop'],
+  'aquarius':     ['pc','laptop','monoblock','server','monitor','tablet'],
+  'iru':          ['pc','laptop','monoblock','monitor'],
+  'graviton':     ['pc','laptop','server'],
+  'гравитон':     ['pc','laptop','server'],
+  'kraftway':     ['pc','laptop','server','thinClient'],
+  'synology':     ['nas'],
+  'qnap':         ['nas'],
+  // Стойки и шкафы
+  'rittal':       ['rackCabinet','serverRack'],
+  'цмо':          ['rackCabinet','serverRack'],
+  'hyperline':    ['patchPanel','patchCord','rackCabinet'],
+  // Кабели
+  'cablexpert':   ['hdmiCable','patchCord','powerCable','usbCable'],
+  'gembird':      ['hdmiCable','patchCord','usbHub'],
+  'buro':         ['usbHub','mouse','keyboard'],
+  // Российское ПО — безопасность
+  'kaspersky':    ['antivirus','edr'],
+  'касперский':   ['antivirus','edr'],
+  'dr.web':       ['antivirus'],
+  'доктор веб':   ['antivirus'],
+  'positive technologies': ['siem','waf','edr','monitoring'],
+  'pt':           ['siem','waf','edr','monitoring'],
+  'usergate':     ['firewall','firewall_sw'],
+  'код безопасности': ['firewall','crypto'],
+  'континент':    ['firewall','firewall_sw','crypto'],
+  'криптопро':    ['crypto','pki'],
+  'vipnet':       ['crypto','firewall_sw'],
+  'infowatch':    ['dlp'],
+  'solar':        ['dlp','siem','iam'],
+  'indeed':       ['pam','iam'],
+  // Российское ПО — общее
+  'astra':        ['os'],
+  'астра':        ['os'],
+  'alt linux':    ['os'],
+  'ред ос':       ['os'],
+  'мойофис':      ['office'],
+  'р7':           ['office'],
+  '1с':           ['erp','hr'],
+  'bitrix':       ['portal','project_sw'],
+  'битрикс':      ['portal','project_sw'],
+  'trueconf':     ['vks'],
+  'рупост':       ['email'],
+  'directum':     ['ecm'],
+  'тезис':        ['ecm'],
+  'rubackup':     ['backup_sw'],
+  'кибер бэкап':  ['backup_sw'],
+  'naumen':       ['itsm'],
+  'simpleone':    ['itsm'],
+  'zabbix':       ['monitoring'],
+  'safephone':    ['mdm'],
+  'termidesk':    ['vdi'],
+  'базис':        ['virt','vdi'],
+};
+
+/**
+ * Универсальный поиск: возвращает все типы товара, подходящие под введённый текст.
+ * Комбинирует два подхода:
+ *   1) BRAND_TYPES — словарь «бренд → все типы» (для мультипродуктовых брендов)
+ *   2) Поиск по GOODS_CATALOG — name, placeholder, okpd2name (для любого текста)
+ *   3) TYPE_HINTS — токены конкретных моделей/линеек
+ */
+export function detectAllGoodsTypes(model: string): Array<{ type: string; name: string; okpd2: string }> {
+  const text = normalizeText(model);
+  if (text.length < 2) return [];
+
+  const results: Array<{ type: string; name: string; okpd2: string }> = [];
+  const seenTypes = new Set<string>();
+
+  const addType = (t: string) => {
+    if (seenTypes.has(t) || !GOODS_CATALOG[t]) return;
+    seenTypes.add(t);
+    results.push({ type: t, name: GOODS_CATALOG[t].name, okpd2: GOODS_CATALOG[t].okpd2 });
+  };
+
+  // Для коротких запросов (2-3 символа) — проверяем по границам слова
+  const shortQuery = text.length <= 3;
+  const escText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const wordBoundaryRe = new RegExp(`(?:^|[\\s,.:;()/\\-])${escText}(?:$|[\\s,.:;()/\\-])`);
+
+  // 1. BRAND_TYPES — словарь мультипродуктовых брендов
+  for (const [brand, types] of Object.entries(BRAND_TYPES)) {
+    const bn = normalizeText(brand);
+    let brandMatch = false;
+    if (bn.length <= 3 || shortQuery) {
+      brandMatch = wordBoundaryRe.test(` ${bn} `) || new RegExp(`(?:^|[\\s,.:;()/\\-])${bn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|[\\s,.:;()/\\-])`).test(` ${text} `);
+    } else {
+      brandMatch = text.includes(bn) || bn.includes(text);
+    }
+    if (brandMatch) {
+      for (const t of types) addType(t);
+    }
+  }
+
+  // 2. Поиск по GOODS_CATALOG (name, placeholder, okpd2name)
+  for (const [typeKey, item] of Object.entries(GOODS_CATALOG)) {
+    if (seenTypes.has(typeKey)) continue;
+
+    const nameNorm = normalizeText(item.name);
+    const placeholderNorm = normalizeText(item.placeholder ?? '');
+    const okpd2nameNorm = normalizeText(item.okpd2name);
+
+    let matched = false;
+
+    if (shortQuery) {
+      if (wordBoundaryRe.test(` ${nameNorm} `) || wordBoundaryRe.test(` ${placeholderNorm} `) || wordBoundaryRe.test(` ${okpd2nameNorm} `)) {
+        matched = true;
+      }
+    } else {
+      if (nameNorm.includes(text) || placeholderNorm.includes(text) || okpd2nameNorm.includes(text)) {
+        matched = true;
+      }
+    }
+
+    if (matched) addType(typeKey);
+  }
+
+  // 3. TYPE_HINTS (токены конкретных моделей)
+  for (const hint of TYPE_HINTS) {
+    if (seenTypes.has(hint.type)) continue;
+    for (const tok of hint.tokens) {
+      const tn = normalizeText(tok);
+      let tokenMatched = false;
+      if (tn.length <= 3) {
+        const re = new RegExp(`(?:^|\\s|[^а-яa-z])${tn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s|[^а-яa-z])`);
+        tokenMatched = re.test(` ${text} `);
+      } else {
+        tokenMatched = text.includes(tn);
+      }
+      if (tokenMatched) { addType(hint.type); break; }
+    }
+  }
+
+  return results;
+}

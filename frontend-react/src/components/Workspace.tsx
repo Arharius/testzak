@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import {
   AlignmentType,
@@ -34,7 +35,7 @@ import {
 } from '../lib/backendApi';
 import { appendAutomationLog, appendImmutableAudit } from '../lib/storage';
 import type { AutomationSettings, EnterpriseSettings, PlatformIntegrationSettings } from '../types/schemas';
-import { GOODS_CATALOG, GOODS_GROUPS, detectGoodsType, getNacRegime, type GoodsItem, type HardSpec } from '../data/goods-catalog';
+import { GOODS_CATALOG, GOODS_GROUPS, detectGoodsType, detectAllGoodsTypes, getNacRegime, type GoodsItem, type HardSpec } from '../data/goods-catalog';
 import { postProcessSpecs, parseAiResponse, type SpecItem } from '../utils/spec-processor';
 import { buildSection2Rows, buildSection4Rows, buildSection5Rows, type LawMode } from '../utils/npa-blocks';
 import { buildAntiFasReport, type ComplianceReport } from '../utils/compliance';
@@ -772,6 +773,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   // Автодетект: ID строки, где только что сменился тип (для подсветки)
   const [autoDetectedRow, setAutoDetectedRow] = useState<number | null>(null);
+  // Выпадающая таблица типов при вводе бренда
+  const [typeSuggestions, setTypeSuggestions] = useState<{ rowId: number; items: Array<{ type: string; name: string; okpd2: string }>; rect?: { top: number; left: number; width: number } } | null>(null);
   // Ref для скролла к превью
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -1924,7 +1927,16 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                     placeholder={GOODS_CATALOG[row.type]?.placeholder ?? 'Модель / описание...'}
                     onChange={(e) => {
                       const value = e.target.value;
-                      const detected = detectGoodsType(value, row.type);
+                      // Универсальный поиск: ищем все типы по всему каталогу
+                      const allTypes = detectAllGoodsTypes(value);
+                      if (allTypes.length > 1) {
+                        const inputRect = (e.target as HTMLElement).getBoundingClientRect();
+                        setTypeSuggestions({ rowId: row.id, items: allTypes, rect: { top: inputRect.bottom + 4, left: inputRect.left, width: Math.max(inputRect.width, 420) } });
+                      } else {
+                        setTypeSuggestions(null);
+                      }
+                      // Автодетект (первый результат или fallback)
+                      const detected = allTypes.length > 0 ? allTypes[0].type : detectGoodsType(value, row.type);
                       if (detected !== row.type) {
                         setAutoDetectedRow(row.id);
                         setTimeout(() => setAutoDetectedRow(null), 2500);
@@ -1937,7 +1949,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                         )
                       );
                     }}
+                    onBlur={() => setTimeout(() => setTypeSuggestions(null), 250)}
                   />
+                  {/* Дропдаун типов рендерится отдельно через fixed-portal ниже */}
                 </td>
                 <td className="qty-cell">
                   <input
@@ -2053,6 +2067,77 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
       {/* Предварительный просмотр */}
       <div ref={previewRef}>{renderPreview()}</div>
+
+      {/* ═══ Дропдаун типов — Portal в document.body (обходит transform/overflow) ═══ */}
+      {typeSuggestions && typeSuggestions.items.length > 1 && typeSuggestions.rect && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: typeSuggestions.rect.top,
+            left: typeSuggestions.rect.left,
+            width: Math.max(typeSuggestions.rect.width, 440),
+            zIndex: 99999,
+            background: '#1A1F2E', border: '1px solid #3B4255', borderRadius: 8,
+            boxShadow: '0 12px 32px rgba(0,0,0,0.6)', maxHeight: 320, overflowY: 'auto',
+            fontSize: 12,
+          }}
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {/* Заголовок */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8,
+            padding: '7px 12px', color: '#7B8494', fontSize: 10, fontWeight: 600,
+            borderBottom: '1px solid #2A3040', textTransform: 'uppercase', letterSpacing: 0.5,
+            position: 'sticky', top: 0, background: '#1A1F2E', zIndex: 1,
+          }}>
+            <span>Тип товара</span>
+            <span>ОКПД2</span>
+            <span>Нацрежим</span>
+          </div>
+          {/* Строки */}
+          {typeSuggestions.items.map((item, idx) => {
+            const regime = getNacRegime(item.type);
+            const regLabels: Record<string, string> = { pp878: 'РЭПР', pp1236: 'Реестр ПО', pp616: 'Промтовар', none: '—' };
+            const regColors: Record<string, string> = { pp878: '#2563EB', pp1236: '#16A34A', pp616: '#D97706', none: '#6B7280' };
+            const currentRow = rows.find(r => r.id === typeSuggestions.rowId);
+            const isActive = currentRow ? item.type === currentRow.type : false;
+            return (
+              <div
+                key={item.type}
+                style={{
+                  display: 'grid', gridTemplateColumns: '1fr auto auto', gap: 8,
+                  padding: '7px 12px', cursor: 'pointer', alignItems: 'center',
+                  borderBottom: idx < typeSuggestions.items.length - 1 ? '1px solid #232838' : 'none',
+                  background: isActive ? '#1E3A5F' : 'transparent',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = '#242B3D'; }}
+                onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setRows((prev) => prev.map((x) => x.id === typeSuggestions.rowId ? { ...x, type: item.type } : x));
+                  setAutoDetectedRow(typeSuggestions.rowId);
+                  setTimeout(() => setAutoDetectedRow(null), 2500);
+                  setTypeSuggestions(null);
+                }}
+              >
+                <span style={{ color: isActive ? '#93C5FD' : '#E2E8F0', fontWeight: isActive ? 600 : 400 }}>
+                  {isActive && '✓ '}{item.name}
+                </span>
+                <span style={{ color: '#8892A4', fontSize: 10, fontFamily: 'monospace' }}>{item.okpd2}</span>
+                <span style={{
+                  fontSize: 9, padding: '1px 6px', borderRadius: 4, fontWeight: 600,
+                  color: '#fff', background: regColors[regime] ?? '#6B7280',
+                }}>{regLabels[regime] ?? '—'}</span>
+              </div>
+            );
+          })}
+          <div style={{ padding: '5px 12px', color: '#5A6478', fontSize: 10, borderTop: '1px solid #2A3040', textAlign: 'center' }}>
+            Найдено: {typeSuggestions.items.length} · Кликните для выбора
+          </div>
+        </div>,
+        document.body
+      )}
     </section>
   );
 }

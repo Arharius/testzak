@@ -1584,7 +1584,7 @@ export const GOODS_GROUPS: GoodsGroup[] = [
   ] },
   { label: '🔌 Кабели и коммутация', items: [
     'patchCord', 'fiberCable', 'hdmiCable', 'usbCable', 'powerCable', 'rackCabinet',
-    'fiberPatchCord', 'fiberPigtail', 'audioCable', 'serialCable', 'consoleCable', 'sfpDac',
+    'fiberPatchCord', 'fiberPigtail', 'audioCable', 'serialCable', 'consoleCable',
     'cableTie', 'cableChannel',
   ] },
   { label: '🔗 Коннекторы и СКС', items: [
@@ -1637,6 +1637,7 @@ export const HW_878_TYPES = new Set([
   'graphicsTablet','signaturePad',
   'networkAdapter','raidController','hbaAdapter','soundCard','captureCard','tpmModule',
   'cpu','gpu','motherboard',
+  'kvm_server',
 ]);
 export const SW_1236_TYPES = new Set([
   'os','office','antivirus','firewall_sw','crypto','dlp','siem','backup_sw','virt','dbms','erp','cad','license',
@@ -1644,9 +1645,43 @@ export const SW_1236_TYPES = new Set([
   'bpm','portal','ldap','vpn','reporting',
   'osSupport','supportCert','remoteAccessSw','crm','bi','rpa','miscSoftware',
 ]);
+// HW_175_TYPES — промтовары, для которых применяется pp616 (ПП РФ № 1875 + ПП719).
+// Типы, уже покрытые HW_878 (радиоэлектроника), здесь НЕ дублируются —
+// getNacRegime() проверяет HW_878 раньше, поэтому дубли бессмысленны.
 export const HW_175_TYPES = new Set([
-  'pc','laptop','monoblock','server','tablet','thinClient','switch','router','firewall',
-  'accessPoint','nas','san','serverRack','serverBlade','ups','printer','mfu','projector',
+  // Электропитание
+  'ups','psu','surgeProtector','extensionCord','plugAdapter','upsBattery','charger',
+  // Кабели и коммутация
+  'patchCord','fiberCable','hdmiCable','powerCable','usbCable',
+  'fiberPatchCord','fiberPigtail','audioCable','serialCable','consoleCable',
+  'sfpDac','cableTie','cableChannel',
+  // Коннекторы и СКС
+  'rj45Connector','keystoneJack','networkSocket','faceplate','rj45Coupler',
+  'fiberPatchPanel','spliceTray',
+  // Стойки, шкафы, серверные аксессуары
+  'rackCabinet','wallCabinet','rackShelf','cableManagerRack','blankPanel',
+  'cageNutSet','serverRailKit','pdu',
+  // Накопители / носители (не РЭПР)
+  'flashDrive','dvd','extSsd','extHdd','memoryCard','cardReader','opticalDrive',
+  'ltoTape','ltoCleaningCartridge','tapeCartridge',
+  // Расходные материалы
+  'cartridge','inkCartridge','paper','toner','drum','labelTape',
+  'thermalPaper','fuserUnit','transferBelt','wasteToner','developerUnit',
+  'maintenanceKitPrinter','printHead','discCase','discSleeve',
+  // Периферийные аксессуары (промтовары)
+  'dockingStation','usbToken','monitorArm','laptopBag','laptopStand',
+  'mousePad','privacyFilter','laptopLock','keyboardMouseSet',
+  'usbAdapter','videoAdapter','usbHub','usbExtender','kvmExtender',
+  'hdmiSplitter','hdmiSwitcher','presentationClicker',
+  'laminator','shredder','projectorScreen','labelPrinter',
+  // Прочие расходники
+  'battery','batteryLithium','thermalPaste','cleaningSet','cleaner',
+  // Комплектующие (не РЭПР)
+  'cooling','parts','pcCase','caseFan',
+  // Сетевые аксессуары (промтовары)
+  'poeInjector','poeSplitter',
+  // Универсальные промтовары
+  'miscHardware','miscCable','miscConsumable',
 ]);
 
 export type NacRegime = 'pp1236' | 'pp878' | 'pp616' | 'none';

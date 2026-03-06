@@ -838,6 +838,726 @@ export const GOODS_CATALOG: Record<string, GoodsItem> = {
       { group: 'Состояние', name: 'Состояние', value: 'Новый, в оригинальной упаковке, не использованный, совместим с установленным оборудованием' },
     ],
   },
+
+  // ── Инструменты и измерительные приборы ──
+  toolSet: {
+    name: 'Набор инструментов',
+    okpd2: '25.73.30.000',
+    okpd2name: 'Инструмент ручной прочий',
+    ktruFixed: '25.73.30.000-00000001',
+    placeholder: 'Например: Набор инструментов 108 предметов...',
+  },
+  crimper: {
+    name: 'Кримпер / инструмент обжимной',
+    okpd2: '25.73.30.000',
+    okpd2name: 'Инструмент ручной для монтажных работ',
+    ktruFixed: '25.73.30.000-00000002',
+    placeholder: 'Например: Обжимной инструмент RJ-45/RJ-11...',
+  },
+  cableTester: {
+    name: 'Тестер кабеля / LAN-тестер',
+    okpd2: '26.51.43.000',
+    okpd2name: 'Приборы и аппаратура для измерения электрических величин',
+    ktruFixed: '26.51.43.000-00000001',
+    placeholder: 'Например: Тестер витой пары RJ45, PoE-тестер...',
+  },
+  soldering: {
+    name: 'Паяльник / паяльная станция',
+    okpd2: '27.90.31.000',
+    okpd2name: 'Инструменты электрические ручные прочие',
+    ktruFixed: '27.90.31.000-00000001',
+    placeholder: 'Например: Паяльная станция 60 Вт...',
+  },
+  multimeter: {
+    name: 'Мультиметр / измерительный прибор',
+    okpd2: '26.51.43.000',
+    okpd2name: 'Приборы для измерения электрических величин',
+    ktruFixed: '26.51.43.000-00000002',
+    placeholder: 'Например: Цифровой мультиметр True RMS...',
+  },
+  precisionScrewdriver: {
+    name: 'Прецизионная отвёртка / набор точных отвёрток',
+    okpd2: '25.73.30.000',
+    okpd2name: 'Инструмент ручной прочий',
+    placeholder: 'Например: Набор отверток PH/Torx для электроники...',
+  },
+  desolderPump: {
+    name: 'Оловоотсос / помпа для выпайки',
+    okpd2: '25.73.30.000',
+    okpd2name: 'Инструмент ручной для монтажных работ',
+    placeholder: 'Например: Ручной оловоотсос для пайки электроники...',
+  },
+  antistaticWristStrap: {
+    name: 'Антистатический браслет (ESD)',
+    okpd2: '26.51.66.000',
+    okpd2name: 'Средства защиты от статического электричества (аксессуары)',
+    placeholder: 'Например: ESD wrist strap с заземляющим проводом...',
+  },
+  antistaticMat: {
+    name: 'Антистатический коврик / ESD mat',
+    okpd2: '22.29.29.190',
+    okpd2name: 'Изделия полимерные/резиновые специальные',
+    placeholder: 'Например: ESD-коврик настольный с заземлением...',
+  },
+
+  // ── Дополнительная периферия и аксессуары ──
+  dockingStation: {
+    name: 'Док-станция / репликатор портов',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Комплектующие и аксессуары для вычислительных машин прочие',
+    placeholder: 'Например: USB-C док-станция с HDMI/LAN/USB, ThinkPad Dock...',
+  },
+  speakers: {
+    name: 'Колонки / акустическая система',
+    okpd2: '26.40.32.000',
+    okpd2name: 'Громкоговорители (акустические системы)',
+    placeholder: 'Например: Компьютерные колонки 2.0/2.1, USB-powered...',
+  },
+  microphone: {
+    name: 'Микрофон (настольный / USB)',
+    okpd2: '26.40.41.000',
+    okpd2name: 'Микрофоны и подставки для них',
+    placeholder: 'Например: USB-микрофон для ВКС, настольный микрофон...',
+  },
+  smartCardReader: {
+    name: 'Считыватель смарт-карт / USB-ридер',
+    okpd2: '26.20.16.190',
+    okpd2name: 'Устройства ввода/вывода вычислительных машин прочие',
+    placeholder: 'Например: USB smart card reader для ГОСТ/СКЗИ...',
+  },
+  barcodeScanner: {
+    name: 'Сканер штрихкодов / QR-сканер',
+    okpd2: '26.20.16.150',
+    okpd2name: 'Сканеры и устройства ввода для вычислительных машин',
+    placeholder: 'Например: 2D-сканер штрихкодов (USB), ручной QR-сканер...',
+  },
+  receiptPrinter: {
+    name: 'Чековый принтер / термопринтер чеков',
+    okpd2: '26.20.16.120',
+    okpd2name: 'Принтеры для вычислительных машин',
+    placeholder: 'Например: Термопринтер чеков 80 мм, ESC/POS, USB/LAN...',
+  },
+  monitorArm: {
+    name: 'Кронштейн / держатель для монитора',
+    okpd2: '25.99.29.190',
+    okpd2name: 'Изделия металлические прочие',
+    placeholder: 'Например: Настольный кронштейн VESA 75/100, газлифт...',
+  },
+  laptopBag: {
+    name: 'Сумка / рюкзак для ноутбука',
+    okpd2: '15.12.12.190',
+    okpd2name: 'Сумки и аналогичные изделия прочие',
+    placeholder: 'Например: Сумка для ноутбука 15.6", рюкзак 17"...',
+  },
+  laptopStand: {
+    name: 'Подставка для ноутбука',
+    okpd2: '25.99.29.190',
+    okpd2name: 'Изделия металлические прочие / подставки',
+    placeholder: 'Например: Подставка для ноутбука алюминиевая, регулируемая...',
+  },
+  charger: {
+    name: 'Зарядное устройство / адаптер питания',
+    okpd2: '27.90.40.000',
+    okpd2name: 'Преобразователи электрические прочие (зарядные устройства)',
+    placeholder: 'Например: Блок питания для ноутбука 65 Вт USB-C PD...',
+  },
+  usbToken: {
+    name: 'USB-токен / ключевой носитель (Рутокен, JaCarta)',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Устройства и аксессуары для вычислительных машин прочие',
+    placeholder: 'Например: Рутокен ЭЦП 3.0, JaCarta ГОСТ...',
+  },
+  keyboardMouseSet: {
+    name: 'Комплект клавиатура + мышь',
+    okpd2: '26.20.16.190',
+    okpd2name: 'Устройства ввода/вывода и комплекты периферии',
+    placeholder: 'Например: Проводной/беспроводной комплект клавиатура+мышь USB/2.4G...',
+  },
+  mousePad: {
+    name: 'Коврик для мыши',
+    okpd2: '22.29.29.190',
+    okpd2name: 'Изделия пластмассовые/полимерные прочие (аксессуары)',
+    placeholder: 'Например: Коврик для мыши тканевый, с подушкой под запястье...',
+  },
+  touchMonitor: {
+    name: 'Сенсорный монитор / touch-дисплей',
+    okpd2: '26.20.17.110',
+    okpd2name: 'Мониторы для компьютеров с плоским экраном',
+    placeholder: 'Например: Сенсорный монитор 21.5"/24" с USB Touch...',
+  },
+  speakerphone: {
+    name: 'Спикерфон / конференц-спикер (ВКС)',
+    okpd2: '26.40.43.000',
+    okpd2name: 'Аппаратура звуковая для связи и конференций',
+    placeholder: 'Например: USB/Bluetooth спикерфон для переговорной комнаты...',
+  },
+  conferenceCamera: {
+    name: 'Камера для ВКС / conference camera',
+    okpd2: '26.40.33.130',
+    okpd2name: 'Видеокамеры цифровые и камеры для видеосвязи',
+    placeholder: 'Например: PTZ-камера для конференц-зала, USB/HDMI/IP...',
+  },
+  documentCamera: {
+    name: 'Документ-камера / визуализатор',
+    okpd2: '26.70.13.000',
+    okpd2name: 'Аппаратура оптическая и визуализации прочая',
+    placeholder: 'Например: Документ-камера для демонстрации документов A4/A3...',
+  },
+  projectorScreen: {
+    name: 'Экран для проектора',
+    okpd2: '13.92.22.190',
+    okpd2name: 'Изделия текстильные/полимерные прочие (экраны проекционные)',
+    placeholder: 'Например: Экран проекционный настенный/моторизированный 100–120"...',
+  },
+  tvPanel: {
+    name: 'Телевизионная / информационная панель',
+    okpd2: '26.40.20.110',
+    okpd2name: 'Приёмники телевизионные, мониторы и панели отображения',
+    placeholder: 'Например: Панель 55"/65" 4K для переговорной/инфозоны...',
+  },
+  ipPhone: {
+    name: 'IP-телефон / VoIP-телефон',
+    okpd2: '26.30.23.000',
+    okpd2name: 'Аппараты телефонные прочие для сетей передачи данных',
+    placeholder: 'Например: SIP-телефон с PoE, 2–6 SIP-линий...',
+  },
+  voipGateway: {
+    name: 'VoIP-шлюз / голосовой шлюз',
+    okpd2: '26.30.11.130',
+    okpd2name: 'Маршрутизаторы и шлюзы связи',
+    placeholder: 'Например: VoIP gateway FXS/FXO/E1 для IP-телефонии...',
+  },
+  presentationClicker: {
+    name: 'Презентер / кликер для презентаций',
+    okpd2: '26.20.16.190',
+    okpd2name: 'Устройства управления и ввода-вывода прочие',
+    placeholder: 'Например: Беспроводной презентер USB с лазерной указкой...',
+  },
+  graphicsTablet: {
+    name: 'Графический планшет',
+    okpd2: '26.20.16.190',
+    okpd2name: 'Устройства ввода графической информации',
+    placeholder: 'Например: Графический планшет с пером, USB...',
+  },
+  signaturePad: {
+    name: 'Планшет подписи / signature pad',
+    okpd2: '26.20.16.190',
+    okpd2name: 'Устройства ввода/подписи для вычислительных машин',
+    placeholder: 'Например: USB-планшет для рукописной подписи...',
+  },
+  laminator: {
+    name: 'Ламинатор',
+    okpd2: '28.23.23.000',
+    okpd2name: 'Машины офисные прочие',
+    placeholder: 'Например: Ламинатор A4/A3, пакеты 75–125 мкм...',
+  },
+  shredder: {
+    name: 'Шредер / уничтожитель документов',
+    okpd2: '28.23.23.000',
+    okpd2name: 'Машины офисные прочие',
+    placeholder: 'Например: Шредер P-4/P-5, корзина 20–30 л...',
+  },
+  privacyFilter: {
+    name: 'Приватный фильтр на экран / privacy filter',
+    okpd2: '22.29.29.190',
+    okpd2name: 'Аксессуары для дисплеев и мониторов прочие',
+    placeholder: 'Например: Фильтр конфиденциальности для ноутбука 14"/15.6"...',
+  },
+  laptopLock: {
+    name: 'Замок для ноутбука / Kensington lock',
+    okpd2: '25.72.11.000',
+    okpd2name: 'Замки и фурнитура металлическая',
+    placeholder: 'Например: Тросовый замок Kensington/Noble Wedge...',
+  },
+  cleaner: {
+    name: 'Чистящие средства для оргтехники',
+    okpd2: '20.41.44.190',
+    okpd2name: 'Средства моющие и чистящие прочие',
+    placeholder: 'Например: Салфетки для экранов, сжатый воздух...',
+  },
+
+  // ── Сетевое оборудование (дополнительное) ──
+  sfpModule: {
+    name: 'SFP/SFP+/SFP28/QSFP модуль (трансивер)',
+    okpd2: '26.30.30.190',
+    okpd2name: 'Аппаратура связи и её части прочие',
+    placeholder: 'Например: SFP 1G LX, SFP+ 10G SR, QSFP28 100G LR4...',
+  },
+  sfpDac: {
+    name: 'DAC/AOC кабель для SFP/QSFP',
+    okpd2: '27.32.13.190',
+    okpd2name: 'Проводники электрические и кабели прочие',
+    placeholder: 'Например: SFP+ DAC 10G 1/3 м, QSFP28 AOC 100G...',
+  },
+  poeInjector: {
+    name: 'PoE-инжектор / PoE-адаптер питания',
+    okpd2: '26.30.30.190',
+    okpd2name: 'Аппаратура связи и её части прочие',
+    placeholder: 'Например: Gigabit PoE injector 802.3af/at/bt...',
+  },
+  wifiController: {
+    name: 'Контроллер Wi‑Fi / контроллер точек доступа',
+    okpd2: '26.30.30.190',
+    okpd2name: 'Аппаратура связи и её части прочие',
+    placeholder: 'Например: Контроллер Wi‑Fi для 25/50/100 AP, on-prem...',
+  },
+  poeSplitter: {
+    name: 'PoE-сплиттер / PoE-разделитель питания',
+    okpd2: '26.30.30.190',
+    okpd2name: 'Аксессуары для сетевого оборудования и питания',
+    placeholder: 'Например: PoE splitter 802.3af/at -> 5V/12V...',
+  },
+  networkAdapter: {
+    name: 'Сетевая карта / NIC / сетевой адаптер',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Комплектующие для вычислительных машин прочие',
+    placeholder: 'Например: PCIe Ethernet adapter 1G/10G/25G, dual-port...',
+  },
+  lteModem: {
+    name: '4G/5G/LTE-модем / сотовый модем',
+    okpd2: '26.30.23.000',
+    okpd2name: 'Оборудование связи для передачи данных',
+    placeholder: 'Например: USB/LTE модем, industrial LTE modem/router...',
+  },
+  consoleServer: {
+    name: 'Сервер консольного доступа / console server',
+    okpd2: '26.30.11.190',
+    okpd2name: 'Аппаратура передачи данных и управления сетью',
+    placeholder: 'Например: Console server 8/16/32 serial ports RJ45/USB...',
+  },
+
+  // ── Накопители (дополнительные) ──
+  extSsd: {
+    name: 'Внешний SSD-накопитель',
+    okpd2: '26.20.40.120',
+    okpd2name: 'Накопители на твёрдотельной памяти',
+    placeholder: 'Например: Portable SSD 1 ТБ USB-C 10Gbps...',
+  },
+  extHdd: {
+    name: 'Внешний HDD-накопитель',
+    okpd2: '26.20.40.110',
+    okpd2name: 'Накопители на жёстких магнитных дисках',
+    placeholder: 'Например: Внешний HDD 2 ТБ USB 3.0...',
+  },
+  memoryCard: {
+    name: 'Карта памяти (SD / microSD)',
+    okpd2: '26.20.40.120',
+    okpd2name: 'Накопители на твёрдотельной памяти',
+    placeholder: 'Например: microSDXC 128 ГБ UHS-I, SDXC 64 ГБ...',
+  },
+  cardReader: {
+    name: 'Кардридер / считыватель карт памяти',
+    okpd2: '26.20.16.190',
+    okpd2name: 'Устройства ввода/вывода вычислительных машин прочие',
+    placeholder: 'Например: USB card reader SD/microSD, UHS-II...',
+  },
+  opticalDrive: {
+    name: 'Внешний оптический привод (CD/DVD/BD)',
+    okpd2: '26.20.40.140',
+    okpd2name: 'Устройства для чтения/записи оптических дисков',
+    placeholder: 'Например: USB DVD-RW drive, Blu-ray writer...',
+  },
+
+  // ── Кабели, коннекторы и СКС ──
+  rj45Connector: {
+    name: 'Коннектор RJ-45 / штекер 8P8C',
+    okpd2: '26.30.30.190',
+    okpd2name: 'Части аппаратуры связи',
+    placeholder: 'Например: Коннектор RJ-45 Cat5e/Cat6, экранированный...',
+  },
+  keystoneJack: {
+    name: 'Keystone-модуль / розетка RJ-45',
+    okpd2: '26.30.30.190',
+    okpd2name: 'Части аппаратуры связи',
+    placeholder: 'Например: Keystone RJ-45 Cat6 UTP/FTP...',
+  },
+  networkSocket: {
+    name: 'Информационная розетка RJ-45 (накладная/встраиваемая)',
+    okpd2: '27.33.13.130',
+    okpd2name: 'Розетки штепсельные и соединительные устройства',
+    placeholder: 'Например: Розетка RJ-45 Cat5e/Cat6 1/2 порта...',
+  },
+  faceplate: {
+    name: 'Лицевая панель / суппорт для СКС (faceplate)',
+    okpd2: '22.29.29.190',
+    okpd2name: 'Изделия пластмассовые прочие (СКС аксессуары)',
+    placeholder: 'Например: Лицевая панель 45x45 / 86x86 под keystone...',
+  },
+  rj45Coupler: {
+    name: 'Соединитель RJ-45 / coupler 8P8C',
+    okpd2: '26.30.30.190',
+    okpd2name: 'Части аппаратуры связи и соединители',
+    placeholder: 'Например: Coupler RJ-45 Cat5e/Cat6 UTP/FTP...',
+  },
+  fiberPatchCord: {
+    name: 'Оптический патч-корд',
+    okpd2: '27.31.10.110',
+    okpd2name: 'Кабели оптические для передачи данных',
+    placeholder: 'Например: Patch cord SC/LC, SM/MM, simplex/duplex...',
+  },
+  fiberPigtail: {
+    name: 'Оптический пигтейл',
+    okpd2: '27.31.10.110',
+    okpd2name: 'Кабели оптические и элементы монтажа ВОЛС',
+    placeholder: 'Например: Пигтейл SC/APC SM 0.9 мм 1–2 м...',
+  },
+  fiberPatchPanel: {
+    name: 'Оптическая кросс-панель / ODF',
+    okpd2: '27.33.19.110',
+    okpd2name: 'Шкафы, панели и коммутационные устройства телекоммуникационные',
+    placeholder: 'Например: ODF 19" 1U/2U 24/48 портов LC/SC...',
+  },
+  spliceTray: {
+    name: 'Кассета сварочная / сплайс-кассета',
+    okpd2: '22.29.29.190',
+    okpd2name: 'Аксессуары для монтажа оптических линий связи',
+    placeholder: 'Например: Кассета для 12/24/48 сварок ВОЛС...',
+  },
+  cableTie: {
+    name: 'Стяжка кабельная / органайзер кабеля',
+    okpd2: '22.29.29.190',
+    okpd2name: 'Изделия пластмассовые прочие',
+    placeholder: 'Например: Нейлоновые стяжки 100/200/300 мм, липучки...',
+  },
+  cableChannel: {
+    name: 'Кабель-канал / короб кабельный',
+    okpd2: '22.23.19.000',
+    okpd2name: 'Изделия строительные пластмассовые прочие',
+    placeholder: 'Например: Кабель-канал ПВХ 25x16, 40x25, с крышкой...',
+  },
+  audioCable: {
+    name: 'Аудиокабель (3.5mm / RCA / XLR / Jack)',
+    okpd2: '27.32.20.190',
+    okpd2name: 'Кабели сигнальные и соединительные прочие',
+    placeholder: 'Например: 3.5 Jack, RCA, XLR, TRS аудиокабель...',
+  },
+  serialCable: {
+    name: 'Последовательный кабель / RS-232 (COM)',
+    okpd2: '27.32.20.190',
+    okpd2name: 'Кабели сигнальные для передачи данных',
+    placeholder: 'Например: RS-232 DB9 кабель, null-modem cable...',
+  },
+  consoleCable: {
+    name: 'Консольный кабель (RJ45-DB9 / USB-console)',
+    okpd2: '27.32.20.190',
+    okpd2name: 'Кабели для сервисного доступа к сетевому оборудованию',
+    placeholder: 'Например: Cisco console cable RJ45-DB9/USB...',
+  },
+
+  // ── Видео-коммутация и аксессуары ──
+  hdmiSplitter: {
+    name: 'HDMI-сплиттер / распределитель сигнала',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Аудио/видео аксессуары и адаптеры прочие',
+    placeholder: 'Например: HDMI splitter 1x2 / 1x4, 4K...',
+  },
+  hdmiSwitcher: {
+    name: 'HDMI-коммутатор / switcher',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Аудио/видео аксессуары и адаптеры прочие',
+    placeholder: 'Например: HDMI switch 3x1 / 5x1, 4K...',
+  },
+  usbExtender: {
+    name: 'USB-удлинитель активный / USB extender',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Аксессуары и адаптеры для вычислительных машин',
+    placeholder: 'Например: Активный USB 3.0 удлинитель / USB-over-Cat5 extender...',
+  },
+  kvmExtender: {
+    name: 'KVM-удлинитель / KVM extender',
+    okpd2: '26.20.16.190',
+    okpd2name: 'Устройства передачи сигналов управления и видео',
+    placeholder: 'Например: KVM extender HDMI/USB over Cat5/Cat6/IP...',
+  },
+  usbAdapter: {
+    name: 'USB-адаптер / переходник (USB-LAN, USB-BT, USB-Wi‑Fi)',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Аксессуары для вычислительных машин прочие',
+    placeholder: 'Например: USB ↔ Ethernet, USB Bluetooth 5.3, USB Wi‑Fi...',
+  },
+  videoAdapter: {
+    name: 'Видеоадаптер / переходник (HDMI/DP/VGA/USB-C)',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Аксессуары для вычислительных машин прочие',
+    placeholder: 'Например: HDMI→VGA, DP→HDMI, USB-C→HDMI...',
+  },
+
+  // ── Электропитание и защита ──
+  surgeProtector: {
+    name: 'Сетевой фильтр / защитный удлинитель',
+    okpd2: '27.33.13.190',
+    okpd2name: 'Устройства электрические распределительные прочие',
+    placeholder: 'Например: Сетевой фильтр 5–6 розеток, 3–5 м...',
+  },
+  extensionCord: {
+    name: 'Удлинитель электрический',
+    okpd2: '27.33.13.190',
+    okpd2name: 'Устройства электрические распределительные прочие',
+    placeholder: 'Например: Удлинитель 220В, 3–10 м, 3/4/5 розеток...',
+  },
+  upsBattery: {
+    name: 'АКБ / батарейный модуль для ИБП',
+    okpd2: '27.20.23.000',
+    okpd2name: 'Элементы и батареи первичные / аккумуляторы',
+    placeholder: 'Например: АКБ 12В 7Ач для ИБП, батарейный картридж...',
+  },
+  plugAdapter: {
+    name: 'Сетевой переходник / адаптер вилки',
+    okpd2: '27.33.13.190',
+    okpd2name: 'Устройства электрические распределительные и соединительные',
+    placeholder: 'Например: Переходник EU/UK/US, IEC-адаптер...',
+  },
+
+  // ── Серверные и стоечные аксессуары ──
+  rackShelf: {
+    name: 'Полка в серверную стойку / телеком-шкаф',
+    okpd2: '25.99.29.190',
+    okpd2name: 'Изделия металлические прочие',
+    placeholder: 'Например: Полка 19" 1U/2U, глубина 450/600 мм...',
+  },
+  wallCabinet: {
+    name: 'Настенный телекоммуникационный шкаф',
+    okpd2: '27.33.19.110',
+    okpd2name: 'Шкафы и стойки телекоммуникационные',
+    placeholder: 'Например: Настенный шкаф 6U/9U/12U 19"...',
+  },
+  cableManagerRack: {
+    name: 'Кабельный органайзер 19" / cable manager',
+    okpd2: '25.99.29.190',
+    okpd2name: 'Изделия металлические прочие (серверные аксессуары)',
+    placeholder: 'Например: Органайзер кабельный 19" 1U/2U с крышкой/кольцами...',
+  },
+  blankPanel: {
+    name: 'Заглушка 19" (blank panel)',
+    okpd2: '25.99.29.190',
+    okpd2name: 'Изделия металлические прочие (панели/заглушки)',
+    placeholder: 'Например: Заглушка 19" 1U/2U перфорированная/сплошная...',
+  },
+  cageNutSet: {
+    name: 'Комплект крепежа для стойки (cage nuts / винты)',
+    okpd2: '25.94.11.000',
+    okpd2name: 'Крепежные изделия (болты, гайки, шайбы)',
+    placeholder: 'Например: Cage nuts + винты M6 для 19" стойки...',
+  },
+  serverRailKit: {
+    name: 'Рельсы / направляющие для сервера в стойку',
+    okpd2: '25.99.29.190',
+    okpd2name: 'Аксессуары и крепления для серверных стоек',
+    placeholder: 'Например: Sliding rails для 1U/2U сервера...',
+  },
+
+  // ── Расходные материалы (дополнительные) ──
+  inkCartridge: {
+    name: 'Струйный картридж / чернильный картридж',
+    okpd2: '28.23.25.000',
+    okpd2name: 'Части и принадлежности офисных машин',
+    placeholder: 'Например: Картридж HP/Canon/Epson струйный...',
+  },
+  thermalPaper: {
+    name: 'Термобумага / чековая лента',
+    okpd2: '17.23.13.190',
+    okpd2name: 'Бумага для печати и записи прочая',
+    placeholder: 'Например: Чековая лента 80x80, термоэтикетки в рулоне...',
+  },
+  fuserUnit: {
+    name: 'Печь (fuser unit) для принтера / МФУ',
+    okpd2: '28.23.25.000',
+    okpd2name: 'Части и принадлежности офисных машин',
+    placeholder: 'Например: Fuser unit для HP/Xerox/Canon...',
+  },
+  transferBelt: {
+    name: 'Лента переноса / transfer belt unit',
+    okpd2: '28.23.25.000',
+    okpd2name: 'Части и принадлежности офисных машин',
+    placeholder: 'Например: Transfer belt unit для цветного принтера/МФУ...',
+  },
+  wasteToner: {
+    name: 'Контейнер для отработанного тонера',
+    okpd2: '28.23.25.000',
+    okpd2name: 'Части и принадлежности офисных машин',
+    placeholder: 'Например: Waste toner bottle / unit для принтера/МФУ...',
+  },
+  developerUnit: {
+    name: 'Девелопер / блок проявки (developer unit)',
+    okpd2: '28.23.25.000',
+    okpd2name: 'Части и принадлежности офисных машин',
+    placeholder: 'Например: Developer unit для лазерного МФУ/принтера...',
+  },
+  maintenanceKitPrinter: {
+    name: 'Комплект обслуживания принтера / maintenance kit',
+    okpd2: '28.23.25.000',
+    okpd2name: 'Части и принадлежности офисных машин',
+    placeholder: 'Например: Maintenance kit (ролики, печь) для принтера...',
+  },
+  printHead: {
+    name: 'Печатающая головка / printhead',
+    okpd2: '28.23.25.000',
+    okpd2name: 'Части и принадлежности офисных машин',
+    placeholder: 'Например: Печатающая головка для струйного принтера/плоттера...',
+  },
+  ltoTape: {
+    name: 'Ленточный картридж LTO',
+    okpd2: '26.80.14.000',
+    okpd2name: 'Носители информации магнитные (ленточные)',
+    placeholder: 'Например: LTO-6 / LTO-7 / LTO-8 data cartridge...',
+  },
+  ltoCleaningCartridge: {
+    name: 'Чистящий картридж LTO / cleaning cartridge',
+    okpd2: '26.80.14.000',
+    okpd2name: 'Носители/аксессуары для ленточных накопителей',
+    placeholder: 'Например: LTO universal cleaning cartridge...',
+  },
+  discCase: {
+    name: 'Коробка / кейс для CD/DVD/BD дисков',
+    okpd2: '22.22.19.000',
+    okpd2name: 'Изделия пластмассовые упаковочные прочие',
+    placeholder: 'Например: Jewel case / slim case для дисков...',
+  },
+  discSleeve: {
+    name: 'Конверт / бумажный карман для CD/DVD дисков',
+    okpd2: '17.29.19.000',
+    okpd2name: 'Изделия бумажные прочие',
+    placeholder: 'Например: Бумажные/полипропиленовые конверты для CD/DVD...',
+  },
+  electricalTape: {
+    name: 'Изолента / электроизоляционная лента',
+    okpd2: '22.21.30.000',
+    okpd2name: 'Ленты пластмассовые / изоляционные материалы',
+    placeholder: 'Например: ПВХ изолента 15–19 мм...',
+  },
+  heatShrinkTube: {
+    name: 'Термоусадочная трубка',
+    okpd2: '22.21.29.000',
+    okpd2name: 'Трубки пластмассовые прочие',
+    placeholder: 'Например: Термоусадка 2:1 / 3:1 набор диаметров...',
+  },
+  solderWire: {
+    name: 'Припой / паяльная проволока',
+    okpd2: '24.43.22.000',
+    okpd2name: 'Припои и сплавы для пайки',
+    placeholder: 'Например: Припой Sn60Pb40 / бессвинцовый, 0.5–1.0 мм...',
+  },
+  flux: {
+    name: 'Флюс для пайки',
+    okpd2: '20.59.56.000',
+    okpd2name: 'Материалы химические для пайки и монтажа',
+    placeholder: 'Например: Флюс нейтральный/безотмывочный для электроники...',
+  },
+
+  // ── Дополнительные комплектующие ──
+  pcCase: {
+    name: 'Корпус системного блока',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Корпуса и комплектующие для вычислительных машин',
+    placeholder: 'Например: Корпус ATX/mATX с БП/без БП...',
+  },
+  caseFan: {
+    name: 'Корпусной вентилятор / fan',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Системы охлаждения и комплектующие для ПК',
+    placeholder: 'Например: Вентилятор 120/140 мм PWM...',
+  },
+  tpmModule: {
+    name: 'TPM-модуль / модуль доверенной платформы',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Модули безопасности и комплектующие для вычислительных машин',
+    placeholder: 'Например: TPM 2.0 module для материнской платы...',
+  },
+  soundCard: {
+    name: 'Звуковая карта / audio interface',
+    okpd2: '26.20.40.170',
+    okpd2name: 'Платы расширения и аудиоадаптеры для вычислительных машин',
+    placeholder: 'Например: USB audio interface / PCIe sound card...',
+  },
+  captureCard: {
+    name: 'Плата видеозахвата / capture card',
+    okpd2: '26.20.40.170',
+    okpd2name: 'Платы расширения аудио/видеоввода',
+    placeholder: 'Например: HDMI capture card USB/PCIe, FullHD/4K...',
+  },
+  raidController: {
+    name: 'RAID-контроллер',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Контроллеры и платы расширения для вычислительных машин',
+    placeholder: 'Например: PCIe RAID controller SAS/SATA 12G...',
+  },
+  hbaAdapter: {
+    name: 'HBA-адаптер (SAS/FC/NVMe)',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Платы расширения и адаптеры для серверов и СХД',
+    placeholder: 'Например: HBA SAS 12G, Fibre Channel 16/32G adapter...',
+  },
+
+  // ── Дополнительное ПО ──
+  osSupport: {
+    name: 'Сертификат техподдержки ОС / продление поддержки (Astra Linux, РЕД ОС и др.)',
+    okpd2: '62.02.30.000',
+    okpd2name: 'Услуги по технической поддержке информационных технологий',
+    placeholder: 'Например: Сертификат техподдержки Astra Linux SE (Воронеж/Орёл/Смоленск)...',
+    isSoftware: true,
+  },
+  supportCert: {
+    name: 'Сертификат техподдержки ПО / продление подписки',
+    okpd2: '62.02.30.000',
+    okpd2name: 'Услуги по технической поддержке информационных технологий',
+    placeholder: 'Например: Продление техподдержки RuBackup / Termidesk / Kaspersky...',
+    isSoftware: true,
+  },
+  remoteAccessSw: {
+    name: 'ПО удалённого доступа / удалённого администрирования',
+    okpd2: '58.29.11.000',
+    okpd2name: 'Программное обеспечение прикладное (удалённый доступ)',
+    placeholder: 'Например: RuDesktop, AnyDesk, RustDesk, Dameware...',
+    isSoftware: true,
+  },
+  crm: {
+    name: 'CRM-система',
+    okpd2: '58.29.11.000',
+    okpd2name: 'Программное обеспечение прикладное (CRM)',
+    placeholder: 'Например: Битрикс24 CRM, amoCRM, Мегаплан, Creatio...',
+    isSoftware: true,
+  },
+  bi: {
+    name: 'BI / аналитическая система / отчётность',
+    okpd2: '58.29.11.000',
+    okpd2name: 'Программное обеспечение прикладное (BI/аналитика)',
+    placeholder: 'Например: Visiology, Форсайт.Аналитика, Power BI, Tableau...',
+    isSoftware: true,
+  },
+  rpa: {
+    name: 'RPA / система роботизации процессов',
+    okpd2: '58.29.11.000',
+    okpd2name: 'Программное обеспечение прикладное (RPA)',
+    placeholder: 'Например: PIX RPA, Primo RPA, UiPath, Robin...',
+    isSoftware: true,
+  },
+
+  // ── Универсальные позиции (когда конкретный тип не найден) ──
+  miscHardware: {
+    name: 'Прочий ИТ-товар / оборудование (универсальная позиция)',
+    okpd2: '26.20.40.190',
+    okpd2name: 'Комплектующие и устройства для вычислительной техники прочие',
+    placeholder: 'Опишите товар подробно: тип, назначение, интерфейсы, размеры, совместимость...',
+  },
+  miscCable: {
+    name: 'Прочий кабель / переходник / коммутация (универсальная позиция)',
+    okpd2: '27.32.20.190',
+    okpd2name: 'Кабели и проводники сигнальные/связи прочие',
+    placeholder: 'Опишите кабель/переходник: разъёмы, длина, категория/стандарт, экранирование...',
+  },
+  miscConsumable: {
+    name: 'Прочий расходный материал для ИТ/оргтехники',
+    okpd2: '28.23.25.000',
+    okpd2name: 'Части, принадлежности и расходные материалы офисной техники прочие',
+    placeholder: 'Опишите расходник: совместимость, ресурс/объем, упаковка, количество...',
+  },
+  miscSoftware: {
+    name: 'Прочее ПО / лицензия / подписка (универсальная позиция)',
+    okpd2: '58.29.11.000',
+    okpd2name: 'Программное обеспечение прикладное/системное прочее',
+    placeholder: 'Опишите ПО: класс, назначение, метрика лицензирования, срок, совместимость...',
+    isSoftware: true,
+  },
 };
 
 export interface GoodsGroup {
@@ -847,28 +1567,82 @@ export interface GoodsGroup {
 
 export const GOODS_GROUPS: GoodsGroup[] = [
   { label: '💻 Компьютеры', items: ['pc', 'laptop', 'monoblock', 'server', 'tablet', 'thinClient'] },
-  { label: '🖨️ Периферия и оргтехника', items: ['monitor', 'printer', 'mfu', 'scanner', 'keyboard', 'mouse', 'kvm', 'ups', 'projector', 'interactive', 'webcam', 'headset', 'labelPrinter'] },
-  { label: '🌐 Сетевое оборудование', items: ['switch', 'router', 'firewall', 'accessPoint', 'nas', 'patchPanel', 'mediaConverter'] },
-  { label: '💾 Накопители и носители', items: ['ssd', 'hdd', 'ram', 'flashDrive', 'dvd', 'tapeLib', 'tapeCartridge'] },
-  { label: '🔌 Кабели и коммутация', items: ['patchCord', 'fiberCable', 'hdmiCable', 'usbCable', 'powerCable', 'rackCabinet'] },
-  { label: '🖥️ Серверное оборудование', items: ['serverRack', 'serverBlade', 'san', 'pdu', 'kvm_server'] },
-  { label: '🖨️ Расходные материалы ИТ', items: ['cartridge', 'paper', 'toner', 'drum', 'labelTape', 'battery', 'batteryLithium', 'thermalPaste', 'cleaningSet', 'usbHub'] },
-  { label: '💿 Системное и офисное ПО', items: ['os', 'office', 'virt', 'vdi', 'dbms', 'erp', 'cad', 'license'] },
+  { label: '🖨️ Периферия и оргтехника', items: [
+    'monitor', 'touchMonitor', 'printer', 'mfu', 'scanner', 'keyboard', 'mouse', 'keyboardMouseSet',
+    'kvm', 'ups', 'projector', 'projectorScreen', 'interactive', 'webcam', 'headset', 'labelPrinter',
+    'speakers', 'microphone', 'speakerphone', 'conferenceCamera', 'documentCamera', 'tvPanel',
+    'barcodeScanner', 'receiptPrinter', 'laminator', 'shredder',
+  ] },
+  { label: '📞 Телефония и ВКС-оборудование', items: ['ipPhone', 'voipGateway', 'presentationClicker'] },
+  { label: '🌐 Сетевое оборудование', items: [
+    'switch', 'router', 'firewall', 'accessPoint', 'nas', 'patchPanel', 'mediaConverter',
+    'sfpModule', 'sfpDac', 'poeInjector', 'poeSplitter', 'wifiController', 'lteModem', 'consoleServer',
+  ] },
+  { label: '💾 Накопители и носители', items: [
+    'ssd', 'hdd', 'ram', 'flashDrive', 'dvd', 'tapeLib', 'tapeCartridge',
+    'extSsd', 'extHdd', 'memoryCard', 'cardReader', 'opticalDrive', 'ltoTape', 'ltoCleaningCartridge',
+  ] },
+  { label: '🔌 Кабели и коммутация', items: [
+    'patchCord', 'fiberCable', 'hdmiCable', 'usbCable', 'powerCable', 'rackCabinet',
+    'fiberPatchCord', 'fiberPigtail', 'audioCable', 'serialCable', 'consoleCable', 'sfpDac',
+    'cableTie', 'cableChannel',
+  ] },
+  { label: '🔗 Коннекторы и СКС', items: [
+    'rj45Connector', 'keystoneJack', 'networkSocket', 'faceplate', 'rj45Coupler',
+    'fiberPatchPanel', 'spliceTray',
+  ] },
+  { label: '🖥️ Серверное оборудование', items: [
+    'serverRack', 'serverBlade', 'san', 'pdu', 'kvm_server',
+    'wallCabinet', 'rackShelf', 'cableManagerRack', 'blankPanel', 'cageNutSet', 'serverRailKit',
+  ] },
+  { label: '🖨️ Расходные материалы ИТ', items: [
+    'cartridge', 'inkCartridge', 'paper', 'toner', 'drum', 'labelTape',
+    'battery', 'batteryLithium', 'thermalPaste', 'cleaningSet', 'usbHub',
+    'thermalPaper', 'fuserUnit', 'transferBelt', 'wasteToner', 'developerUnit',
+    'maintenanceKitPrinter', 'printHead', 'discCase', 'discSleeve',
+    'cleaner', 'upsBattery',
+  ] },
+  { label: '🎒 Аксессуары и адаптеры', items: [
+    'dockingStation', 'smartCardReader', 'usbToken', 'monitorArm', 'laptopBag', 'laptopStand',
+    'charger', 'mousePad', 'privacyFilter', 'laptopLock', 'graphicsTablet', 'signaturePad',
+    'hdmiSplitter', 'hdmiSwitcher', 'usbExtender', 'kvmExtender', 'usbAdapter', 'videoAdapter',
+    'surgeProtector', 'extensionCord', 'plugAdapter',
+  ] },
+  { label: '💿 Системное и офисное ПО', items: ['os', 'office', 'virt', 'vdi', 'dbms', 'erp', 'cad', 'license', 'osSupport', 'supportCert'] },
   { label: '🔒 Средства защиты информации', items: ['antivirus', 'edr', 'firewall_sw', 'vpn', 'dlp', 'siem', 'crypto', 'waf', 'pam', 'iam', 'pki'] },
-  { label: '📧 Коммуникации и совместная работа', items: ['email', 'vks', 'ecm', 'portal', 'project_sw', 'bpm', 'reporting'] },
-  { label: '🛠️ Управление ИТ и инфраструктурой', items: ['backup_sw', 'itsm', 'monitoring', 'mdm', 'hr', 'gis', 'ldap'] },
-  { label: '📦 Комплектующие', items: ['cpu', 'gpu', 'motherboard', 'psu', 'cooling', 'parts'] },
+  { label: '📧 Коммуникации и совместная работа', items: ['email', 'vks', 'ecm', 'portal', 'project_sw', 'bpm', 'reporting', 'crm', 'remoteAccessSw'] },
+  { label: '🛠️ Управление ИТ и инфраструктурой', items: ['backup_sw', 'itsm', 'monitoring', 'mdm', 'hr', 'gis', 'ldap', 'bi', 'rpa'] },
+  { label: '📦 Комплектующие', items: [
+    'cpu', 'gpu', 'motherboard', 'psu', 'cooling', 'parts',
+    'pcCase', 'caseFan', 'tpmModule', 'soundCard', 'captureCard', 'networkAdapter', 'raidController', 'hbaAdapter',
+  ] },
+  { label: '🔧 Инструменты и измерительные приборы', items: [
+    'toolSet', 'crimper', 'cableTester', 'soldering', 'multimeter', 'precisionScrewdriver',
+    'desolderPump', 'antistaticWristStrap', 'antistaticMat',
+    'electricalTape', 'heatShrinkTube', 'solderWire', 'flux',
+  ] },
+  { label: '📦 Универсальные позиции', items: ['miscHardware', 'miscCable', 'miscConsumable', 'miscSoftware'] },
 ];
 
 // Классификаторы для нацрежима
 export const HW_878_TYPES = new Set([
-  'pc','laptop','monoblock','server','tablet','thinClient','monitor',
+  'pc','laptop','monoblock','server','tablet','thinClient','monitor','touchMonitor',
   'switch','router','firewall','accessPoint','nas','san','serverRack','serverBlade',
+  'printer','mfu','scanner','keyboard','mouse',
+  'kvm','webcam','headset','projector','interactive',
+  'patchPanel','mediaConverter','ssd','hdd','ram','tapeLib',
+  'sfpModule','wifiController','consoleServer','lteModem',
+  'ipPhone','voipGateway','speakers','microphone','speakerphone','conferenceCamera','documentCamera',
+  'tvPanel','barcodeScanner','receiptPrinter','smartCardReader',
+  'graphicsTablet','signaturePad',
+  'networkAdapter','raidController','hbaAdapter','soundCard','captureCard','tpmModule',
+  'cpu','gpu','motherboard',
 ]);
 export const SW_1236_TYPES = new Set([
   'os','office','antivirus','firewall_sw','crypto','dlp','siem','backup_sw','virt','dbms','erp','cad','license',
   'email','vks','ecm','vdi','mdm','edr','waf','pam','iam','pki','itsm','monitoring','hr','gis','project_sw',
   'bpm','portal','ldap','vpn','reporting',
+  'osSupport','supportCert','remoteAccessSw','crm','bi','rpa','miscSoftware',
 ]);
 export const HW_175_TYPES = new Set([
   'pc','laptop','monoblock','server','tablet','thinClient','switch','router','firewall',
@@ -1137,6 +1911,144 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['кабель usb','usb-кабель','usb a-b','usb a-c','microusb','micro-usb','usb type-c кабель'], type: 'usbCable' },
   { tokens: ['этикетк','label tape','dk-2','dymo','ql-'], type: 'labelTape' },
   { tokens: ['лицензия','license','подписка на по','renewal','продление лицензии'], type: 'license' },
+
+  // ── Дополнительная периферия и аксессуары ──
+  { tokens: ['док-станция','док станция','docking station','репликатор портов','thinkpad dock','dell dock','hp dock','usb-c dock'], type: 'dockingStation' },
+  { tokens: ['колонки','акустика','speakers','акустическая система','компьютерные колонки'], type: 'speakers' },
+  { tokens: ['микрофон','microphone','usb микрофон','настольный микрофон'], type: 'microphone' },
+  { tokens: ['считыватель смарт','smart card reader','usb-ридер','смарт-карт'], type: 'smartCardReader' },
+  { tokens: ['сканер штрихкод','qr-сканер','barcode scanner','2d сканер','штрихкод'], type: 'barcodeScanner' },
+  { tokens: ['чековый принтер','термопринтер чеков','receipt printer','esc/pos','pos принтер'], type: 'receiptPrinter' },
+  { tokens: ['кронштейн','держатель для монитора','monitor arm','vesa крепление','газлифт монитор'], type: 'monitorArm' },
+  { tokens: ['сумка для ноутбука','рюкзак для ноутбука','laptop bag','чехол для ноутбука'], type: 'laptopBag' },
+  { tokens: ['подставка для ноутбука','laptop stand','stand для ноутбука'], type: 'laptopStand' },
+  { tokens: ['зарядное устройство','адаптер питания','charger','зарядка для ноутбука','usb-c pd','блок питания для ноутбука'], type: 'charger' },
+  { tokens: ['usb-токен','usb токен','рутокен','rutoken','jacarta','жакарта','ключевой носитель','etoken'], type: 'usbToken' },
+  { tokens: ['комплект клавиатура','клавиатура + мышь','клавиатура мышь','keyboard mouse set','набор клавиатура'], type: 'keyboardMouseSet' },
+  { tokens: ['коврик для мыши','mouse pad','mousepad','коврик мыши'], type: 'mousePad' },
+  { tokens: ['сенсорный монитор','touch монитор','touch дисплей','тач монитор','сенсорный дисплей'], type: 'touchMonitor' },
+  { tokens: ['спикерфон','speakerphone','конференц-спикер','конференц спикер','jabra speak','poly sync'], type: 'speakerphone' },
+  { tokens: ['камера для вкс','conference camera','ptz камера','конференц камера','logitech rally','poly studio'], type: 'conferenceCamera' },
+  { tokens: ['документ-камера','документ камера','визуализатор','document camera'], type: 'documentCamera' },
+  { tokens: ['экран для проектора','проекционный экран','projector screen','экран проекционный'], type: 'projectorScreen' },
+  { tokens: ['телевизионная панель','информационная панель','tv panel','телевизор','led панель','информационный дисплей'], type: 'tvPanel' },
+  { tokens: ['ip-телефон','ip телефон','sip-телефон','sip телефон','voip телефон','yealink','grandstream','fanvil'], type: 'ipPhone' },
+  { tokens: ['voip шлюз','voip-шлюз','голосовой шлюз','voip gateway','fxs','fxo'], type: 'voipGateway' },
+  { tokens: ['презентер','кликер для презентац','presentation clicker','лазерная указка презент'], type: 'presentationClicker' },
+  { tokens: ['графический планшет','wacom','xp-pen','huion','graphic tablet'], type: 'graphicsTablet' },
+  { tokens: ['планшет подписи','signature pad','планшет для подписи'], type: 'signaturePad' },
+  { tokens: ['ламинатор','laminator','ламинирование'], type: 'laminator' },
+  { tokens: ['шредер','уничтожитель документов','shredder','бумагоуничтожитель'], type: 'shredder' },
+  { tokens: ['приватный фильтр','privacy filter','фильтр конфиденциальности','фильтр приватности'], type: 'privacyFilter' },
+  { tokens: ['замок для ноутбука','kensington lock','kensington','noble wedge','тросовый замок'], type: 'laptopLock' },
+  { tokens: ['чистящие средства','салфетки для экран','cleaning kit','чистящий набор для оргтехники'], type: 'cleaner' },
+
+  // ── Сетевое дополнительное ──
+  { tokens: ['sfp','sfp+','sfp28','qsfp','qsfp28','qsfp+','трансивер','transceiver'], type: 'sfpModule' },
+  { tokens: ['dac кабель','aoc кабель','direct attach','активный оптический'], type: 'sfpDac' },
+  { tokens: ['poe инжектор','poe-инжектор','poe injector','poe адаптер'], type: 'poeInjector' },
+  { tokens: ['контроллер wi-fi','контроллер точек доступа','wifi controller','wlan controller','ap controller'], type: 'wifiController' },
+  { tokens: ['poe сплиттер','poe-сплиттер','poe splitter','poe разделитель'], type: 'poeSplitter' },
+  { tokens: ['сетевая карта','сетевой адаптер','nic','network adapter','ethernet адаптер','pcie ethernet'], type: 'networkAdapter' },
+  { tokens: ['lte модем','4g модем','5g модем','сотовый модем','lte modem','sim модем'], type: 'lteModem' },
+  { tokens: ['console server','сервер консольного доступа','serial console','opengear','digi connect'], type: 'consoleServer' },
+
+  // ── Накопители дополнительные ──
+  { tokens: ['внешний ssd','portable ssd','внешний твердотельный','ext ssd'], type: 'extSsd' },
+  { tokens: ['внешний hdd','внешний жёсткий','внешний жесткий','портативный hdd','portable hdd','ext hdd'], type: 'extHdd' },
+  { tokens: ['карта памяти','microsd','micro sd','sdxc','sdhc','memory card','sd карта'], type: 'memoryCard' },
+  { tokens: ['кардридер','card reader','считыватель карт памяти','кард ридер'], type: 'cardReader' },
+  { tokens: ['оптический привод','dvd привод','bd привод','blu-ray привод','optical drive','dvd-rw привод','cd привод','внешний привод'], type: 'opticalDrive' },
+
+  // ── Кабели и коннекторы дополнительные ──
+  { tokens: ['коннектор rj-45','коннектор rj45','разъём rj45','штекер rj45','rj-45 plug','8p8c'], type: 'rj45Connector' },
+  { tokens: ['keystone','кейстон','keystone jack','кейстоун'], type: 'keystoneJack' },
+  { tokens: ['информационная розетка','розетка rj-45','розетка rj45','сетевая розетка','скс розетка'], type: 'networkSocket' },
+  { tokens: ['лицевая панель','faceplate','суппорт скс'], type: 'faceplate' },
+  { tokens: ['coupler rj','соединитель rj','coupler 8p8c','rj45 coupler'], type: 'rj45Coupler' },
+  { tokens: ['оптический патч-корд','оптический патчкорд','fiber patch cord','патч-корд sc','патч-корд lc'], type: 'fiberPatchCord' },
+  { tokens: ['пигтейл','pigtail','оптический пигтейл'], type: 'fiberPigtail' },
+  { tokens: ['оптическая кросс','odf','кросс-панель','оптическая панель'], type: 'fiberPatchPanel' },
+  { tokens: ['сплайс-кассета','сплайс кассета','splice tray','кассета сварочная'], type: 'spliceTray' },
+  { tokens: ['стяжка кабельная','стяжки','cable tie','нейлоновые стяжки','кабельный органайзер липучка'], type: 'cableTie' },
+  { tokens: ['кабель-канал','кабель канал','cable channel','короб кабельный','кабельный короб'], type: 'cableChannel' },
+  { tokens: ['аудиокабель','audio cable','кабель 3.5','кабель rca','кабель xlr','jack кабель'], type: 'audioCable' },
+  { tokens: ['rs-232','rs232','com кабель','serial cable','null-modem'], type: 'serialCable' },
+  { tokens: ['консольный кабель','console cable','rj45-db9','usb console'], type: 'consoleCable' },
+
+  // ── Видео-коммутация ──
+  { tokens: ['hdmi сплиттер','hdmi-сплиттер','hdmi splitter','распределитель hdmi'], type: 'hdmiSplitter' },
+  { tokens: ['hdmi коммутатор','hdmi-коммутатор','hdmi switch','hdmi switcher','переключатель hdmi'], type: 'hdmiSwitcher' },
+  { tokens: ['usb удлинитель','usb extender','usb-over-cat','активный usb удлинитель'], type: 'usbExtender' },
+  { tokens: ['kvm удлинитель','kvm-удлинитель','kvm extender','kvm over ip'], type: 'kvmExtender' },
+  { tokens: ['usb-адаптер','usb адаптер','usb-lan','usb bluetooth','usb wi-fi','usb wifi'], type: 'usbAdapter' },
+  { tokens: ['видеоадаптер','переходник hdmi','переходник dp','hdmi vga','dp hdmi','usb-c hdmi','displayport адаптер'], type: 'videoAdapter' },
+
+  // ── Электропитание ──
+  { tokens: ['сетевой фильтр','surge protector','фильтр сетевой','защитный удлинитель','пилот'], type: 'surgeProtector' },
+  { tokens: ['удлинитель электрич','extension cord','удлинитель 220','удлинитель 3 м','удлинитель 5 м'], type: 'extensionCord' },
+  { tokens: ['акб для ибп','батарейный модуль для ибп','ups battery','аккумулятор для ибп','батарейный картридж'], type: 'upsBattery' },
+  { tokens: ['сетевой переходник','адаптер вилки','plug adapter','переходник eu'], type: 'plugAdapter' },
+
+  // ── Серверные аксессуары ──
+  { tokens: ['полка 19','полка в стойку','rack shelf','полка серверная'], type: 'rackShelf' },
+  { tokens: ['настенный шкаф','wall cabinet','настенный телекоммуникац'], type: 'wallCabinet' },
+  { tokens: ['кабельный органайзер 19','cable manager','органайзер 19'], type: 'cableManagerRack' },
+  { tokens: ['заглушка 19','blank panel','заглушка для стойки'], type: 'blankPanel' },
+  { tokens: ['cage nut','cage nuts','крепеж для стойки','винты m6','гайки для стойки'], type: 'cageNutSet' },
+  { tokens: ['рельсы для сервера','направляющие для сервера','server rail','sliding rails','rail kit'], type: 'serverRailKit' },
+
+  // ── Расходные материалы дополнительные ──
+  { tokens: ['струйный картридж','чернильный картридж','ink cartridge','картридж hp 12','картридж canon pg','картридж epson'], type: 'inkCartridge' },
+  { tokens: ['термобумага','чековая лента','thermal paper','термоэтикетк','чековая бумага'], type: 'thermalPaper' },
+  { tokens: ['печь принтера','fuser unit','фьюзер','блок закрепления','термоблок принтера'], type: 'fuserUnit' },
+  { tokens: ['лента переноса','transfer belt','ремень переноса','блок переноса'], type: 'transferBelt' },
+  { tokens: ['контейнер для тонера','waste toner','бункер отработанного тонера','waste bottle'], type: 'wasteToner' },
+  { tokens: ['девелопер','developer unit','блок проявки'], type: 'developerUnit' },
+  { tokens: ['maintenance kit','комплект обслуживания','сервисный комплект принтера','ролик захвата'], type: 'maintenanceKitPrinter' },
+  { tokens: ['печатающая головка','printhead','print head'], type: 'printHead' },
+  { tokens: ['lto картридж','lto tape','lto-6','lto-7','lto-8','lto-9','ленточный картридж'], type: 'ltoTape' },
+  { tokens: ['чистящий картридж lto','cleaning cartridge','lto cleaning'], type: 'ltoCleaningCartridge' },
+  { tokens: ['коробка для дисков','jewel case','slim case','кейс для cd','кейс для dvd'], type: 'discCase' },
+  { tokens: ['конверт для cd','конверт для dvd','disc sleeve','бумажный конверт для диска'], type: 'discSleeve' },
+
+  // ── Комплектующие дополнительные ──
+  { tokens: ['корпус системного блока','корпус пк','pc case','atx корпус','matx корпус','корпус компьютера'], type: 'pcCase' },
+  { tokens: ['корпусной вентилятор','case fan','вентилятор 120','вентилятор 140','fan 80','fan pwm'], type: 'caseFan' },
+  { tokens: ['tpm модуль','tpm-модуль','tpm 2.0','модуль доверенной платформы'], type: 'tpmModule' },
+  { tokens: ['звуковая карта','sound card','audio interface','аудиокарта','аудиоинтерфейс'], type: 'soundCard' },
+  { tokens: ['плата видеозахвата','capture card','видеозахват','hdmi capture'], type: 'captureCard' },
+  { tokens: ['raid контроллер','raid-контроллер','raid controller','контроллер sas','контроллер sata raid'], type: 'raidController' },
+  { tokens: ['hba адаптер','hba-адаптер','hba adapter','fibre channel адаптер','sas hba','fc hba'], type: 'hbaAdapter' },
+
+  // ── Инструменты ──
+  { tokens: ['набор инструментов','tool set','toolkit','набор отверток','ремонтный набор'], type: 'toolSet' },
+  { tokens: ['кримпер','обжимной инструмент','crimper','обжимка','клещи обжимные'], type: 'crimper' },
+  { tokens: ['тестер кабеля','lan-тестер','lan тестер','cable tester','poe тестер'], type: 'cableTester' },
+  { tokens: ['паяльник','паяльная станция','soldering','паяльная станц'], type: 'soldering' },
+  { tokens: ['мультиметр','multimeter','тестер электрич','авометр'], type: 'multimeter' },
+  { tokens: ['прецизионная отвертка','набор точных отверток','precision screwdriver','torx отвертк'], type: 'precisionScrewdriver' },
+  { tokens: ['оловоотсос','desolder','помпа для выпайки'], type: 'desolderPump' },
+  { tokens: ['антистатический браслет','esd wrist','антистатич браслет'], type: 'antistaticWristStrap' },
+  { tokens: ['антистатический коврик','esd mat','esd-коврик'], type: 'antistaticMat' },
+  { tokens: ['изолента','электроизоляционная лента','electrical tape','изоляционная лента'], type: 'electricalTape' },
+  { tokens: ['термоусадк','термоусадочная','heat shrink','термотрубка'], type: 'heatShrinkTube' },
+  { tokens: ['припой','паяльная проволока','solder wire','припой олов'], type: 'solderWire' },
+  { tokens: ['флюс','flux','канифоль','флюс для пайки'], type: 'flux' },
+
+  // ── ПО дополнительное ──
+  { tokens: ['техподдержка ос','сертификат техподдержки ос','продление astra','продление ред ос','поддержка astra linux'], type: 'osSupport' },
+  { tokens: ['сертификат техподдержки','продление техподдержки','support certificate','продление подписки по'], type: 'supportCert' },
+  { tokens: ['удалённый доступ','remote access','rudesktop','anydesk','rustdesk','dameware','удалённое администрирование'], type: 'remoteAccessSw' },
+  { tokens: ['crm','crm система','amocrm','мегаплан','creatio','битрикс crm'], type: 'crm' },
+  { tokens: ['bi система','аналитическая система','visiology','форсайт','power bi','tableau','отчётность'], type: 'bi' },
+  { tokens: ['rpa','роботизация процессов','pix rpa','primo rpa','uipath','robin rpa'], type: 'rpa' },
+
+  // ── Универсальные ──
+  { tokens: ['прочий ит-товар','прочее оборудование'], type: 'miscHardware' },
+  { tokens: ['прочий кабель','прочий переходник'], type: 'miscCable' },
+  { tokens: ['прочий расходный','прочий расходник'], type: 'miscConsumable' },
+  { tokens: ['прочее по','прочая лицензия','прочее программное'], type: 'miscSoftware' },
 ];
 
 function normalizeText(s: string): string {
@@ -1174,7 +2086,7 @@ export function detectGoodsType(model: string, fallback: string): string {
 // и не все из них упомянуты в placeholder каталога.
 const BRAND_TYPES: Record<string, string[]> = {
   // Периферия
-  'logitech':     ['mouse','keyboard','webcam','headset'],
+  'logitech':     ['mouse','keyboard','webcam','headset','speakerphone','conferenceCamera','presentationClicker'],
   'a4tech':       ['mouse','keyboard'],
   'sven':         ['mouse','keyboard','headset','ups'],
   'defender':     ['mouse','keyboard','headset'],
@@ -1186,8 +2098,8 @@ const BRAND_TYPES: Record<string, string[]> = {
   'steelseries':  ['mouse','keyboard','headset'],
   'corsair':      ['mouse','keyboard','headset','ram','psu','cooling'],
   'hyperx':       ['mouse','keyboard','headset','ram'],
-  'jabra':        ['headset','webcam'],
-  'poly':         ['headset','webcam'],
+  'jabra':        ['headset','webcam','speakerphone'],
+  'poly':         ['headset','webcam','speakerphone','conferenceCamera','ipPhone'],
   'plantronics':  ['headset'],
   'microlab':     ['headset'],       // акустика → ближайшее — гарнитура
   'edifier':      ['headset'],
@@ -1195,7 +2107,7 @@ const BRAND_TYPES: Record<string, string[]> = {
   'jbl':          ['headset'],
   'sony':         ['headset','monitor','webcam'],
   // Крупные вендоры (PC + периферия + серверы)
-  'hp':           ['pc','laptop','monitor','printer','mfu','scanner','keyboard','mouse','headset','server','thinClient'],
+  'hp':           ['pc','laptop','monitor','printer','mfu','scanner','keyboard','mouse','headset','server','thinClient','cartridge','inkCartridge'],
   'dell':         ['pc','laptop','monitor','server','keyboard','mouse'],
   'lenovo':       ['pc','laptop','monitor','server','monoblock','tablet','keyboard','mouse','thinClient'],
   'asus':         ['laptop','pc','monitor','motherboard','router','accessPoint','gpu'],
@@ -1319,6 +2231,31 @@ const BRAND_TYPES: Record<string, string[]> = {
   'safephone':    ['mdm'],
   'termidesk':    ['vdi'],
   'базис':        ['virt','vdi'],
+  // Телефония и ВКС-периферия
+  'yealink':      ['ipPhone','speakerphone','conferenceCamera','headset'],
+  'grandstream':  ['ipPhone','voipGateway'],
+  'fanvil':       ['ipPhone'],
+  // Графические планшеты
+  'wacom':        ['graphicsTablet'],
+  'xp-pen':       ['graphicsTablet'],
+  'huion':        ['graphicsTablet'],
+  // Оптика и SFP
+  'mellanox':     ['sfpModule','sfpDac','networkAdapter'],
+  'finisar':      ['sfpModule'],
+  'broadcom':     ['networkAdapter','hbaAdapter','raidController'],
+  'lsi':          ['raidController','hbaAdapter'],
+  'adaptec':      ['raidController'],
+  'qlogic':       ['hbaAdapter','networkAdapter'],
+  // CRM/BI/RPA
+  'amocrm':       ['crm'],
+  'мегаплан':     ['crm'],
+  'visiology':    ['bi'],
+  'pix':          ['rpa'],
+  'primo':        ['rpa'],
+  // Удаленный доступ
+  'rudesktop':    ['remoteAccessSw','vdi'],
+  'anydesk':      ['remoteAccessSw'],
+  'rustdesk':     ['remoteAccessSw'],
 };
 
 /**

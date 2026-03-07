@@ -1896,6 +1896,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                     value={row.type}
                     onChange={(e) => {
                       const val = e.target.value;
+                      if (!val) return; // ignore disabled group headers
                       setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, type: val } : x)));
                     }}
                     style={{
@@ -1903,15 +1904,16 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                       ...(autoDetectedRow === row.id ? { outline: '2px solid #FBBF24', outlineOffset: 1 } : {}),
                     }}
                   >
-                    {GOODS_GROUPS.map((group) => (
-                      <optgroup key={group.label} label={group.label}>
-                        {group.items.map((key) => (
-                          <option key={key} value={key}>
-                            {GOODS_CATALOG[key]?.name ?? key}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
+                    {GOODS_GROUPS.flatMap((group) => [
+                      <option key={`hdr_${group.label}`} disabled value="" style={{ fontWeight: 'bold', background: '#1a1613' }}>
+                        {'── ' + group.label + ' ──'}
+                      </option>,
+                      ...group.items.map((key) => (
+                        <option key={key} value={key}>
+                          {'  ' + (GOODS_CATALOG[key]?.name ?? key)}
+                        </option>
+                      )),
+                    ])}
                   </select>
                   {/* ОКПД2 и нацрежим */}
                   <div style={{ fontSize: 10, marginTop: 2, color: '#9CA3AF', lineHeight: 1.2 }}>

@@ -780,6 +780,18 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const aiSearchCacheRef = useRef<Record<string, string[]>>({});
   // Ref для скролла к превью
   const previewRef = useRef<HTMLDivElement>(null);
+  const portalContainerRef = useRef<HTMLDivElement | null>(null);
+  // Lazy-create a dedicated portal container (avoids React reconciliation conflicts with document.body)
+  const getPortalContainer = useCallback(() => {
+    if (!portalContainerRef.current) {
+      const el = document.createElement('div');
+      el.id = 'tz-portal-root';
+      el.setAttribute('translate', 'no');
+      document.body.appendChild(el);
+      portalContainerRef.current = el;
+    }
+    return portalContainerRef.current;
+  }, []);
 
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -1546,7 +1558,17 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
     // Рендер таблицы характеристик для одной позиции
     const renderSpecsTable = (_row: GoodsRow, specs: SpecItem[], isSW: boolean, nacRegime: string) => {
-      let curGroup = '';
+      // Pre-compute group headers (no mutable state during render)
+      const flatRows: { type: 'group' | 'spec'; idx: number; spec?: SpecItem; groupLabel?: string }[] = [];
+      let prevGroup = '';
+      for (let si = 0; si < specs.length; si++) {
+        const s = specs[si];
+        if (s.group && s.group !== prevGroup) {
+          prevGroup = s.group;
+          flatRows.push({ type: 'group', idx: si, groupLabel: s.group });
+        }
+        flatRows.push({ type: 'spec', idx: si, spec: s });
+      }
       return (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
           <thead>
@@ -1557,14 +1579,21 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             </tr>
           </thead>
           <tbody>
-            {specs.map((s, si) => {
-              const r2: React.ReactNode[] = [];
-              if (s.group && s.group !== curGroup) { curGroup = s.group; r2.push(<tr key={`g-${si}`}><td colSpan={3} style={{ border: bdr, padding: '4px 8px', background: '#2D3A5C', fontWeight: 700, textAlign: 'center', color: '#F5F0E8' }}>{curGroup}</td></tr>); }
-              r2.push(<tr key={si} style={{ background: s._warning ? '#3D3020' : undefined }}><td style={tdC}>{s.name ?? ''}</td><td style={tdC}>{s.value ?? ''}{s._warning && <span style={{ color: '#FBBF24', fontSize: 10, display: 'block' }}>⚠️ {s._warning}</span>}</td><td style={tdC}>{s.unit ?? ''}</td></tr>);
-              return r2;
-            })}
+            {flatRows.map((fr, fi) =>
+              fr.type === 'group' ? (
+                <tr key={`grp-${fr.idx}`}>
+                  <td colSpan={3} style={{ border: bdr, padding: '4px 8px', background: '#2D3A5C', fontWeight: 700, textAlign: 'center', color: '#F5F0E8' }}>{fr.groupLabel}</td>
+                </tr>
+              ) : (
+                <tr key={`spec-${fr.idx}-${fi}`} style={{ background: fr.spec?._warning ? '#3D3020' : undefined }}>
+                  <td style={tdC}>{fr.spec?.name ?? ''}</td>
+                  <td style={tdC}>{fr.spec?.value ?? ''}{fr.spec?._warning && <span style={{ color: '#FBBF24', fontSize: 10, display: 'block' }}>⚠️ {fr.spec._warning}</span>}</td>
+                  <td style={tdC}>{fr.spec?.unit ?? ''}</td>
+                </tr>
+              )
+            )}
             {!isSW && (nacRegime === 'pp878' || nacRegime === 'pp616') && (
-              <tr><td style={tdC}>ТОРП</td><td style={tdC}>Да</td><td style={tdC}></td></tr>
+              <tr key="torp"><td style={tdC}>ТОРП</td><td style={tdC}>Да</td><td style={tdC}></td></tr>
             )}
           </tbody>
         </table>
@@ -2201,7 +2230,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             {typeSuggestions.items.length > 0 ? `Найдено: ${typeSuggestions.items.length}` : 'Ожидание ИИ...'} · Кликните для выбора
           </div>
         </div>,
-        document.body
+        getPortalContainer()
       )}
     </section>
   );

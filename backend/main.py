@@ -1348,27 +1348,57 @@ async def search_eis(req: SearchEisRequest, user: Optional[User] = Depends(get_o
 
 # ── Search: debug ──────────────────────────────────────────────
 @app.get("/api/search/debug")
-async def search_debug():
-    """Debug endpoint to test DuckDuckGo search from Railway."""
+async def search_debug(q: str = "HP ProBook 450 G10"):
+    """Debug endpoint to test search pipeline from Railway."""
     import asyncio
     try:
-        from .search import _duckduckgo_search, _cache  # type: ignore
+        from .search import _duckduckgo_search, _fetch_url, _extract_text_from_html, _ai_extract_specs, _cache  # type: ignore
     except ImportError:
-        from search import _duckduckgo_search, _cache
+        from search import _duckduckgo_search, _fetch_url, _extract_text_from_html, _ai_extract_specs, _cache
 
     loop = asyncio.get_event_loop()
+    steps = {}
+
+    # Step 1: Basic DDG search
     try:
-        results = await loop.run_in_executor(None, lambda: _duckduckgo_search("ноутбук характеристики", num=3))
+        q1 = f"{q} технические характеристики"
+        r1 = await loop.run_in_executor(None, lambda: _duckduckgo_search(q1, num=3))
+        steps["ddg_general"] = {"count": len(r1), "results": r1[:2]}
     except Exception as e:
-        return {"ok": False, "error": str(e), "cache_size": len(_cache)}
-    cache_keys = list(_cache.keys())
-    return {
-        "ok": True,
-        "ddg_results": len(results),
-        "ddg_sample": results[:2] if results else [],
-        "cache_size": len(_cache),
-        "cache_keys": cache_keys[:10],
-    }
+        steps["ddg_general"] = {"error": str(e)}
+
+    # Step 2: Site-specific search
+    try:
+        q2 = f'"{q}" техническое задание характеристики'
+        r2 = await loop.run_in_executor(None, lambda: _duckduckgo_search(q2, num=3))
+        steps["ddg_tz"] = {"count": len(r2), "results": r2[:2]}
+    except Exception as e:
+        steps["ddg_tz"] = {"error": str(e)}
+
+    # Step 3: Try fetch first URL
+    all_results = steps.get("ddg_general", {}).get("results", []) + steps.get("ddg_tz", {}).get("results", [])
+    if all_results:
+        url = all_results[0].get("link", "")
+        if url:
+            try:
+                html = await loop.run_in_executor(None, lambda: _fetch_url(url, timeout=10))
+                text = _extract_text_from_html(html, max_chars=1000) if html else ""
+                steps["fetch_page"] = {"url": url, "html_len": len(html), "text_len": len(text), "text_preview": text[:300]}
+            except Exception as e:
+                steps["fetch_page"] = {"url": url, "error": str(e)}
+
+    # Step 4: Test AI extraction with snippet context
+    snippets = " ".join(r.get("snippet", "") for r in all_results[:3])
+    if snippets:
+        try:
+            specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(snippets, q, "laptop"))
+            steps["ai_extract"] = {"specs_count": len(specs), "sample": specs[:3]}
+        except Exception as e:
+            steps["ai_extract"] = {"error": str(e)}
+    else:
+        steps["ai_extract"] = {"skipped": "no snippets"}
+
+    return {"ok": True, "query": q, "steps": steps, "cache_size": len(_cache)}
 
 # ── Payments ───────────────────────────────────────────────────
 @app.post("/api/payment/create")

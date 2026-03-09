@@ -457,7 +457,7 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
         results = (results or []) + tz_results
     if not results:
         logger.warning(f"No search results for: {query}")
-        _cache_set(cache_key, [])
+        # Don't cache empty results — allow retry
         return []
 
     # Collect context from search snippets + top pages
@@ -487,7 +487,7 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
                 fetched += 1
 
     if not context_parts:
-        _cache_set(cache_key, [])
+        # Don't cache empty results — allow retry
         return []
 
     full_context = "\n\n".join(context_parts)
@@ -596,16 +596,35 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
             if page_text and len(page_text) > 150:
                 context_parts.append(f"[{label} — {url}]:\n{page_text}")
 
+    # ── Fallback: if procurement-specific searches failed, try general internet search ──
     if not context_parts:
-        logger.warning(f"No EIS data found for: {query}")
-        _cache_set(cache_key, [])
+        logger.info(f"[eis] No procurement-specific results for {query!r}, falling back to internet search")
+        internet_specs = await search_internet_specs(query, goods_type)
+        if internet_specs:
+            _cache_set(cache_key, internet_specs)
+            return internet_specs
+        # Don't cache empty results — allow retry
         return []
 
     full_context = "\n".join(context_parts)
-    logger.info(f"EIS search for {query!r}: collected {len(context_parts)} context parts, {len(full_context)} chars")
+    logger.info(f"[eis] Collected {len(context_parts)} context parts ({len(full_context)} chars) for {query!r}")
 
     # ── Extract specs via AI ──
     specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, query, goods_type))
-    logger.info(f"EIS search for {query!r}: extracted {len(specs)} specs")
-    _cache_set(cache_key, specs)
+    logger.info(f"[eis] Extracted {len(specs)} specs for {query!r}")
+
+    # If AI extraction returned few specs, supplement with internet search
+    if len(specs) < 10:
+        logger.info(f"[eis] Only {len(specs)} specs, supplementing with internet search")
+        internet_specs = await search_internet_specs(query, goods_type)
+        if internet_specs:
+            # Merge: add internet specs that aren't already in EIS specs
+            existing_names = {s.get("name", "").lower() for s in specs}
+            for is_spec in internet_specs:
+                if is_spec.get("name", "").lower() not in existing_names:
+                    specs.append(is_spec)
+                    existing_names.add(is_spec.get("name", "").lower())
+
+    if specs:
+        _cache_set(cache_key, specs)
     return specs

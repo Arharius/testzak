@@ -427,203 +427,127 @@ def _parse_json_with_repair(text: str) -> list | None:
     return None
 
 
-# ── Internet search ─────────────────────────────────────────────
+# ── Unified search — single DDG query per function ──────────────
+# DuckDuckGo rate-limits after ~5 requests. Use ONE comprehensive query.
+
 async def search_internet_specs(product: str, goods_type: str = "") -> list[dict]:
     """
-    Search internet for product specs using DuckDuckGo (free, keyless) + AI extraction.
-    Also searches rostender.info, zakupki.gov.ru, zakupki.mos.ru for existing TZ.
+    Search internet for product specs using ONE DuckDuckGo query + page fetching + AI extraction.
     Returns list of {name, value, unit} dicts.
     """
     cache_key = f"internet:{goods_type}:{product}"
     cached = _cache_get(cache_key)
     if cached is not None:
-        logger.info(f"[internet] Cache hit for: {product!r} ({len(cached)} specs)")
+        logger.info(f"[internet] Cache hit: {product!r} ({len(cached)} specs)")
         return cached
 
     type_hint = _TYPE_SEARCH_HINTS.get(goods_type, "")
-    query = f"{product} технические характеристики"
+    # ONE comprehensive query
+    query = f"{product} технические характеристики спецификация"
     if type_hint and type_hint.lower() not in product.lower():
-        query = f"{product} {type_hint} технические характеристики"
+        query = f"{product} {type_hint} характеристики"
 
-    logger.info(f"[internet] Starting search: query={query!r}")
+    logger.info(f"[internet] Search: {query!r}")
     loop = asyncio.get_event_loop()
 
-    # Step 1: Get search results via DuckDuckGo (free, keyless)
-    results = await loop.run_in_executor(None, lambda: _duckduckgo_search(query, num=5))
-    # Also search procurement portals for existing TZ documents
-    tz_query = f"{product} техническое задание site:rostender.info OR site:zakupki.gov.ru OR site:zakupki.mos.ru"
-    tz_results = await loop.run_in_executor(None, lambda: _duckduckgo_search(tz_query, num=3))
-    if tz_results:
-        results = (results or []) + tz_results
+    results = await loop.run_in_executor(None, lambda: _duckduckgo_search(query, num=8))
     if not results:
-        logger.warning(f"No search results for: {query}")
-        # Don't cache empty results — allow retry
+        logger.warning(f"[internet] No DDG results for: {query}")
         return []
 
-    # Collect context from search snippets + top pages
-    context_parts = []
+    logger.info(f"[internet] DDG returned {len(results)} results")
 
-    # Add snippets from search results (fast, no fetch needed)
+    # Collect context from snippets + top pages
+    context_parts = []
     for r in results[:8]:
-        title = r.get("title", "")
         snippet = r.get("snippet", "")
+        title = r.get("title", "")
         if snippet:
             context_parts.append(f"{title}: {snippet}")
 
-    # Fetch top 3 pages for more detailed specs
-    urls_to_fetch = [r.get("link", "") for r in results[:5] if r.get("link", "")]
+    # Fetch top 2-3 pages (in parallel)
     skip_domains = {"youtube.com", "facebook.com", "vk.com", "instagram.com", "twitter.com", "t.me"}
-    fetched = 0
-    for url in urls_to_fetch:
-        if fetched >= 3:
-            break
-        if not url or any(d in url for d in skip_domains):
-            continue
-        html = await loop.run_in_executor(None, lambda u=url: _fetch_url(u, timeout=10))
-        if html:
-            page_text = _extract_text_from_html(html, max_chars=5000)
-            if page_text and len(page_text) > 100:
-                context_parts.append(f"[Страница {url}]:\n{page_text}")
-                fetched += 1
+    urls = [r["link"] for r in results[:5] if r.get("link") and not any(d in r["link"] for d in skip_domains)][:3]
+
+    if urls:
+        fetch_tasks = [loop.run_in_executor(None, lambda u=url: _fetch_url(u, timeout=10)) for url in urls]
+        fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+        for url, html in zip(urls, fetch_results):
+            if isinstance(html, Exception) or not html:
+                continue
+            text = _extract_text_from_html(html, max_chars=5000)
+            if text and len(text) > 150:
+                context_parts.append(f"[{url}]:\n{text}")
 
     if not context_parts:
-        # Don't cache empty results — allow retry
         return []
 
     full_context = "\n\n".join(context_parts)
-
-    # Step 2: Extract specs via AI
     specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, product, goods_type))
-    logger.info(f"Internet search for {product!r}: found {len(specs)} specs from {len(context_parts)} context parts")
-    _cache_set(cache_key, specs)
+    logger.info(f"[internet] Extracted {len(specs)} specs for {product!r}")
+    if specs:
+        _cache_set(cache_key, specs)
     return specs
 
 
-# ── EIS / zakupki.gov.ru search ─────────────────────────────────
-
 async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
     """
-    Search EIS (zakupki.gov.ru) for existing TZ documents and extract specs.
-    Uses DuckDuckGo site: filters since direct zakupki.gov.ru access is blocked.
+    Search for TZ documents (procurement specs) using ONE DuckDuckGo query.
+    Falls back to general internet search if procurement-specific search fails.
     Returns list of {name, value, unit} dicts.
     """
     cache_key = f"eis:{goods_type}:{query}"
     cached = _cache_get(cache_key)
     if cached is not None:
-        logger.info(f"Cache hit for EIS search: {query!r}")
+        logger.info(f"[eis] Cache hit: {query!r} ({len(cached)} specs)")
         return cached
 
-    loop = asyncio.get_event_loop()
-    context_parts = []
     type_hint = _TYPE_SEARCH_HINTS.get(goods_type, "")
+    base = query.strip()
 
-    # Build search queries with type-specific hints
-    base_query = query.strip()
-    if type_hint and type_hint.lower() not in base_query.lower():
-        base_query_extended = f"{query} {type_hint}"
-    else:
-        base_query_extended = base_query
+    # ONE comprehensive procurement-focused query
+    eis_query = f'{base} техническое задание характеристики госзакупки'
+    if type_hint and type_hint.lower() not in base.lower():
+        eis_query = f'{base} {type_hint} характеристики техническое задание'
 
-    # ── Strategy 1: DuckDuckGo site: searches for procurement portals ──
-    site_searches = [
-        (f'site:zakupki.gov.ru "{base_query}" техническое задание характеристики', "ЕИС"),
-        (f'site:rostender.info "{base_query}" характеристики', "РосТендер"),
-        (f'site:zakupki.mos.ru "{base_query}" спецификация', "Закупки Москвы"),
-    ]
+    logger.info(f"[eis] Search: {eis_query!r}")
+    loop = asyncio.get_event_loop()
 
-    search_tasks = []
-    for site_query, label in site_searches:
-        search_tasks.append(
-            loop.run_in_executor(None, lambda q=site_query: _duckduckgo_search(q, num=5))
-        )
-    site_results_all = await asyncio.gather(*search_tasks, return_exceptions=True)
+    results = await loop.run_in_executor(None, lambda: _duckduckgo_search(eis_query, num=8))
+    logger.info(f"[eis] DDG returned {len(results)} results for {base!r}")
 
-    all_urls_to_fetch: list[tuple[str, str]] = []  # (url, label)
-
-    for (_, label), results in zip(site_searches, site_results_all):
-        if isinstance(results, Exception):
-            logger.warning(f"DuckDuckGo search failed for {label}: {results}")
-            continue
-        for sr in (results or [])[:3]:
-            snippet = sr.get("snippet", "")
-            title = sr.get("title", "")
-            link = sr.get("link", "")
+    context_parts = []
+    if results:
+        for r in results[:8]:
+            snippet = r.get("snippet", "")
+            title = r.get("title", "")
             if snippet:
-                context_parts.append(f"[{label}] {title}: {snippet}")
-            if link:
-                all_urls_to_fetch.append((link, label))
+                context_parts.append(f"{title}: {snippet}")
 
-    # ── Strategy 2: General search for TZ documents with this product ──
-    general_queries = [
-        f'"{base_query}" техническое задание госзакупки характеристики',
-        f'"{base_query}" спецификация 44-ФЗ требования',
-    ]
-    if type_hint:
-        general_queries.append(f'{base_query_extended} характеристики требования госзакупки')
+        # Fetch top pages
+        skip_domains = {"youtube.com", "facebook.com", "vk.com", "instagram.com", "twitter.com", "t.me"}
+        urls = [r["link"] for r in results[:5] if r.get("link") and not any(d in r["link"] for d in skip_domains)][:3]
+        if urls:
+            fetch_tasks = [loop.run_in_executor(None, lambda u=url: _fetch_url(u, timeout=10)) for url in urls]
+            fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+            for url, html in zip(urls, fetch_results):
+                if isinstance(html, Exception) or not html:
+                    continue
+                text = _extract_text_from_html(html, max_chars=5000)
+                if text and len(text) > 150:
+                    context_parts.append(f"[{url}]:\n{text}")
 
-    for gq in general_queries:
-        gen_results = await loop.run_in_executor(None, lambda q=gq: _duckduckgo_search(q, num=3))
-        for sr in (gen_results or [])[:2]:
-            snippet = sr.get("snippet", "")
-            title = sr.get("title", "")
-            link = sr.get("link", "")
-            if snippet:
-                context_parts.append(f"[Поиск] {title}: {snippet}")
-            if link:
-                all_urls_to_fetch.append((link, "Поиск"))
-
-    # ── Fetch top pages in parallel ──
-    skip_domains = {"youtube.com", "facebook.com", "vk.com", "instagram.com", "twitter.com", "t.me"}
-    unique_urls: list[tuple[str, str]] = []
-    seen_urls: set[str] = set()
-    for url, label in all_urls_to_fetch:
-        domain = urlparse(url).netloc
-        if url not in seen_urls and not any(d in domain for d in skip_domains):
-            unique_urls.append((url, label))
-            seen_urls.add(url)
-    unique_urls = unique_urls[:6]  # max 6 pages to fetch
-
-    if unique_urls:
-        fetch_tasks = [
-            loop.run_in_executor(None, lambda u=url: _fetch_url(u, timeout=12))
-            for url, _ in unique_urls
-        ]
-        fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
-        for (url, label), html_result in zip(unique_urls, fetch_results):
-            if isinstance(html_result, Exception) or not html_result:
-                continue
-            page_text = _extract_text_from_html(html_result, max_chars=5000)
-            if page_text and len(page_text) > 150:
-                context_parts.append(f"[{label} — {url}]:\n{page_text}")
-
-    # ── Fallback: if procurement-specific searches failed, try general internet search ──
+    # Fallback to general internet search
     if not context_parts:
-        logger.info(f"[eis] No procurement-specific results for {query!r}, falling back to internet search")
-        internet_specs = await search_internet_specs(query, goods_type)
-        if internet_specs:
-            _cache_set(cache_key, internet_specs)
-            return internet_specs
-        # Don't cache empty results — allow retry
-        return []
+        logger.info(f"[eis] No procurement results, falling back to internet search")
+        specs = await search_internet_specs(query, goods_type)
+        if specs:
+            _cache_set(cache_key, specs)
+        return specs
 
     full_context = "\n".join(context_parts)
-    logger.info(f"[eis] Collected {len(context_parts)} context parts ({len(full_context)} chars) for {query!r}")
-
-    # ── Extract specs via AI ──
     specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, query, goods_type))
     logger.info(f"[eis] Extracted {len(specs)} specs for {query!r}")
-
-    # If AI extraction returned few specs, supplement with internet search
-    if len(specs) < 10:
-        logger.info(f"[eis] Only {len(specs)} specs, supplementing with internet search")
-        internet_specs = await search_internet_specs(query, goods_type)
-        if internet_specs:
-            # Merge: add internet specs that aren't already in EIS specs
-            existing_names = {s.get("name", "").lower() for s in specs}
-            for is_spec in internet_specs:
-                if is_spec.get("name", "").lower() not in existing_names:
-                    specs.append(is_spec)
-                    existing_names.add(is_spec.get("name", "").lower())
 
     if specs:
         _cache_set(cache_key, specs)

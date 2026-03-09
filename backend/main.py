@@ -1326,11 +1326,16 @@ def get_me(user: User = Depends(get_current_user)):
 
 # ── AI Proxy ──────────────────────────────────────────────────
 @app.post("/api/ai/generate")
-def ai_generate(req: AIGenerateRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    require_active(user)
+def ai_generate(req: AIGenerateRequest, user: Optional[User] = Depends(get_optional_user), db: Session = Depends(get_db)):
+    # Allow anonymous AI access when INTEGRATION_ALLOW_ANON is enabled
+    if user is None:
+        if not INTEGRATION_ALLOW_ANON:
+            raise HTTPException(status_code=401, detail="Требуется авторизация")
+    else:
+        require_active(user)
     result = _call_ai(req.provider, req.model, req.messages, req.temperature or 0.3, req.max_tokens or 4096)
     # Count usage (only for non-admin free users)
-    if user.role != "admin" and user.tz_limit != -1:
+    if user and user.role != "admin" and user.tz_limit != -1:
         user.tz_count = (user.tz_count or 0) + 1
         db.commit()
     return {"ok": True, "data": result}

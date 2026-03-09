@@ -1351,14 +1351,16 @@ async def search_eis(req: SearchEisRequest, user: Optional[User] = Depends(get_o
 async def search_debug():
     """Debug endpoint to test DuckDuckGo search from Railway."""
     import asyncio
-    from backend.search import _duckduckgo_search, _fetch_url, _cache
     try:
-        from .search import _duckduckgo_search, _fetch_url, _cache
+        from .search import _duckduckgo_search, _cache  # type: ignore
     except ImportError:
-        from search import _duckduckgo_search, _fetch_url, _cache
+        from search import _duckduckgo_search, _cache
 
     loop = asyncio.get_event_loop()
-    results = await loop.run_in_executor(None, lambda: _duckduckgo_search("ноутбук характеристики", num=3))
+    try:
+        results = await loop.run_in_executor(None, lambda: _duckduckgo_search("ноутбук характеристики", num=3))
+    except Exception as e:
+        return {"ok": False, "error": str(e), "cache_size": len(_cache)}
     cache_keys = list(_cache.keys())
     return {
         "ok": True,

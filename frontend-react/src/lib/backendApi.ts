@@ -7,8 +7,8 @@
 
 // If VITE_BACKEND_URL is empty, requests go to same-origin (/api/...) which
 // allows Netlify to proxy API calls to the backend service.
-const VITE_ENV = ((import.meta as any)?.env ?? {}) as Record<string, unknown>;
-export const BACKEND_URL = (String(VITE_ENV.VITE_BACKEND_URL || '')).replace(/\/$/, '');
+// NOTE: Vite only replaces `import.meta.env.VITE_*` statically — dynamic access won't work.
+export const BACKEND_URL = (String(import.meta.env.VITE_BACKEND_URL || '')).replace(/\/$/, '');
 const NON_LATIN1_RE = /[^\x00-\xff]/;
 
 function buildApiUrl(path: string): string {

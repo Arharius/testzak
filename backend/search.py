@@ -202,15 +202,25 @@ def _duckduckgo_search(query: str, num: int = 5) -> list[dict]:
     url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
     html = _fetch_url(url, timeout=15)
     if not html:
+        logger.warning("DuckDuckGo returned empty HTML")
         return []
 
     results: list[dict] = []
-    blocks = re.findall(r"<div class=\"result.*?</div>\s*</div>", html, flags=re.S)
+    # Use a broader block regex — DuckDuckGo results have 3 levels of </div>
+    blocks = re.findall(r"<div class=\"result\s[^\"]*\".*?</div>\s*</div>\s*</div>", html, flags=re.S)
+    if not blocks:
+        # Fallback: try the 2-div pattern
+        blocks = re.findall(r"<div class=\"result\s[^\"]*\".*?</div>\s*</div>", html, flags=re.S)
+    logger.info(f"DuckDuckGo: found {len(blocks)} result blocks for query: {query[:80]}")
+
     for block in blocks:
         if len(results) >= max(1, num):
             break
         link_match = re.search(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', block, flags=re.S)
+        # Try multiple snippet patterns
         snippet_match = re.search(r'class="result__snippet"[^>]*>(.*?)</a>', block, flags=re.S)
+        if not snippet_match:
+            snippet_match = re.search(r'class="result__snippet"[^>]*>(.*?)</(?:div|span)>', block, flags=re.S)
         if not link_match:
             continue
         raw_href = unescape(link_match.group(1))
@@ -218,6 +228,8 @@ def _duckduckgo_search(query: str, num: int = 5) -> list[dict]:
         if "/l/?" in raw_href and "uddg=" in raw_href:
             query_params = parse_qs(urlparse(raw_href).query)
             href = unquote(query_params.get("uddg", [""])[0]) or raw_href
+        if href.startswith("//"):
+            href = "https:" + href
         title = _strip_tags(unescape(link_match.group(2)))
         snippet = _strip_tags(unescape(snippet_match.group(1) if snippet_match else ""))
         if not href.startswith("http"):
@@ -227,6 +239,7 @@ def _duckduckgo_search(query: str, num: int = 5) -> list[dict]:
             "link": href[:500],
             "snippet": snippet[:500],
         })
+    logger.info(f"DuckDuckGo: parsed {len(results)} results")
     return results
 
 

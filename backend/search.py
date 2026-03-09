@@ -48,6 +48,16 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "45"))
 
+# Rotating user-agents to reduce fingerprinting
+import random
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+]
+
 
 # ── In-memory cache (TTL 30 min) ─────────────────────────────
 _cache: dict[str, tuple[float, list[dict]]] = {}
@@ -112,7 +122,7 @@ _ssl_ctx_unverified = ssl._create_unverified_context()
 def _fetch_url(url: str, timeout: int = 12) -> str:
     """Fetch URL, return text content. Retries with unverified SSL on cert errors."""
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": random.choice(_USER_AGENTS),
         "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
         "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
     }
@@ -241,6 +251,65 @@ def _duckduckgo_search(query: str, num: int = 5) -> list[dict]:
         })
     logger.info(f"DuckDuckGo: parsed {len(results)} results")
     return results
+
+
+# ── Bing search (fallback when DDG is rate-limited) ────────────
+def _bing_search(query: str, num: int = 5) -> list[dict]:
+    """
+    Keyless search via Bing HTML page. Used as fallback when DuckDuckGo is rate-limited.
+    """
+    url = f"https://www.bing.com/search?q={quote_plus(query)}&setlang=ru&count={num}"
+    headers = {
+        "User-Agent": random.choice(_USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+        "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+    }
+    req = URLRequest(url, headers=headers, method="GET")
+    try:
+        with urlopen(req, timeout=15, context=_ssl_ctx) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        logger.warning(f"Bing search failed: {e}")
+        return []
+
+    results: list[dict] = []
+    # Bing results are in <li class="b_algo"> blocks
+    blocks = re.findall(r'<li class="b_algo">(.*?)</li>', html, flags=re.S)
+    logger.info(f"Bing: found {len(blocks)} result blocks for query: {query[:80]}")
+
+    for block in blocks:
+        if len(results) >= num:
+            break
+        # Extract link and title from <h2><a href="...">title</a></h2>
+        link_match = re.search(r'<a\s[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', block, flags=re.S)
+        if not link_match:
+            continue
+        href = link_match.group(1)
+        title = _strip_tags(unescape(link_match.group(2)))
+        # Extract snippet from <p> or <div class="b_caption">
+        snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, flags=re.S)
+        if not snippet_match:
+            snippet_match = re.search(r'class="b_caption"[^>]*>(.*?)</div>', block, flags=re.S)
+        snippet = _strip_tags(unescape(snippet_match.group(1))) if snippet_match else ""
+        results.append({
+            "title": title[:180],
+            "link": href[:500],
+            "snippet": snippet[:500],
+        })
+
+    logger.info(f"Bing: parsed {len(results)} results")
+    return results
+
+
+def _search_web(query: str, num: int = 5) -> list[dict]:
+    """
+    Search the web using DDG first, then Bing as fallback.
+    """
+    results = _duckduckgo_search(query, num)
+    if results:
+        return results
+    logger.info(f"DDG returned 0 results, trying Bing fallback for: {query[:80]}")
+    return _bing_search(query, num)
 
 
 # ── AI extraction ──────────────────────────────────────────────
@@ -450,7 +519,7 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
     logger.info(f"[internet] Search: {query!r}")
     loop = asyncio.get_event_loop()
 
-    results = await loop.run_in_executor(None, lambda: _duckduckgo_search(query, num=8))
+    results = await loop.run_in_executor(None, lambda: _search_web(query, num=8))
     if not results:
         logger.warning(f"[internet] No DDG results for: {query}")
         return []
@@ -513,7 +582,7 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
     logger.info(f"[eis] Search: {eis_query!r}")
     loop = asyncio.get_event_loop()
 
-    results = await loop.run_in_executor(None, lambda: _duckduckgo_search(eis_query, num=8))
+    results = await loop.run_in_executor(None, lambda: _search_web(eis_query, num=8))
     logger.info(f"[eis] DDG returned {len(results)} results for {base!r}")
 
     context_parts = []

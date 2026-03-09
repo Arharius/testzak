@@ -1380,31 +1380,37 @@ async def search_debug(q: str = "HP ProBook 450 G10"):
     """Debug endpoint to test search pipeline from Railway."""
     import asyncio
     try:
-        from .search import _duckduckgo_search, _fetch_url, _extract_text_from_html, _ai_extract_specs, _cache  # type: ignore
+        from .search import _duckduckgo_search, _bing_search, _search_web, _fetch_url, _extract_text_from_html, _ai_extract_specs, _cache  # type: ignore
     except ImportError:
-        from search import _duckduckgo_search, _fetch_url, _extract_text_from_html, _ai_extract_specs, _cache
+        from search import _duckduckgo_search, _bing_search, _search_web, _fetch_url, _extract_text_from_html, _ai_extract_specs, _cache
 
     loop = asyncio.get_event_loop()
     steps = {}
 
-    # Step 1: Basic DDG search
+    # Step 1: DDG search
     try:
         q1 = f"{q} технические характеристики"
         r1 = await loop.run_in_executor(None, lambda: _duckduckgo_search(q1, num=3))
-        steps["ddg_general"] = {"count": len(r1), "results": r1[:2]}
+        steps["ddg"] = {"count": len(r1), "results": r1[:2]}
     except Exception as e:
-        steps["ddg_general"] = {"error": str(e)}
+        steps["ddg"] = {"error": str(e)}
 
-    # Step 2: Site-specific search
+    # Step 2: Bing search (always test even if DDG works)
     try:
-        q2 = f'"{q}" техническое задание характеристики'
-        r2 = await loop.run_in_executor(None, lambda: _duckduckgo_search(q2, num=3))
-        steps["ddg_tz"] = {"count": len(r2), "results": r2[:2]}
+        r2 = await loop.run_in_executor(None, lambda: _bing_search(q1, num=3))
+        steps["bing"] = {"count": len(r2), "results": r2[:2]}
     except Exception as e:
-        steps["ddg_tz"] = {"error": str(e)}
+        steps["bing"] = {"error": str(e)}
 
-    # Step 3: Try fetch first URL
-    all_results = steps.get("ddg_general", {}).get("results", []) + steps.get("ddg_tz", {}).get("results", [])
+    # Step 3: Combined web search (DDG → Bing fallback)
+    try:
+        r3 = await loop.run_in_executor(None, lambda: _search_web(q1, num=3))
+        steps["combined"] = {"count": len(r3), "source": "ddg" if steps.get("ddg", {}).get("count", 0) > 0 else "bing"}
+    except Exception as e:
+        steps["combined"] = {"error": str(e)}
+
+    # Step 4: Try fetch first URL
+    all_results = steps.get("ddg", {}).get("results", []) + steps.get("bing", {}).get("results", [])
     if all_results:
         url = all_results[0].get("link", "")
         if url:
@@ -1415,7 +1421,7 @@ async def search_debug(q: str = "HP ProBook 450 G10"):
             except Exception as e:
                 steps["fetch_page"] = {"url": url, "error": str(e)}
 
-    # Step 4: Test AI extraction with snippet context
+    # Step 5: Test AI extraction with snippet context
     snippets = " ".join(r.get("snippet", "") for r in all_results[:3])
     if snippets:
         try:

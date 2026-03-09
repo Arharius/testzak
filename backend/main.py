@@ -1330,7 +1330,7 @@ def ai_generate(req: AIGenerateRequest, user: User = Depends(get_current_user), 
 
 # ── Search: internet specs ─────────────────────────────────────
 @app.post("/api/search/specs")
-async def search_specs(req: SearchSpecsRequest, user: User = Depends(get_current_user)):
+async def search_specs(req: SearchSpecsRequest, user: Optional[User] = Depends(get_optional_user)):
     if not req.product.strip():
         raise HTTPException(status_code=400, detail="Укажите модель товара")
     logger.info(f"Internet search: {req.product!r}")
@@ -1339,7 +1339,7 @@ async def search_specs(req: SearchSpecsRequest, user: User = Depends(get_current
 
 # ── Search: EIS zakupki.gov.ru ─────────────────────────────────
 @app.post("/api/search/eis")
-async def search_eis(req: SearchEisRequest, user: User = Depends(get_current_user)):
+async def search_eis(req: SearchEisRequest, user: Optional[User] = Depends(get_optional_user)):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Укажите запрос")
     logger.info(f"EIS search: {req.query!r}")

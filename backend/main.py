@@ -74,12 +74,18 @@ except ImportError:
     )
 
 # ── Search module ──────────────────────────────────────────────
+_search_import_source = "stub"
 try:
     from .search import search_internet_specs, search_eis_specs  # type: ignore
+    _search_import_source = "package"
 except ImportError:
     try:
         from search import search_internet_specs, search_eis_specs
-    except ImportError:
+        _search_import_source = "direct"
+    except Exception as _search_err:
+        import traceback
+        print(f"WARNING: search module import failed: {_search_err}")
+        traceback.print_exc()
         async def search_internet_specs(product: str, goods_type: str) -> list:  # type: ignore
             return []
         async def search_eis_specs(query: str, goods_type: str) -> list:  # type: ignore
@@ -1008,6 +1014,7 @@ def health():
             "groq":       bool(GROQ_API_KEY),
             "openrouter": bool(OPENROUTER_API_KEY),
         },
+        "search_module": _search_import_source,
         "yookassa": bool(YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY),
     }
 
@@ -1333,18 +1340,34 @@ def ai_generate(req: AIGenerateRequest, user: User = Depends(get_current_user), 
 async def search_specs(req: SearchSpecsRequest, user: Optional[User] = Depends(get_optional_user)):
     if not req.product.strip():
         raise HTTPException(status_code=400, detail="Укажите модель товара")
-    logger.info(f"Internet search: {req.product!r}")
-    specs = await search_internet_specs(req.product.strip(), req.goods_type)
-    return {"ok": True, "specs": specs, "source": "internet"}
+    import time as _time
+    t0 = _time.time()
+    logger.info(f"Internet search: {req.product!r} type={req.goods_type!r}")
+    try:
+        specs = await search_internet_specs(req.product.strip(), req.goods_type)
+    except Exception as e:
+        logger.error(f"Internet search EXCEPTION: {e}", exc_info=True)
+        specs = []
+    elapsed = _time.time() - t0
+    logger.info(f"Internet search done: {len(specs)} specs in {elapsed:.1f}s")
+    return {"ok": True, "specs": specs, "source": "internet", "elapsed": round(elapsed, 1)}
 
 # ── Search: EIS zakupki.gov.ru ─────────────────────────────────
 @app.post("/api/search/eis")
 async def search_eis(req: SearchEisRequest, user: Optional[User] = Depends(get_optional_user)):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Укажите запрос")
-    logger.info(f"EIS search: {req.query!r}")
-    specs = await search_eis_specs(req.query.strip(), req.goods_type)
-    return {"ok": True, "specs": specs, "source": "eis"}
+    import time as _time
+    t0 = _time.time()
+    logger.info(f"EIS search: {req.query!r} type={req.goods_type!r}")
+    try:
+        specs = await search_eis_specs(req.query.strip(), req.goods_type)
+    except Exception as e:
+        logger.error(f"EIS search EXCEPTION: {e}", exc_info=True)
+        specs = []
+    elapsed = _time.time() - t0
+    logger.info(f"EIS search done: {len(specs)} specs in {elapsed:.1f}s")
+    return {"ok": True, "specs": specs, "source": "eis", "elapsed": round(elapsed, 1)}
 
 # ── Search: debug ──────────────────────────────────────────────
 @app.get("/api/search/debug")

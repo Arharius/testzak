@@ -437,7 +437,7 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
     cache_key = f"internet:{goods_type}:{product}"
     cached = _cache_get(cache_key)
     if cached is not None:
-        logger.info(f"Cache hit for internet search: {product!r}")
+        logger.info(f"[internet] Cache hit for: {product!r} ({len(cached)} specs)")
         return cached
 
     type_hint = _TYPE_SEARCH_HINTS.get(goods_type, "")
@@ -445,6 +445,7 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
     if type_hint and type_hint.lower() not in product.lower():
         query = f"{product} {type_hint} технические характеристики"
 
+    logger.info(f"[internet] Starting search: query={query!r}")
     loop = asyncio.get_event_loop()
 
     # Step 1: Get search results via DuckDuckGo (free, keyless)

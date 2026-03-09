@@ -1346,6 +1346,28 @@ async def search_eis(req: SearchEisRequest, user: Optional[User] = Depends(get_o
     specs = await search_eis_specs(req.query.strip(), req.goods_type)
     return {"ok": True, "specs": specs, "source": "eis"}
 
+# ── Search: debug ──────────────────────────────────────────────
+@app.get("/api/search/debug")
+async def search_debug():
+    """Debug endpoint to test DuckDuckGo search from Railway."""
+    import asyncio
+    from backend.search import _duckduckgo_search, _fetch_url, _cache
+    try:
+        from .search import _duckduckgo_search, _fetch_url, _cache
+    except ImportError:
+        from search import _duckduckgo_search, _fetch_url, _cache
+
+    loop = asyncio.get_event_loop()
+    results = await loop.run_in_executor(None, lambda: _duckduckgo_search("ноутбук характеристики", num=3))
+    cache_keys = list(_cache.keys())
+    return {
+        "ok": True,
+        "ddg_results": len(results),
+        "ddg_sample": results[:2] if results else [],
+        "cache_size": len(_cache),
+        "cache_keys": cache_keys[:10],
+    }
+
 # ── Payments ───────────────────────────────────────────────────
 @app.post("/api/payment/create")
 def payment_create(req: PaymentCreateRequest, user: User = Depends(get_current_user)):

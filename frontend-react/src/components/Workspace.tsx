@@ -1433,6 +1433,21 @@ const SW_PROMPT_TYPES = ['os','office','antivirus','crypto','dbms','erp','virt',
   'dlp','siem','firewall_sw','edr','waf','pam','iam','pki','email','vks','ecm','portal',
   'project_sw','bpm','itsm','monitoring','mdm','hr','gis','ldap','vpn','reporting','cad','license'];
 
+// ── Проверка: есть ли реальные значения характеристик (не «не указан» заглушки) ──
+const PLACEHOLDER_RE = /^(не\s*указан[аоы]?|н[\/ ]?[аду]|—|-|отсутствует|нет\s*данных|неизвестн[аоы]?|n[\/ ]?a|unknown)$/i;
+
+function hasRealSpecValues(specs: SpecItem[]): boolean {
+  if (specs.length === 0) return false;
+  const total = specs.length;
+  let placeholders = 0;
+  for (const s of specs) {
+    const v = String(s.value ?? '').trim();
+    if (!v || PLACEHOLDER_RE.test(v)) placeholders++;
+  }
+  // If more than 40% of specs are placeholders, consider it useless
+  return placeholders / total < 0.4;
+}
+
 // ── Промпт: поиск реальных характеристик конкретной модели через ИИ ───────────
 function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
@@ -1445,6 +1460,9 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
 ОКПД2: ${g.okpd2}
 
 Задача: укажи реальные характеристики именно этой модели/версии, как указаны у производителя (или ближайшего аналога по классу). Характеристики должны быть МАКСИМАЛЬНО ДЕТАЛЬНЫМИ — уровень реальных ТЗ из ЕИС (zakupki.gov.ru).
+
+КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать «не указан», «не указано», «не указаны», «н/д», «неизвестно», «нет данных» в значениях.
+Если точное значение неизвестно — укажи ТИПИЧНОЕ значение для данного класса товаров с формулировкой «не менее» / «не более».
 
 Правила формулировок (44-ФЗ, ст. 33):
 - Не указывать торговые марки, производителей, артикулы и точные модели
@@ -1546,6 +1564,7 @@ ${ctx}
 - Единицы: ГГц, МГц, ГБ, МБ, ТБ
 - Сокеты процессора НЕ УКАЗЫВАТЬ${isSW ? '\n- ПО: реестр Минцифры (ПП РФ № 1236), сертификаты ФСТЭК/ФСБ где применимо\n- Перечислить ВСЕ функциональные модули и возможности' : ''}
 - ${isSW ? 'Не менее 25-40 характеристик для ПО' : 'Не менее 15-25 характеристик для оборудования'}, сгруппированных по разделам
+- КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать «не указан», «не указано», «не указаны», «н/д», «неизвестно» в значениях. Если точное значение неизвестно — укажи ТИПИЧНОЕ значение для данного класса с «не менее»/«не более».
 ${hint ? '\nВключить как минимум:\n' + hint.split('\n').filter((l: string) => l.startsWith('- ')).slice(0, 20).join('\n') : ''}
 
 Ответ СТРОГО в JSON без пояснений и markdown:
@@ -2200,9 +2219,15 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       raw = await generateItemSpecs(provider, apiKey, model, prompt);
     }
     const { meta, specs } = parseAiResponse(raw);
+    const processed = postProcessSpecs(specs);
+    // Reject candidate if most spec values are placeholders like "не указан"
+    if (!hasRealSpecValues(processed)) {
+      console.warn('[autopilot] Internet AI candidate rejected: mostly placeholder values');
+      return null;
+    }
     return {
       source: 'internet',
-      specs: postProcessSpecs(specs),
+      specs: processed,
       meta,
     };
   }, [useBackend, useBackendAi, provider, model, apiKey]);
@@ -2247,9 +2272,15 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       raw = await generateItemSpecs(provider, apiKey, model, prompt);
     }
     const { meta, specs } = parseAiResponse(raw);
+    const processed = postProcessSpecs(specs);
+    // Reject candidate if most spec values are placeholders like "не указан"
+    if (!hasRealSpecValues(processed)) {
+      console.warn('[autopilot] EIS AI candidate rejected: mostly placeholder values');
+      return null;
+    }
     return {
       source: 'eis',
-      specs: postProcessSpecs(specs),
+      specs: processed,
       meta,
     };
   }, [useBackend, useBackendAi, provider, model, apiKey]);

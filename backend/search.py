@@ -273,23 +273,42 @@ def _bing_search(query: str, num: int = 5) -> list[dict]:
         return []
 
     results: list[dict] = []
-    # Bing results are in <li class="b_algo"> blocks
-    blocks = re.findall(r'<li class="b_algo">(.*?)</li>', html, flags=re.S)
+    # Bing results are in <li class="b_algo" ...> (may have extra attrs)
+    blocks = re.findall(r'<li[^>]*class="b_algo"[^>]*>(.*?)</li>', html, flags=re.S)
     logger.info(f"Bing: found {len(blocks)} result blocks for query: {query[:80]}")
 
     for block in blocks:
         if len(results) >= num:
             break
-        # Extract link and title from <h2><a href="...">title</a></h2>
-        link_match = re.search(r'<a\s[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', block, flags=re.S)
+        # Extract link+title from <h2><a href="...">title</a></h2>
+        link_match = re.search(r'<h2[^>]*><a\s[^>]*href="([^"]+)"[^>]*>(.*?)</a>', block, flags=re.S)
+        if not link_match:
+            link_match = re.search(r'<a\s[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', block, flags=re.S)
         if not link_match:
             continue
-        href = link_match.group(1)
+        raw_href = unescape(link_match.group(1))
         title = _strip_tags(unescape(link_match.group(2)))
-        # Extract snippet from <p> or <div class="b_caption">
-        snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, flags=re.S)
+        # Bing tracking redirects (bing.com/ck/a?...&u=...) — extract real URL
+        href = raw_href
+        if "bing.com/ck/a" in raw_href:
+            try:
+                params = parse_qs(urlparse(raw_href.replace("&amp;", "&")).query)
+                u_param = params.get("u", [""])[0]
+                if u_param and u_param.startswith("a1"):
+                    import base64 as _b64
+                    decoded = _b64.urlsafe_b64decode(u_param[2:] + "==").decode("utf-8", errors="replace")
+                    if decoded.startswith("http"):
+                        href = decoded
+            except Exception:
+                pass
+        if not href.startswith("http"):
+            continue
+        # Extract snippet
+        snippet_match = re.search(r'<p class="b_lineclamp[^"]*"[^>]*>(.*?)</p>', block, flags=re.S)
         if not snippet_match:
-            snippet_match = re.search(r'class="b_caption"[^>]*>(.*?)</div>', block, flags=re.S)
+            snippet_match = re.search(r'<div class="b_caption"[^>]*>.*?<p[^>]*>(.*?)</p>', block, flags=re.S)
+        if not snippet_match:
+            snippet_match = re.search(r'<p[^>]*>(.*?)</p>', block, flags=re.S)
         snippet = _strip_tags(unescape(snippet_match.group(1))) if snippet_match else ""
         results.append({
             "title": title[:180],

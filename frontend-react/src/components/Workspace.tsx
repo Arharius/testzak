@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useRef, useEffect } from 'react';
+import { Fragment, useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import {
@@ -33,6 +33,12 @@ import {
   runEnterpriseAutopilot,
   searchEisSpecs,
   searchInternetSpecs,
+  saveTZDocument,
+  listTZDocuments,
+  getTZDocument,
+  deleteTZDocument,
+  isLoggedIn,
+  type TZDocumentSummary,
 } from '../lib/backendApi';
 import { appendAutomationLog, appendImmutableAudit } from '../lib/storage';
 import type { AutomationSettings, EnterpriseSettings, PlatformIntegrationSettings } from '../types/schemas';
@@ -2019,6 +2025,13 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   // Автодетект: ID строки, где только что сменился тип (для подсветки)
   const [autoDetectedRow, setAutoDetectedRow] = useState<number | null>(null);
+  // Inline spec editing
+  const [editingRowId, setEditingRowId] = useState<number | null>(null);
+  // TZ history
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItems, setHistoryItems] = useState<TZDocumentSummary[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [currentDocId, setCurrentDocId] = useState<string | null>(null);
   // Выпадающая таблица типов при вводе бренда
   const [typeSuggestions, setTypeSuggestions] = useState<{ rowId: number; items: Array<{ type: string; name: string; okpd2: string }>; loading?: boolean; rect?: { top: number; left: number; width: number } } | null>(null);
   const aiSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2051,9 +2064,10 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const useBackendAi = useBackend && !hasUserApiKey;
   const apiKeyInputType: 'password' | 'text' = showApiKey ? 'text' : 'password';
 
+  const allRowsHaveTemplate = useMemo(() => rows.every((r) => !!GOODS_CATALOG[r.type]?.hardTemplate), [rows]);
   const canGenerate = useMemo(
-    () => (useBackend || hasUserApiKey) && rows.every((r) => r.model.trim().length > 0),
-    [useBackend, hasUserApiKey, rows]
+    () => (useBackend || hasUserApiKey || allRowsHaveTemplate) && rows.every((r) => r.model.trim().length > 0 || !!GOODS_CATALOG[r.type]?.hardTemplate),
+    [useBackend, hasUserApiKey, allRowsHaveTemplate, rows]
   );
   const shouldRunEnterpriseAutopilot = useMemo(() => {
     if (!useBackend) return false;
@@ -2110,6 +2124,140 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     enterpriseSettings.antiFasMinScore,
     enterpriseSettings.immutableAudit,
   ]);
+
+  // ── Inline spec editing helpers ──
+  const updateSpec = useCallback((rowId: number, specIdx: number, field: 'name' | 'value' | 'unit' | 'group', newVal: string) => {
+    setRows((prev) => prev.map((r) => {
+      if (r.id !== rowId || !r.specs) return r;
+      const specs = [...r.specs];
+      specs[specIdx] = { ...specs[specIdx], [field]: newVal };
+      return { ...r, specs };
+    }));
+  }, []);
+
+  const deleteSpec = useCallback((rowId: number, specIdx: number) => {
+    setRows((prev) => prev.map((r) => {
+      if (r.id !== rowId || !r.specs) return r;
+      const specs = r.specs.filter((_, i) => i !== specIdx);
+      return { ...r, specs };
+    }));
+  }, []);
+
+  const addSpec = useCallback((rowId: number, afterIdx?: number) => {
+    setRows((prev) => prev.map((r) => {
+      if (r.id !== rowId) return r;
+      const specs = [...(r.specs ?? [])];
+      const newSpec: SpecItem = { name: '', value: '', unit: '' };
+      if (afterIdx !== undefined && afterIdx < specs.length) {
+        // Inherit group from previous spec
+        const prevGroup = specs[afterIdx]?.group;
+        if (prevGroup) newSpec.group = prevGroup;
+        specs.splice(afterIdx + 1, 0, newSpec);
+      } else {
+        specs.push(newSpec);
+      }
+      return { ...r, specs };
+    }));
+  }, []);
+
+  const moveSpec = useCallback((rowId: number, specIdx: number, direction: 'up' | 'down') => {
+    setRows((prev) => prev.map((r) => {
+      if (r.id !== rowId || !r.specs) return r;
+      const specs = [...r.specs];
+      const targetIdx = direction === 'up' ? specIdx - 1 : specIdx + 1;
+      if (targetIdx < 0 || targetIdx >= specs.length) return r;
+      [specs[specIdx], specs[targetIdx]] = [specs[targetIdx], specs[specIdx]];
+      return { ...r, specs };
+    }));
+  }, []);
+
+  const finishEditing = useCallback(() => {
+    setEditingRowId(null);
+    // Rerun compliance after edits
+    runComplianceGate(rows);
+  }, [rows, runComplianceGate]);
+
+  // ── TZ History functions ──
+  const loadHistory = useCallback(async () => {
+    if (!isLoggedIn()) return;
+    setHistoryLoading(true);
+    try {
+      const res = await listTZDocuments(50, 0);
+      if (res.ok) setHistoryItems(res.items);
+    } catch (err) {
+      console.warn('Failed to load TZ history:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const saveTZ = useCallback(async () => {
+    const doneRows = rows.filter((r) => r.status === 'done');
+    if (doneRows.length === 0) {
+      showToast('❌ Нет готовых позиций для сохранения', false);
+      return;
+    }
+    try {
+      const payload = {
+        law_mode: lawMode,
+        rows: doneRows.map((r) => ({
+          type: r.type,
+          model: r.model,
+          qty: r.qty,
+          specs: r.specs ?? [],
+          meta: r.meta ?? {},
+        })),
+        compliance_score: complianceReport?.score ?? null,
+      };
+      const res = await saveTZDocument(payload);
+      if (res.ok) {
+        setCurrentDocId(res.id);
+        showToast(`✅ ТЗ сохранено: ${res.title}`, true);
+        void loadHistory();
+      }
+    } catch (err) {
+      showToast(`❌ Ошибка сохранения: ${err instanceof Error ? err.message : 'неизвестная'}`, false);
+    }
+  }, [rows, lawMode, complianceReport, loadHistory]);
+
+  const loadTZ = useCallback(async (docId: string) => {
+    try {
+      const res = await getTZDocument(docId);
+      if (!res.ok || !res.doc) return;
+      const doc = res.doc;
+      setLawMode((doc.law_mode || '44') as LawMode);
+      const loadedRows: GoodsRow[] = doc.rows.map((r, idx) => ({
+        id: Date.now() + idx,
+        type: r.type || 'pc',
+        model: r.model || '',
+        qty: r.qty || 1,
+        status: 'done' as const,
+        specs: (r.specs as SpecItem[]) ?? [],
+        meta: r.meta ?? {},
+      }));
+      if (loadedRows.length > 0) {
+        setRows(loadedRows);
+        setCurrentDocId(docId);
+        setDocxReady(true);
+        runComplianceGate(loadedRows);
+        showToast(`✅ Загружено: ${doc.title}`, true);
+        setHistoryOpen(false);
+      }
+    } catch (err) {
+      showToast(`❌ Ошибка загрузки: ${err instanceof Error ? err.message : 'неизвестная'}`, false);
+    }
+  }, [runComplianceGate]);
+
+  const deleteTZ = useCallback(async (docId: string) => {
+    try {
+      await deleteTZDocument(docId);
+      setHistoryItems((prev) => prev.filter((d) => d.id !== docId));
+      if (currentDocId === docId) setCurrentDocId(null);
+      showToast('✅ ТЗ удалено', true);
+    } catch (err) {
+      showToast(`❌ ${err instanceof Error ? err.message : 'Ошибка'}`, false);
+    }
+  }, [currentDocId]);
 
   const buildPayload = useCallback((sourceRows: GoodsRow[]) => ({
     law: lawMode === '223' ? '223-FZ' : '44-FZ',
@@ -2302,11 +2450,13 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const mutation = useMutation({
     mutationFn: async (options?: GenerateOptions) => {
       const autopilotEnabled = !!(options?.forceAutopilot || automationSettings.autopilot);
-      if (!rows.every((r) => r.model.trim().length > 0)) {
+      if (!rows.every((r) => r.model.trim().length > 0 || !!GOODS_CATALOG[r.type]?.hardTemplate)) {
         showToast('❌ Заполните поле «Модель / описание» для всех строк', false);
         return;
       }
-      if (!useBackend && !hasUserApiKey) {
+      // Allow generation if all rows have hardTemplate (no API key needed)
+      const allHaveTemplate = rows.every((r) => !!GOODS_CATALOG[r.type]?.hardTemplate);
+      if (!useBackend && !hasUserApiKey && !allHaveTemplate) {
         showToast('❌ Нужен вход в аккаунт или API-ключ', false);
         return;
       }
@@ -3175,7 +3325,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           </thead>
           <tbody>
             {rows.map((row, idx) => (
-              <tr key={row.id}>
+              <Fragment key={row.id}>
+              <tr>
                 <td className="num-cell">{idx + 1}</td>
                 <td>
                   <select
@@ -3315,6 +3466,16 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                     {row.status === 'done' && `✅ Готово (${row.specs?.length ?? 0} хар-к)`}
                     {row.status === 'error' && `❌ ${row.error ?? 'Ошибка'}`}
                   </span>
+                  {row.status === 'done' && (
+                    <button
+                      type="button"
+                      className="edit-specs-btn"
+                      style={{ marginLeft: 6, fontSize: 11, padding: '2px 8px', borderRadius: 4, background: editingRowId === row.id ? '#FBBF24' : '#2A3444', color: editingRowId === row.id ? '#1A1F2E' : '#F5F0E8', border: '1px solid #3B4255', cursor: 'pointer' }}
+                      onClick={() => setEditingRowId(editingRowId === row.id ? null : row.id)}
+                    >
+                      {editingRowId === row.id ? '✓ Закрыть' : '✏️ Ред.'}
+                    </button>
+                  )}
                 </td>
                 <td>
                   <button
@@ -3327,6 +3488,87 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                   </button>
                 </td>
               </tr>
+              {/* ── Inline spec editor ── */}
+              {editingRowId === row.id && row.specs && (
+                <tr key={`edit-${row.id}`}>
+                  <td colSpan={6} style={{ padding: 0 }}>
+                    <div className="spec-editor" style={{ background: '#141824', border: '1px solid #2A3444', borderRadius: 0, padding: '12px 16px', margin: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <strong style={{ color: '#FBBF24', fontSize: 13 }}>✏️ Редактирование характеристик — {GOODS_CATALOG[row.type]?.name ?? row.type}</strong>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button type="button" onClick={() => addSpec(row.id)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, background: '#166534', color: '#fff', border: 'none', cursor: 'pointer' }}>+ Добавить</button>
+                          <button type="button" onClick={finishEditing} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, background: '#1F5C8B', color: '#fff', border: 'none', cursor: 'pointer' }}>✓ Готово</button>
+                        </div>
+                      </div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ background: '#1F2937' }}>
+                            <th style={{ border: '1px solid #374151', padding: '4px 6px', width: 30, color: '#9CA3AF' }}>#</th>
+                            <th style={{ border: '1px solid #374151', padding: '4px 6px', color: '#9CA3AF' }}>Группа</th>
+                            <th style={{ border: '1px solid #374151', padding: '4px 6px', color: '#9CA3AF' }}>Наименование</th>
+                            <th style={{ border: '1px solid #374151', padding: '4px 6px', color: '#9CA3AF' }}>Значение</th>
+                            <th style={{ border: '1px solid #374151', padding: '4px 6px', width: 80, color: '#9CA3AF' }}>Ед.изм.</th>
+                            <th style={{ border: '1px solid #374151', padding: '4px 6px', width: 90, color: '#9CA3AF' }}>Действия</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {row.specs.map((spec, si) => (
+                            <tr key={si} style={{ background: spec._warning ? '#3D3020' : si % 2 === 0 ? '#1A1F2E' : '#1E2433' }}>
+                              <td style={{ border: '1px solid #374151', padding: '2px 4px', textAlign: 'center', color: '#6B7280', fontSize: 10 }}>{si + 1}</td>
+                              <td style={{ border: '1px solid #374151', padding: '2px' }}>
+                                <input
+                                  value={spec.group ?? ''}
+                                  onChange={(e) => updateSpec(row.id, si, 'group', e.target.value)}
+                                  style={{ width: '100%', background: 'transparent', border: 'none', color: '#D1D5DB', fontSize: 11, padding: '3px 4px', outline: 'none' }}
+                                  placeholder="Группа..."
+                                />
+                              </td>
+                              <td style={{ border: '1px solid #374151', padding: '2px' }}>
+                                <input
+                                  value={spec.name ?? ''}
+                                  onChange={(e) => updateSpec(row.id, si, 'name', e.target.value)}
+                                  style={{ width: '100%', background: 'transparent', border: 'none', color: '#F5F0E8', fontSize: 12, padding: '3px 4px', outline: 'none' }}
+                                  placeholder="Наименование..."
+                                />
+                              </td>
+                              <td style={{ border: '1px solid #374151', padding: '2px' }}>
+                                <input
+                                  value={spec.value ?? ''}
+                                  onChange={(e) => updateSpec(row.id, si, 'value', e.target.value)}
+                                  style={{ width: '100%', background: 'transparent', border: 'none', color: '#F5F0E8', fontSize: 12, padding: '3px 4px', outline: 'none' }}
+                                  placeholder="Значение..."
+                                />
+                              </td>
+                              <td style={{ border: '1px solid #374151', padding: '2px' }}>
+                                <input
+                                  value={spec.unit ?? ''}
+                                  onChange={(e) => updateSpec(row.id, si, 'unit', e.target.value)}
+                                  style={{ width: '100%', background: 'transparent', border: 'none', color: '#D1D5DB', fontSize: 11, padding: '3px 4px', outline: 'none' }}
+                                  placeholder="шт."
+                                />
+                              </td>
+                              <td style={{ border: '1px solid #374151', padding: '2px 4px', textAlign: 'center' }}>
+                                <button type="button" onClick={() => moveSpec(row.id, si, 'up')} disabled={si === 0} style={{ background: 'none', border: 'none', color: si === 0 ? '#374151' : '#9CA3AF', cursor: si === 0 ? 'default' : 'pointer', fontSize: 11, padding: '0 2px' }} title="Вверх">▲</button>
+                                <button type="button" onClick={() => moveSpec(row.id, si, 'down')} disabled={si === row.specs!.length - 1} style={{ background: 'none', border: 'none', color: si === row.specs!.length - 1 ? '#374151' : '#9CA3AF', cursor: si === row.specs!.length - 1 ? 'default' : 'pointer', fontSize: 11, padding: '0 2px' }} title="Вниз">▼</button>
+                                <button type="button" onClick={() => addSpec(row.id, si)} style={{ background: 'none', border: 'none', color: '#4ADE80', cursor: 'pointer', fontSize: 13, padding: '0 2px' }} title="Добавить после">+</button>
+                                <button type="button" onClick={() => deleteSpec(row.id, si)} style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 13, padding: '0 2px' }} title="Удалить">×</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: '#6B7280' }}>
+                        <span>Всего характеристик: {row.specs.length}</span>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button type="button" onClick={() => addSpec(row.id)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, background: '#166534', color: '#fff', border: 'none', cursor: 'pointer' }}>+ Добавить характеристику</button>
+                          <button type="button" onClick={finishEditing} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, background: '#1F5C8B', color: '#fff', border: 'none', cursor: 'pointer' }}>✓ Сохранить и закрыть</button>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -3401,7 +3643,68 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         >
           🖨️ Скачать PDF
         </button>
+        {isLoggedIn() && (
+          <>
+            <button
+              type="button"
+              onClick={() => void saveTZ()}
+              disabled={!docxReady}
+              style={{ background: docxReady ? '#7C3AED' : undefined, color: docxReady ? '#fff' : undefined }}
+            >
+              💾 Сохранить ТЗ
+            </button>
+            <button
+              type="button"
+              onClick={() => { setHistoryOpen((v) => !v); if (!historyOpen) void loadHistory(); }}
+              style={{ background: historyOpen ? '#FBBF24' : '#2A3444', color: historyOpen ? '#1A1F2E' : '#F5F0E8' }}
+            >
+              📋 Мои ТЗ{historyItems.length > 0 ? ` (${historyItems.length})` : ''}
+            </button>
+          </>
+        )}
       </div>
+
+      {/* ── TZ History panel ── */}
+      {historyOpen && (
+        <div style={{ background: '#141824', border: '1px solid #2A3444', borderRadius: 8, padding: '12px 16px', marginTop: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <strong style={{ color: '#FBBF24', fontSize: 14 }}>📋 Сохранённые ТЗ</strong>
+            <button type="button" onClick={() => setHistoryOpen(false)} style={{ background: 'none', border: 'none', color: '#9CA3AF', cursor: 'pointer', fontSize: 16 }}>✕</button>
+          </div>
+          {historyLoading ? (
+            <div style={{ color: '#9CA3AF', fontSize: 13, textAlign: 'center', padding: 16 }}>⏳ Загрузка...</div>
+          ) : historyItems.length === 0 ? (
+            <div style={{ color: '#6B7280', fontSize: 13, textAlign: 'center', padding: 16 }}>Нет сохранённых ТЗ</div>
+          ) : (
+            <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+              {historyItems.map((item) => (
+                <div
+                  key={item.id}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '8px 12px', borderBottom: '1px solid #232838',
+                    background: currentDocId === item.id ? '#1E3A5F' : 'transparent',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: '#F5F0E8', fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {item.title || 'Без названия'}
+                    </div>
+                    <div style={{ color: '#6B7280', fontSize: 11 }}>
+                      {item.rows_count} поз. · {item.law_mode}-ФЗ · Score: {item.compliance_score ?? '—'}
+                      {item.created_at && ` · ${new Date(item.created_at).toLocaleDateString('ru-RU')}`}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, marginLeft: 8 }}>
+                    <button type="button" onClick={() => void loadTZ(item.id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: '#1F5C8B', color: '#fff', border: 'none', cursor: 'pointer' }}>Загрузить</button>
+                    <button type="button" onClick={() => void deleteTZ(item.id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: '#7F1D1D', color: '#fff', border: 'none', cursor: 'pointer' }}>Удалить</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {mutation.isError && (
         <div className="warn" style={{ marginTop: 8 }}>

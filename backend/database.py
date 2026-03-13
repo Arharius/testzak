@@ -41,6 +41,11 @@ class TZDocument(Base):
     goods_type = Column(String)
     model = Column(String)
     specs_json = Column(Text)
+    # Extended fields for full TZ state
+    law_mode = Column(String, default="44")  # '44' or '223'
+    rows_json = Column(Text, nullable=True)  # Full rows state: [{type, model, qty, specs, meta}]
+    compliance_score = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 

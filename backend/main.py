@@ -37,6 +37,7 @@ try:
         SessionLocal,
         User,
         MagicToken,
+        TZDocument,
         IntegrationState,
         IntegrationAuditLog,
         IntegrationIdempotencyKey,
@@ -58,6 +59,7 @@ except ImportError:
         SessionLocal,
         User,
         MagicToken,
+        TZDocument,
         IntegrationState,
         IntegrationAuditLog,
         IntegrationIdempotencyKey,
@@ -1490,3 +1492,182 @@ async def payment_webhook(payload: dict, db: Session = Depends(get_db)):
                 logger.info(f"User {email} upgraded to Pro (plan={plan})")
 
     return {"ok": True}
+
+
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║                    TZ DOCUMENT HISTORY (CRUD)                       ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+class TZDocumentSaveRequest(BaseModel):
+    title: str = ""
+    law_mode: str = "44"
+    rows: list = Field(default_factory=list)  # [{type, model, qty, specs, meta}]
+    compliance_score: Optional[int] = None
+
+class TZDocumentUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    law_mode: Optional[str] = None
+    rows: Optional[list] = None
+    compliance_score: Optional[int] = None
+
+
+@app.post("/api/tz/save")
+def save_tz_document(
+    req: TZDocumentSaveRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Save a new TZ document to history."""
+    # Auto-generate title from first row if not provided
+    title = req.title.strip()
+    if not title and req.rows:
+        first = req.rows[0] if isinstance(req.rows[0], dict) else {}
+        goods_type = first.get("type", "")
+        model_name = first.get("model", "")
+        title = f"{goods_type} — {model_name}".strip(" — ") or "Без названия"
+
+    # Extract primary goods_type and model from first row
+    first_row = req.rows[0] if req.rows and isinstance(req.rows[0], dict) else {}
+    goods_type = first_row.get("type", "")
+    model_name = first_row.get("model", "")
+
+    doc = TZDocument(
+        id=str(uuid.uuid4()),
+        user_email=user.email,
+        title=title,
+        goods_type=goods_type,
+        model=model_name,
+        specs_json=json.dumps(first_row.get("specs", []), ensure_ascii=False),
+        law_mode=req.law_mode,
+        rows_json=json.dumps(req.rows, ensure_ascii=False),
+        compliance_score=req.compliance_score,
+    )
+    db.add(doc)
+    db.commit()
+    db.refresh(doc)
+
+    logger.info(f"TZ saved: {doc.id} by {user.email} ({len(req.rows)} rows)")
+    return {
+        "ok": True,
+        "id": doc.id,
+        "title": doc.title,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+    }
+
+
+@app.put("/api/tz/{doc_id}")
+def update_tz_document(
+    doc_id: str,
+    req: TZDocumentUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Update an existing TZ document."""
+    doc = db.query(TZDocument).filter_by(id=doc_id, user_email=user.email).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Документ не найден")
+
+    if req.title is not None:
+        doc.title = req.title
+    if req.law_mode is not None:
+        doc.law_mode = req.law_mode
+    if req.rows is not None:
+        doc.rows_json = json.dumps(req.rows, ensure_ascii=False)
+        # Update primary goods_type and model from first row
+        if req.rows:
+            first = req.rows[0] if isinstance(req.rows[0], dict) else {}
+            doc.goods_type = first.get("type", doc.goods_type)
+            doc.model = first.get("model", doc.model)
+            doc.specs_json = json.dumps(first.get("specs", []), ensure_ascii=False)
+    if req.compliance_score is not None:
+        doc.compliance_score = req.compliance_score
+
+    db.commit()
+    return {"ok": True, "id": doc.id, "updated_at": doc.updated_at.isoformat() if doc.updated_at else None}
+
+
+@app.get("/api/tz/list")
+def list_tz_documents(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    """List user's TZ documents (newest first)."""
+    total = db.query(TZDocument).filter_by(user_email=user.email).count()
+    docs = (
+        db.query(TZDocument)
+        .filter_by(user_email=user.email)
+        .order_by(TZDocument.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    items = []
+    for d in docs:
+        rows_count = 0
+        try:
+            parsed = json.loads(d.rows_json or "[]")
+            rows_count = len(parsed)
+        except Exception:
+            pass
+        items.append({
+            "id": d.id,
+            "title": d.title,
+            "goods_type": d.goods_type,
+            "model": d.model,
+            "law_mode": getattr(d, "law_mode", "44") or "44",
+            "compliance_score": getattr(d, "compliance_score", None),
+            "rows_count": rows_count,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "updated_at": getattr(d, "updated_at", None),
+        })
+    return {"ok": True, "total": total, "items": items}
+
+
+@app.get("/api/tz/{doc_id}")
+def get_tz_document(
+    doc_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get a single TZ document with full data."""
+    doc = db.query(TZDocument).filter_by(id=doc_id, user_email=user.email).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Документ не найден")
+
+    rows = []
+    try:
+        rows = json.loads(doc.rows_json or "[]")
+    except Exception:
+        pass
+
+    return {
+        "ok": True,
+        "doc": {
+            "id": doc.id,
+            "title": doc.title,
+            "goods_type": doc.goods_type,
+            "model": doc.model,
+            "law_mode": getattr(doc, "law_mode", "44") or "44",
+            "compliance_score": getattr(doc, "compliance_score", None),
+            "rows": rows,
+            "created_at": doc.created_at.isoformat() if doc.created_at else None,
+            "updated_at": getattr(doc, "updated_at", None),
+        },
+    }
+
+
+@app.delete("/api/tz/{doc_id}")
+def delete_tz_document(
+    doc_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a TZ document."""
+    doc = db.query(TZDocument).filter_by(id=doc_id, user_email=user.email).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Документ не найден")
+    db.delete(doc)
+    db.commit()
+    return {"ok": True, "deleted": doc_id}

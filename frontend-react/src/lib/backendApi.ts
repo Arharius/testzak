@@ -11,8 +11,18 @@
 export const BACKEND_URL = (String(import.meta.env.VITE_BACKEND_URL || '')).replace(/\/$/, '');
 const NON_LATIN1_RE = /[^\x00-\xff]/;
 
+function shouldUseSameOriginApi(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = String(window.location.hostname || '').toLowerCase();
+  return host === 'localhost' || host === '127.0.0.1';
+}
+
 function buildApiUrl(path: string): string {
-  return `${BACKEND_URL}${path}`;
+  const normalizedPath = String(path || '').startsWith('/') ? String(path) : `/${String(path || '')}`;
+  if (!BACKEND_URL || shouldUseSameOriginApi()) {
+    return normalizedPath;
+  }
+  return `${BACKEND_URL}${normalizedPath}`;
 }
 
 function normalizeBearerToken(value: string): string {
@@ -90,6 +100,34 @@ async function apiGet<T>(path: string, auth = false): Promise<T> {
     headers['Authorization'] = `Bearer ${safeToken}`;
   }
   const resp = await fetch(buildApiUrl(path), { headers });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+  return data as T;
+}
+
+async function apiPut<T>(path: string, body: object, auth = true): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (auth) {
+    const token = getStoredToken();
+    if (!token) throw new Error('Требуется авторизация');
+    const safeToken = normalizeBearerToken(token);
+    if (safeToken) headers['Authorization'] = `Bearer ${safeToken}`;
+  }
+  const resp = await fetch(buildApiUrl(path), { method: 'PUT', headers, body: JSON.stringify(body) });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+  return data as T;
+}
+
+async function apiDelete<T>(path: string, auth = true): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (auth) {
+    const token = getStoredToken();
+    if (!token) throw new Error('Требуется авторизация');
+    const safeToken = normalizeBearerToken(token);
+    if (safeToken) headers['Authorization'] = `Bearer ${safeToken}`;
+  }
+  const resp = await fetch(buildApiUrl(path), { method: 'DELETE', headers });
   const data = await resp.json();
   if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
   return data as T;
@@ -220,4 +258,60 @@ export async function runEnterpriseAutopilot(
     },
     'optional',
   );
+}
+
+// ── TZ Document History ───────────────────────────────────────────────────
+
+export type TZDocumentSummary = {
+  id: string;
+  title: string;
+  goods_type: string;
+  model: string;
+  law_mode: string;
+  compliance_score: number | null;
+  rows_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type TZDocumentFull = {
+  id: string;
+  title: string;
+  goods_type: string;
+  model: string;
+  law_mode: string;
+  compliance_score: number | null;
+  rows: Array<{ type: string; model: string; qty: number; specs: unknown[]; meta: Record<string, string> }>;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export async function saveTZDocument(data: {
+  title?: string;
+  law_mode: string;
+  rows: unknown[];
+  compliance_score?: number | null;
+}): Promise<{ ok: boolean; id: string; title: string; created_at: string }> {
+  return apiPost('/api/tz/save', data, true);
+}
+
+export async function updateTZDocument(docId: string, data: {
+  title?: string;
+  law_mode?: string;
+  rows?: unknown[];
+  compliance_score?: number | null;
+}): Promise<{ ok: boolean; id: string; updated_at: string }> {
+  return apiPut(`/api/tz/${docId}`, data);
+}
+
+export async function listTZDocuments(limit = 50, offset = 0): Promise<{ ok: boolean; total: number; items: TZDocumentSummary[] }> {
+  return apiGet(`/api/tz/list?limit=${limit}&offset=${offset}`, true);
+}
+
+export async function getTZDocument(docId: string): Promise<{ ok: boolean; doc: TZDocumentFull }> {
+  return apiGet(`/api/tz/${docId}`, true);
+}
+
+export async function deleteTZDocument(docId: string): Promise<{ ok: boolean; deleted: string }> {
+  return apiDelete(`/api/tz/${docId}`);
 }

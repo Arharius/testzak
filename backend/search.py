@@ -146,6 +146,35 @@ def _strip_tags(text: str) -> str:
     return re.sub(r"<[^>]+>", " ", text or "").replace("\n", " ").strip()
 
 
+# ── Clean user input: strip cities, delivery terms and other noise ──────
+_NOISE_WORDS_RE = re.compile(
+    r"\b("
+    # Russian cities (common in procurement queries)
+    r"москва|санкт[\s-]?петербург|спб|новосибирск|екатеринбург|казань|самара|"
+    r"челябинск|омск|ростов|уфа|красноярск|пермь|воронеж|волгоград|краснодар|"
+    r"саратов|тюмень|тольятти|ижевск|барнаул|иркутск|хабаровск|ярославль|"
+    r"владивосток|махачкала|томск|оренбург|кемерово|новокузнецк|рязань|"
+    r"набережные\s+челны|астрахань|пенза|липецк|тула|киров|чебоксары|калининград|"
+    r"брянск|курск|иваново|магнитогорск|улан[\s-]?удэ|тверь|ставрополь|нижний\s+новгород|"
+    # Delivery / procurement noise words
+    r"доставка|поставка|закупка|закупк[иу]|тендер|контракт|госзаказ|"
+    r"бюджет|контракт|техзадание|техническое\s+задание|"
+    r"цена|стоимость|бесплатн|срочн|дешев|недорог|"
+    # Quantity noise
+    r"\d+\s*шт\.?|\d+\s*штук|\d+\s*комплект|\d+\s*лицензи[йя]"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _clean_search_query(query: str) -> str:
+    """Strip non-product words (cities, delivery terms) from user query."""
+    cleaned = _NOISE_WORDS_RE.sub(" ", query)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    # Don't return empty query
+    return cleaned if len(cleaned) >= 3 else query.strip()
+
+
 # ── Goods type → search hints mapping ────────────────────────────
 _TYPE_SEARCH_HINTS: dict[str, str] = {
     # Software
@@ -201,7 +230,97 @@ _TYPE_SEARCH_HINTS: dict[str, str] = {
     "ram": "оперативная память модуль ОЗУ",
     "san": "СХД система хранения данных",
     "serverBlade": "блейд-сервер",
+    "keyboard": "клавиатура компьютерная",
+    "mouse": "мышь компьютерная",
+    "keyboardMouseSet": "комплект клавиатура мышь",
+    "webcam": "веб-камера",
+    "speakers": "колонки акустическая система",
+    "opticalDrive": "внешний оптический привод dvd rw",
+    "cableTester": "кабельный тестер rj45 rj11",
+    "rj45Connector": "коннектор rj45 8p8c",
+    "toolSet": "набор инструментов для монтажа скс",
+    "patchCord": "патч корд rj45 витая пара",
 }
+
+_TYPE_KEYWORDS: dict[str, list[str]] = {
+    "keyboard": ["keyboard", "клавиатур", "keys", "keypad"],
+    "mouse": ["mouse", "мыш", "dpi", "sensor"],
+    "keyboardMouseSet": ["keyboard", "mouse", "combo", "комплект", "клавиатур", "мыш"],
+    "webcam": ["webcam", "camera", "веб", "камера", "uvc", "autofocus"],
+    "speakers": ["speakers", "speaker", "колонк", "акустик", "rms", "audio"],
+    "opticalDrive": ["dvd", "cd", "bd", "blu-ray", "bluray", "оптическ", "привод", "drive"],
+    "cableTester": ["tester", "тестер", "lan tester", "кабельный", "rj45", "rj11", "телефонный", "витая пара", "wiremap", "poe"],
+    "rj45Connector": ["rj45", "8p8c", "connector", "коннектор", "разъем", "разъём", "штекер", "cat5e", "cat6", "utp", "ftp"],
+    "toolSet": ["tool kit", "набор", "инструмент", "кримпер", "обжим", "стриппер", "tester", "rj45", "rj11"],
+    "patchCord": ["patch cord", "патч", "патчкорд", "rj45", "cat5e", "cat6", "utp", "ftp", "lan cable"],
+}
+
+_COMPUTE_TYPES = {
+    "pc", "laptop", "monoblock", "server", "serverRack", "serverBlade", "tablet", "thinClient",
+}
+_NETWORK_TYPES = {
+    "switch", "router", "firewall", "accessPoint", "wifiController", "nas", "san",
+    "mediaConverter", "patchPanel", "fiberPatchPanel", "rackCabinet", "wallCabinet",
+    "rackShelf", "cableManagerRack", "blankPanel", "cageNutSet", "serverRailKit",
+    "sfpModule", "sfpDac", "poeInjector", "poeSplitter", "consoleServer", "lteModem",
+    "ipPhone", "voipGateway", "networkAdapter", "raidController", "hbaAdapter",
+}
+_PRINT_TYPES = {
+    "printer", "mfu", "scanner", "labelPrinter", "receiptPrinter", "barcodeScanner",
+    "laminator", "shredder",
+}
+_STORAGE_TYPES = {
+    "ssd", "hdd", "extSsd", "extHdd", "ram", "flashDrive", "memoryCard", "cardReader",
+    "dvd", "opticalDrive", "tapeLib", "ltoTape", "ltoCleaningCartridge",
+}
+_COMPONENT_TYPES = {
+    "cpu", "gpu", "motherboard", "psu", "cooling", "pcCase", "caseFan", "tpmModule",
+    "soundCard", "captureCard", "parts", "upsBattery",
+}
+_PERIPHERAL_TYPES = {
+    "monitor", "touchMonitor", "projector", "interactive", "projectorScreen", "webcam",
+    "conferenceCamera", "documentCamera", "headset", "speakerphone", "speakers",
+    "microphone", "keyboard", "mouse", "keyboardMouseSet", "mousePad", "kvm",
+    "ups", "smartCardReader", "graphicsTablet", "signaturePad", "monitorArm",
+    "laptopStand", "charger", "usbToken", "privacyFilter", "laptopLock", "dockingStation",
+    "usbHub", "tvPanel",
+}
+_SOFTWARE_TYPES = {
+    "os", "osSupport", "office", "virt", "vdi", "dbms", "erp", "cad", "license",
+    "supportCert", "remoteAccessSw", "crm", "bi", "rpa", "miscSoftware", "email",
+    "vks", "ecm", "portal", "project_sw", "bpm", "reporting", "backup_sw", "itsm",
+    "monitoring", "mdm", "hr", "gis", "ldap", "antivirus", "edr", "firewall_sw",
+    "vpn", "dlp", "siem", "crypto", "waf", "pam", "iam", "pki",
+}
+_CABLE_TYPES = {
+    "patchCord", "fiberCable", "fiberPatchCord", "fiberPigtail", "hdmiCable", "audioCable",
+    "serialCable", "consoleCable", "usbCable", "powerCable", "extensionCord",
+    "surgeProtector", "usbExtender", "kvmExtender", "usbAdapter", "videoAdapter",
+    "plugAdapter", "hdmiSplitter", "hdmiSwitcher",
+}
+_CONNECTOR_TYPES = {
+    "rj45Connector", "rj45Coupler", "keystoneJack", "networkSocket", "faceplate",
+    "cableTie", "cableChannel",
+}
+_TOOL_TYPES = {
+    "toolSet", "cableTester", "crimper", "soldering", "multimeter", "precisionScrewdriver",
+}
+
+_PROCUREMENT_DOMAINS = ("zakupki.gov.ru", "rostender.info", "zakupki.mos.ru")
+_BLOCKED_RESULT_HOSTS = (
+    "stackoverflow.com", "facebook.com", "support.google.com", "youtube.com", "vk.com",
+    "instagram.com", "tiktok.com", "reddit.com", "zhihu.com", "bilibili.com", "pinterest.com",
+)
+_NOISY_RESULT_PATTERNS = (
+    re.compile(r"wiki", re.I),
+    re.compile(r"wikipedia", re.I),
+    re.compile(r"review", re.I),
+    re.compile(r"guide", re.I),
+    re.compile(r"blog", re.I),
+    re.compile(r"forum", re.I),
+    re.compile(r"what is", re.I),
+    re.compile(r"что такое", re.I),
+)
 
 
 # ── DuckDuckGo (primary, free, no API key) ─────────────────────
@@ -359,6 +478,8 @@ def _build_extraction_prompt(product: str, goods_type: str, is_software: bool) -
             "- unit — единица измерения или пустая строка\n"
             "- Для числовых характеристик используй 'не менее X'\n"
             "- Для брендов/торговых марок добавляй 'или эквивалент'\n"
+            "- ЗАПРЕЩЕНО: name 'Модель', 'Бренд', 'Производитель', 'Артикул', 'SKU'\n"
+            "- ЗАПРЕЩЕНО: value 'не указан', 'не указано', 'н/д', 'неизвестно', '—'\n"
             "- Если данных нет — вернуть пустой массив []"
         )
     else:
@@ -381,6 +502,8 @@ def _build_extraction_prompt(product: str, goods_type: str, is_software: bool) -
             "- Используй формулировку 'не менее X' для числовых характеристик\n"
             "- Для брендов добавляй 'или эквивалент'\n"
             "- unit — единица измерения (ГБ, ГГц, дюйм, Вт, мм, кг и т.д.) или пустая строка\n"
+            "- ЗАПРЕЩЕНО: name 'Модель', 'Бренд', 'Производитель', 'Артикул', 'SKU'\n"
+            "- ЗАПРЕЩЕНО: value 'не указан', 'не указано', 'н/д', 'неизвестно', '—'\n"
             "- Если данных нет — вернуть пустой массив []"
         )
 
@@ -391,6 +514,640 @@ _SW_TYPES = {
     "pam", "iam", "pki", "email", "vks", "ecm", "portal", "project_sw",
     "bpm", "backup_sw", "itsm", "monitoring", "mdm", "hr", "gis",
 }
+
+
+def _normalize_text(value: str) -> str:
+    text = str(value or "").lower().replace("ё", "е")
+    text = re.sub(r"[-_/.,+()]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _detect_unit(value: str) -> str:
+    match = re.search(r"\b(ГБ|МБ|ТБ|Вт·ч|Вт|ГГц|МГц|кГц|Гц|мм|см|м|дюйм|шт\.?|dpi|кадр\/с|fps|°|млн нажатий|x)\b", str(value or ""), flags=re.I)
+    if not match:
+        return ""
+    unit = str(match.group(1) or "")
+    return "шт." if re.fullmatch(r"шт", unit, flags=re.I) else unit
+
+
+def _infer_unit(name: str, value: str, explicit: str = "") -> str:
+    if explicit:
+        return explicit
+    name_text = str(name or "").strip()
+    value_text = str(value or "").strip()
+    if not name_text or not value_text:
+        return ""
+    if not re.search(r"^(?:не\s+(?:менее|более|уже|шире|выше|ниже|длиннее)\s+)?\d", value_text, flags=re.I):
+        return ""
+    if not re.search(r"(колич|длин|разреш|частот|угол|мощност|дальность|радиус|скорост|объем|объ[eе]м|емкост|[её]мкост|масса|вес|напряж|ток|диагон|ресурс|время|размер|ширин|высот|глубин|температур|потребля)", name_text, flags=re.I):
+        return ""
+    return _detect_unit(value_text)
+
+
+def _get_type_hint(goods_type: str = "") -> str:
+    key = str(goods_type or "").strip()
+    if key in _TYPE_SEARCH_HINTS:
+        return _TYPE_SEARCH_HINTS[key]
+    if key in _COMPUTE_TYPES:
+        return "компьютерная техника"
+    if key in _NETWORK_TYPES:
+        return "сетевое оборудование"
+    if key in _PRINT_TYPES:
+        return "печатающее и сканирующее устройство"
+    if key in _STORAGE_TYPES:
+        return "накопитель и устройство хранения данных"
+    if key in _COMPONENT_TYPES:
+        return "комплектующее для компьютерной техники"
+    if key in _PERIPHERAL_TYPES:
+        return "компьютерная периферия"
+    if key in _SOFTWARE_TYPES:
+        return "программное обеспечение"
+    if key in _CABLE_TYPES:
+        return "компьютерный кабель"
+    if key in _CONNECTOR_TYPES:
+        return "сетевой разъем и коммутационный аксессуар"
+    if key in _TOOL_TYPES:
+        return "инструмент для монтажа скс"
+    return ""
+
+
+def _get_goods_type_keywords(goods_type: str = "") -> list[str]:
+    key = str(goods_type or "").strip()
+    if key in _TYPE_KEYWORDS:
+        return _TYPE_KEYWORDS[key]
+    if key in _COMPUTE_TYPES:
+        return ["computer", "pc", "desktop", "laptop", "server", "процессор", "оперативная", "ssd", "usb"]
+    if key in _NETWORK_TYPES:
+        return ["network", "ethernet", "switch", "router", "vlan", "poe", "sfp", "wifi", "порт"]
+    if key in _PRINT_TYPES:
+        return ["printer", "scanner", "mfu", "печать", "сканирование", "картридж", "лоток"]
+    if key in _STORAGE_TYPES:
+        return ["storage", "ssd", "hdd", "nvme", "memory", "емкость", "объем", "интерфейс"]
+    if key in _COMPONENT_TYPES:
+        return ["component", "motherboard", "cpu", "gpu", "socket", "slot", "интерфейс"]
+    if key in _PERIPHERAL_TYPES:
+        return ["peripheral", "monitor", "keyboard", "mouse", "camera", "audio", "usb", "display"]
+    if key in _SOFTWARE_TYPES:
+        return ["software", "license", "licensing", "версия", "редакция", "поддержка", "операционная система"]
+    if key in _CABLE_TYPES:
+        return ["cable", "кабель", "length", "длина", "connector", "cat", "usb", "hdmi", "rj45"]
+    if key in _CONNECTOR_TYPES:
+        return ["connector", "adapter", "разъем", "разъём", "rj45", "cat", "контакт", "обжим"]
+    if key in _TOOL_TYPES:
+        return ["tool", "tester", "crimper", "стриппер", "кримпер", "тестер", "rj45", "rj11"]
+    return []
+
+
+def _build_type_aware_query(query: str, goods_type: str = "") -> str:
+    raw = str(query or "").strip()
+    type_hint = _get_type_hint(goods_type)
+    if not raw:
+        return type_hint
+    if not type_hint:
+        return raw
+    raw_norm = _normalize_text(raw)
+    hint_norm = _normalize_text(type_hint)
+    if raw_norm == hint_norm or hint_norm in raw_norm:
+        return raw
+    if any(token and token in raw_norm for token in hint_norm.split(" ") if len(token) >= 4):
+        return raw
+    return f"{type_hint} {raw}".strip()
+
+
+def _build_entity_tokens(query: str, goods_type: str = "") -> list[str]:
+    type_words = set(_normalize_text(_get_type_hint(goods_type)).split())
+    type_words.update(_normalize_text(item) for item in _get_goods_type_keywords(goods_type))
+    out: list[str] = []
+    for token in _normalize_text(query).split():
+        if len(token) >= 3 and token not in type_words:
+            out.append(token)
+    return out
+
+
+def _score_search_result(item: dict[str, Any], query: str, goods_type: str = "") -> int:
+    joined = " ".join(str(item.get(part, "")) for part in ("title", "snippet", "link"))
+    text = _normalize_text(joined)
+    if not text:
+        return -100
+    if any(host in text for host in _BLOCKED_RESULT_HOSTS):
+        return -100
+    if any(pattern.search(joined) for pattern in _NOISY_RESULT_PATTERNS):
+        return -80
+    score = 0
+    for token in _get_goods_type_keywords(goods_type):
+        token_norm = _normalize_text(token)
+        if token_norm and token_norm in text:
+            score += 12
+    for token in _normalize_text(query).split():
+        if len(token) >= 3 and token in text:
+            score += 4
+    for token in _build_entity_tokens(query, goods_type):
+        if token in text:
+            score += 10
+    if re.search(r"spec|характерист|technical|техническ|datasheet|product", joined, flags=re.I):
+        score += 10
+    if re.search(r"logitech\.com|microsoft\.com|hp\.com|lenovo\.com|dell\.com|asus\.com|acer\.com|a4tech|defender\.ru|sven", joined, flags=re.I):
+        score += 6
+    return score
+
+
+def _is_relevant_search_result(item: dict[str, Any], query: str, goods_type: str = "", procurement_only: bool = False) -> bool:
+    score = _score_search_result(item, query, goods_type)
+    if score < 8:
+        return False
+    text = _normalize_text(" ".join(str(item.get(part, "")) for part in ("title", "snippet", "link")))
+    entity_tokens = _build_entity_tokens(query, goods_type)
+    if entity_tokens and not any(token in text for token in entity_tokens):
+        return False
+    if procurement_only and not any(domain in text for domain in _PROCUREMENT_DOMAINS):
+        return False
+    keywords = _get_goods_type_keywords(goods_type)
+    if not keywords:
+        return True
+    return any(_normalize_text(token) in text for token in keywords)
+
+
+def _dedupe_specs(specs: list[dict]) -> list[dict]:
+    seen: dict[str, dict] = {}
+    for item in specs or []:
+        name = _normalize_text(str(item.get("name", "")))
+        value = str(item.get("value", "")).strip()
+        if not name or not value:
+            continue
+        if name not in seen:
+            seen[name] = {
+                "name": str(item.get("name", "")).strip(),
+                "value": value,
+                "unit": _infer_unit(str(item.get("name", "")).strip(), value, str(item.get("unit", "")).strip()),
+            }
+            continue
+        current = seen[name]
+        current_value = str(current.get("value", ""))
+        if len(value) > len(current_value) and "или эквивалент" not in value.lower():
+            current["value"] = value
+            current["unit"] = str(item.get("unit", "")).strip() or _detect_unit(value)
+    return list(seen.values())
+
+
+def _merge_specs(primary: list[dict], fallback: list[dict]) -> list[dict]:
+    merged: list[dict] = []
+    index: dict[str, int] = {}
+    for bucket in (primary or [], fallback or []):
+        for item in bucket:
+            name = str(item.get("name", "")).strip()
+            value = str(item.get("value", "")).strip()
+            if not name or not value:
+                continue
+            key = _normalize_text(name)
+            if key in index:
+                current = merged[index[key]]
+                if len(value) > len(str(current.get("value", ""))) and "или эквивалент" not in value.lower():
+                    merged[index[key]] = {
+                        "name": name,
+                        "value": value,
+                        "unit": _infer_unit(name, value, str(item.get("unit", "")).strip()),
+                    }
+                continue
+            index[key] = len(merged)
+            merged.append({
+                "name": name,
+                "value": value,
+                "unit": _infer_unit(name, value, str(item.get("unit", "")).strip()),
+            })
+    return merged
+
+
+def _extract_spec_pairs(text: str, max_items: int = 25) -> list[dict]:
+    rows: list[dict] = []
+    for raw_line in str(text or "").splitlines():
+        line = re.sub(r"^[\s\-•*]+", "", raw_line).strip()
+        if not line:
+            continue
+        match = re.match(r"([^:]{2,120}):\s*(.+)", line)
+        if not match:
+            continue
+        name = match.group(1).strip()
+        value = match.group(2).strip().rstrip(".")
+        if not name or not value:
+            continue
+        rows.append({"name": name, "value": value, "unit": _infer_unit(name, value)})
+        if len(rows) >= max_items:
+            break
+    return _dedupe_specs(rows)
+
+
+def _detect_peripheral_connection_profile(source: str) -> dict[str, Any]:
+    raw = str(source or "")
+    tokens = _normalize_text(raw).split()
+    has_bluetooth = bool(re.search(r"bluetooth|\bbt\b", raw, flags=re.I))
+    has_receiver_wireless = bool(re.search(r"wireless|беспровод|радио|радиоканал|receiver|ресивер|приемник|приёмник|dongle|nano|unifying|2[\s,.]?4|rf", raw, flags=re.I))
+    has_wireless = has_bluetooth or has_receiver_wireless or bool(re.search(r"wifi|wi fi", raw, flags=re.I)) or any(token.startswith("беспровод") for token in tokens)
+    has_wired = any(token in {"wired", "cable"} or token.startswith("провод") or "кабел" in token for token in tokens)
+    if has_wireless and not has_wired:
+        if has_receiver_wireless and not has_bluetooth:
+            connection = "Беспроводное (USB-радиоканал 2,4 ГГц) или эквивалент"
+            interface = "USB-радиоканал 2,4 ГГц через USB-приёмник или эквивалент"
+        elif has_bluetooth and not has_receiver_wireless:
+            connection = "Беспроводное (Bluetooth) или эквивалент"
+            interface = "Bluetooth по спецификации производителя"
+        else:
+            connection = "Беспроводное (USB-радиоканал 2,4 ГГц и/или Bluetooth) или эквивалент"
+            interface = "Bluetooth и/или USB-радиоканал 2,4 ГГц по спецификации производителя"
+        return {"wireless": True, "receiver_based": has_receiver_wireless, "connection": connection, "interface": interface}
+    if has_wired and not has_wireless:
+        return {
+            "wireless": False,
+            "receiver_based": False,
+            "connection": "Проводное USB или эквивалент",
+            "interface": "USB 2.0/3.0 или эквивалент",
+        }
+    if has_wireless and has_wired:
+        return {
+            "wireless": True,
+            "receiver_based": has_receiver_wireless,
+            "connection": "Проводное USB и/или беспроводное (Bluetooth/2.4 ГГц) по требованиям Заказчика",
+            "interface": "USB 2.0/3.0 и/или USB-радиоканал 2,4 ГГц/Bluetooth по спецификации производителя",
+        }
+    return {
+        "wireless": False,
+        "receiver_based": False,
+        "connection": "Проводное USB или эквивалент",
+        "interface": "USB 2.0/3.0 или эквивалент",
+    }
+
+
+def _build_baseline_spec_text(goods_type: str = "", query: str = "") -> str:
+    key = str(goods_type or "").strip()
+    raw = str(query or "").strip()
+    normalized = _normalize_text(raw)
+
+    if key == "cableTester":
+        has_coax = bool(re.search(r"coax|коакс|bnc", normalized))
+        has_poe = bool(re.search(r"\bpoe\b", normalized))
+        return f"""
+Тип устройства: Многофункциональный кабельный тестер
+Тестируемые типы кабелей: {"Витая пара (UTP, FTP, STP), телефонный и/или коаксиальный кабель" if has_coax else "Витая пара (UTP, FTP, STP), телефонный кабель"}
+Категории кабелей: Cat.5, Cat.5e, Cat.6{" , Cat.6a, Cat.7" if re.search(r'cat\\s*7', normalized) else (" , Cat.6a" if re.search(r'cat\\s*6a', normalized) else "")}
+Тестируемые разъемы: {"RJ-45, RJ-11, RJ-12, BNC" if has_coax else "RJ-45, RJ-11, RJ-12"}
+Функции тестирования: Обрыв, короткое замыкание, неверная пара, перепутанные пары, экранирование{", PoE" if has_poe else ""}
+Дальность тестирования: не менее 300 м
+Тип индикации: Светодиодная (LED) и/или ЖК-дисплей по спецификации производителя
+Удаленный модуль: В комплекте
+Питание: Батарейки типа AAA или эквивалент
+Комплектность: Тестер, удаленный модуль, элементы питания (при наличии), чехол/сумка, документация производителя
+"""
+
+    if key == "rj45Connector":
+        category = re.search(r"\bcat\s*(5e|6a|6|7|8)\b", normalized)
+        shielding = re.search(r"\b(s/?ftp|sf/utp|ftp|stp|f/utp|u/utp|utp)\b", normalized, flags=re.I)
+        solid = bool(re.search(r"solid|одножил", normalized))
+        stranded = bool(re.search(r"stranded|многожил", normalized))
+        return f"""
+Тип разъема: RJ-45 (8P8C)
+Категория СКС: не ниже {"Cat" + category.group(1).upper() if category else "Cat5e"}
+Экранирование: {shielding.group(1).upper() if shielding else "U/UTP и/или экранированное исполнение по требованиям Заказчика"}
+Совместимый тип проводника: {"Одножильный" if solid and not stranded else ("Многожильный" if stranded and not solid else "Одножильный и/или многожильный по спецификации производителя")}
+Тип монтажа / обжима: Обжимной
+Материал контактов: Сплав с защитным покрытием по спецификации производителя
+Совместимый диаметр кабеля: В соответствии со спецификацией производителя
+Упаковка / количество: В соответствии с требованиями Заказчика и упаковкой производителя
+"""
+
+    if key == "keyboardMouseSet":
+        profile = _detect_peripheral_connection_profile(raw)
+        cable_or_radius = "Радиус действия беспроводного комплекта: не менее 5 м" if profile["wireless"] else "Кабель подключения: длина кабеля клавиатуры и/или мыши не менее 1.5 м"
+        power_line = "Тип питания устройств: Сменные элементы питания и/или встроенный аккумулятор по документации производителя" if profile["wireless"] else ""
+        receiver_line = "Беспроводной приёмник: USB-приёмник для подключения комплекта по радиоканалу 2,4 ГГц" if profile["receiver_based"] else ""
+        return f"""
+Состав комплекта: Клавиатура и компьютерная мышь
+Тип подключения: {profile["connection"]}
+Интерфейс подключения комплекта: {profile["interface"]}
+Раскладка клавиатуры: Русская и латинская (двуязычная) с заводской маркировкой
+Количество клавиш клавиатуры: не менее 104 шт.
+Наличие цифрового блока клавиатуры: Наличие
+Тип клавишного механизма: Мембранный/ножничный или эквивалент
+Тип сенсора мыши: Оптический или эквивалент
+Разрешение сенсора мыши: не менее 1000 dpi
+Количество кнопок мыши: не менее 3 шт.
+Колесо прокрутки мыши: Наличие колеса вертикальной прокрутки
+Ресурс клавиш клавиатуры: не менее 5 млн нажатий
+{cable_or_radius}
+{power_line}
+{receiver_line}
+Совместимость с ОС: Windows/Linux/macOS или эквивалент
+Комплектность: {"Клавиатура, мышь, USB-приёмник и/или элементы питания (при необходимости), документация производителя" if profile["wireless"] else "Клавиатура, мышь, кабель подключения (при наличии), документация производителя"}
+"""
+
+    if key == "opticalDrive":
+        has_bluray = bool(re.search(r"blu ray|bluray|\bbd\b", normalized))
+        has_writer = bool(re.search(r"\brw\b|writer|burn|запис", raw, flags=re.I))
+        interface_value = "USB 3.0 или эквивалент" if re.search(r"usb\s*3", raw, flags=re.I) else "USB 2.0/3.0 или эквивалент"
+        return f"""
+Тип устройства: Внешний оптический привод
+Поддерживаемые форматы носителей: {"CD-ROM/CD-R/CD-RW/DVD-ROM/DVD±R/DVD±RW/BD-ROM/BD-R/BD-RE" if has_bluray and has_writer else ("CD-ROM/CD-R/CD-RW/DVD-ROM/DVD±R/DVD±RW/BD-ROM" if has_bluray else "CD-ROM/CD-R/CD-RW/DVD-ROM/DVD±R/DVD±RW")}
+Скорость чтения CD: не менее 24 x
+Скорость чтения DVD: не менее 8 x
+{"Скорость чтения Blu-ray: не менее 4 x" if has_bluray else ""}
+{"Скорость записи CD: не менее 8 x" if has_writer else "Функция записи: Чтение и/или запись по спецификации производителя"}
+{"Скорость записи DVD: не менее 8 x" if has_writer else ""}
+{"Скорость записи Blu-ray: не менее 2 x" if has_bluray and has_writer else ""}
+Тип загрузки диска: Выдвижной лоток и/или slot-in по спецификации производителя
+Интерфейс подключения: {interface_value}
+Питание устройства: От интерфейса USB без внешнего блока питания и/или от внешнего адаптера по документации производителя
+Совместимость с ОС: Windows/Linux/macOS или эквивалент
+Комплектность: Привод, кабель подключения, эксплуатационная документация производителя
+"""
+
+    if key == "speakers":
+        has_bt = bool(re.search(r"bluetooth|\bbt\b", raw, flags=re.I))
+        has_usb = bool(re.search(r"usb", raw, flags=re.I))
+        has_subwoofer = bool(re.search(r"\b2\.1\b|subwoofer|сабвуфер", raw, flags=re.I))
+        power_match = re.search(r"(\d{1,3})\s*(?:вт|w)", raw, flags=re.I)
+        min_power = f"не менее {power_match.group(1)} Вт" if power_match else "не менее 6 Вт"
+        channels = "2.1" if has_subwoofer else "2.0"
+        interfaces = "Bluetooth и/или проводной аудиовход (AUX/USB)" if has_bt else ("USB и/или AUX 3.5 мм" if has_usb else "AUX 3.5 мм и/или USB")
+        return f"""
+Тип акустической системы: {"Активная акустическая система " + channels + " с поддержкой проводного и/или беспроводного подключения" if has_bt else "Активная акустическая система " + channels + " или эквивалент"}
+Конфигурация акустических каналов: {channels}
+Выходная мощность (RMS): {min_power}
+Диапазон воспроизводимых частот: не уже 100 Гц - 20 кГц
+Регулировка громкости: Наличие аппаратной регулировки громкости и/или тембра
+Интерфейсы подключения: {interfaces}
+{"Поддержка Bluetooth: Наличие беспроводного интерфейса Bluetooth" if has_bt else ""}
+Тип питания: {"От USB 5В и/или от сети 220В" if has_usb else "От сети 220В и/или от USB 5В"}
+Совместимость с источниками сигнала: Персональный компьютер, ноутбук и иные устройства с совместимым аудиовыходом
+Комплектность: Акустическая система, кабели подключения/питания, документация производителя
+"""
+
+    if key == "webcam":
+        return """
+Тип устройства: Веб-камера для подключения к персональному компьютеру/ноутбуку
+Разрешение видео: не менее 1920x1080
+Частота кадров: не менее 30 кадр/с
+Тип матрицы: CMOS или эквивалент
+Фокусировка: Автоматическая и/или фиксированная по требованиям Заказчика
+Угол обзора: не менее 70 °
+Интерфейс подключения: USB 2.0/3.0 или эквивалент
+Поддержка UVC / Plug-and-Play: Наличие поддержки UVC и Plug-and-Play
+Встроенный микрофон: Наличие встроенного микрофона
+Совместимость с ОС и ПО видеоконференций: Windows/Linux/macOS и распространённые ВКС-клиенты
+Способ крепления: Крепление на монитор/дисплей и/или установка на горизонтальную поверхность
+Длина встроенного кабеля: не менее 1.5 м
+"""
+
+    if key == "keyboard":
+        return """
+Тип устройства: Клавиатура компьютерная
+Тип подключения: Проводное USB или эквивалент
+Форм-фактор: Полноразмерный или эквивалент
+Раскладка: Русская и латинская (двуязычная) с заводской маркировкой
+Количество клавиш: не менее 104 шт.
+Тип клавишного механизма: Мембранный/ножничный или эквивалент
+Блок цифровых клавиш: Наличие отдельного цифрового блока
+Ресурс клавиш: не менее 5 млн нажатий
+Индикаторы режимов: Наличие индикации Num Lock / Caps Lock / Scroll Lock
+Совместимость с ОС: Windows/Linux/macOS или эквивалент
+Комплектность: Клавиатура, кабель/приёмник (при наличии), документация производителя
+"""
+
+    if key == "mouse":
+        return """
+Тип устройства: Компьютерная мышь
+Тип сенсора: Оптический или эквивалент
+Тип подключения: Проводное USB или эквивалент
+Разрешение сенсора: не менее 1000 dpi
+Количество кнопок: не менее 3 шт.
+Колесо прокрутки: Наличие колеса вертикальной прокрутки
+Эргономика: Для работы правой и/или левой рукой
+Совместимость с ОС: Windows/Linux/macOS или эквивалент
+Длина кабеля: не менее 1.5 м
+Комплектность: Мышь, кабель/приёмник (при наличии), документация производителя
+"""
+
+    if key == "toolSet":
+        return """
+Назначение: Для монтажа и обслуживания структурированной кабельной системы
+Состав набора: Кримпер, стриппер, тестер, нож и/или иные инструменты по спецификации производителя
+Поддерживаемые разъемы: RJ-45, RJ-11, RJ-12 и/или коаксиальные разъемы по спецификации производителя
+Материал рабочих частей: Инструментальная сталь или эквивалент
+Материал рукояток: Ударопрочный пластик и/или прорезиненное покрытие
+Чехол / кейс: Наличие кейса или сумки для хранения и переноски
+Рабочая температура: В соответствии с документацией производителя
+Комплектность: Набор инструментов, кейс/сумка, документация производителя
+"""
+
+    if key == "patchCord":
+        length_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:м|метр(?:а|ов)?|m)(?![a-z])", raw, flags=re.I)
+        category_match = re.search(r"\bcat\s*(5e|6a|6|7|8)\b", normalized)
+        shield_match = re.search(r"\b(s/?ftp|sf/utp|ftp|stp|f/utp|u/utp|utp)\b", normalized, flags=re.I)
+        return f"""
+Тип кабельного изделия: Патч-корд для структурированной кабельной системы
+Тип разъемов: RJ-45 ↔ RJ-45 и/или иной тип разъемов по спецификации производителя
+Категория СКС: {"не ниже Cat" + category_match.group(1).upper() if category_match else "не ниже Cat5e"}
+Конструкция кабеля: {shield_match.group(1).upper() if shield_match else "U/UTP, F/UTP, FTP, S/FTP и/или иное исполнение по требованиям Заказчика"}
+Материал проводника: Медный проводник и/или иное исполнение по спецификации производителя
+Длина кабеля: не менее {str(length_match.group(1)).replace(",", ".") if length_match else "1"} м
+Цвет оболочки: По требованиям Заказчика
+Комплектность: Кабель в заводском исполнении/упаковке производителя
+"""
+
+    if key in _COMPUTE_TYPES:
+        return """
+Тип устройства: Вычислительное устройство для эксплуатации в деятельности Заказчика
+Процессор: Количество вычислительных ядер не менее 4; архитектура и частотные параметры по требованиям Заказчика
+Оперативная память: не менее 8 ГБ
+Тип и объем накопителя: SSD и/или HDD; суммарный объем не менее 256 ГБ
+Графическая подсистема: Интегрированный и/или дискретный графический адаптер по типу товара
+Сетевые интерфейсы: Ethernet 1 Гбит/с и/или беспроводные интерфейсы по требованиям Заказчика
+Порты подключения: USB, видеоинтерфейсы и аудиоразъемы в количестве, достаточном для эксплуатации
+Форм-фактор / исполнение: В соответствии с типом товара и требованиями Заказчика
+Питание: От сети 220В и/или от аккумулятора по типу устройства
+Комплектность: Устройство, блок питания/адаптер, необходимые кабели/аксессуары, документация производителя
+"""
+
+    if key in _NETWORK_TYPES:
+        return """
+Тип сетевого устройства: Устройство для эксплуатации в сетевой инфраструктуре Заказчика
+Количество интерфейсов / портов: не менее 4 шт.
+Скорость интерфейсов: не менее 1 Гбит/с
+Типы интерфейсов: RJ-45, SFP/SFP+, консольный и/или иные интерфейсы по типу устройства
+Поддерживаемые функции: Коммутация, маршрутизация, безопасность, PoE, беспроводной доступ и/или иные по типу устройства
+Поддерживаемые стандарты и протоколы: IEEE 802.3/802.11, VLAN, QoS, SNMP и иные профильные протоколы
+Средства управления: Web-интерфейс и/или CLI, журналирование, резервное копирование конфигурации
+Электропитание: От сети 220В, PoE и/или внешнего адаптера по типу устройства
+Исполнение / способ установки: Настольное, настенное, стоечное и/или иное по требованиям Заказчика
+Комплектность: Устройство, блок питания/крепеж/антенны (при наличии), документация производителя
+"""
+
+    if key in _PRINT_TYPES:
+        return """
+Тип устройства: Устройство печати/сканирования по типу товара
+Технология печати / сканирования: По типу товара и спецификации производителя
+Формат носителя: Не менее A4 и/или иной требуемый формат по типу устройства
+Разрешение печати / сканирования: В соответствии с технической документацией производителя
+Скорость печати / сканирования: Не ниже параметров, установленных требованиями Заказчика
+Поддержка двусторонней печати / АПД / копирования: При применимости по типу товара
+Тип расходных материалов: Картридж, лента, термобумага, чернила и/или иной расходный материал по типу устройства
+Интерфейсы подключения: USB и/или Ethernet, при необходимости Wi-Fi/Bluetooth
+Совместимость с ОС и ПО: Windows, Linux, macOS и/или иные системы по требованиям Заказчика
+Комплектность: Устройство, расходные материалы (при наличии), кабели/блок питания, документация производителя
+"""
+
+    if key in _STORAGE_TYPES:
+        return """
+Тип устройства: Накопитель/носитель/модуль памяти для ИТ-инфраструктуры Заказчика
+Емкость / объем: не менее 256 ГБ
+Интерфейс подключения: SATA/SAS/NVMe/USB/SD и/или иной интерфейс по типу устройства
+Форм-фактор: 2.5\", 3.5\", M.2, DIMM/SODIMM, SD/microSD и/или иной по типу товара
+Скорость чтения / записи: Не ниже параметров, необходимых для штатной эксплуатации оборудования Заказчика
+Показатели надежности: Ресурс, TBW, MTBF и иные параметры по документации производителя
+Совместимость: Совместимость с оборудованием Заказчика должна подтверждаться спецификацией производителя
+Питание: В соответствии с типом интерфейса и документацией производителя
+Комплектность: Изделие в упаковке производителя, адаптеры/крепеж (при наличии), документация
+"""
+
+    if key in _COMPONENT_TYPES:
+        return """
+Тип комплектующего: Комплектующее для модернизации/ремонта компьютерной техники Заказчика
+Ключевые технические параметры: Измеряемые параметры в соответствии с типом комплектующего и требованиями совместимого оборудования
+Форм-фактор / исполнение: В соответствии с типом товара
+Совместимые интерфейсы / разъемы: По документации производителя и требованиям Заказчика
+Эксплуатационные параметры: Частоты, пропускная способность, количество линий/портов, TDP и иные по типу комплектующего
+Требования к питанию и охлаждению: В соответствии с документацией производителя и конфигурацией целевого оборудования
+Совместимость: Должна подтверждаться паспортом/даташитом производителя
+Комплектность: Изделие, крепеж/кабели/переходники (при наличии), документация производителя
+"""
+
+    if key in _PERIPHERAL_TYPES:
+        return """
+Тип устройства: Компьютерная периферия для использования по назначению в деятельности Заказчика
+Ключевые эксплуатационные параметры: Измеряемые параметры, подтверждаемые технической документацией производителя
+Основной режим работы / назначение: Работа с персональным компьютером, ноутбуком, ВКС или мультимедийной инфраструктурой Заказчика
+Интерфейсы подключения: USB, HDMI, DisplayPort, AUX, Bluetooth и иные по применимости
+Встроенные функции: Микрофон, камера, динамики, сенсорное управление и иные функции при применимости
+Способ установки / крепления: Настольное, настенное, на монитор, на штатив и/или иное по типу устройства
+Питание: От USB, сети 220В, аккумулятора или комбинированно по типу устройства
+Совместимость: Совместимость с оборудованием и ПО Заказчика должна подтверждаться по интерфейсам и драйверам
+Комплектность: Устройство, необходимые кабели/адаптеры/крепеж (при наличии), документация производителя
+"""
+
+    if key in _SOFTWARE_TYPES:
+        return """
+Тип программного обеспечения: По типу товара и назначению лицензии
+Тип лицензии / права использования: Бессрочная лицензия и/или подписка по требованиям Заказчика
+Количество лицензий / пользователей / узлов: не менее 1 шт.
+Версия / релиз: Актуальная поддерживаемая версия по документации производителя
+Поддерживаемые операционные системы: В соответствии с технической документацией производителя и требованиями Заказчика
+Функциональные возможности: По типу программного обеспечения и технической документации производителя
+Техническая поддержка / обновления: По условиям поставки и требованиям Заказчика
+Состав поставки / включённые компоненты: Лицензии, ключи активации, дистрибутив, документация, доступ к обновлениям
+"""
+
+    if key in _CABLE_TYPES:
+        length_match = re.search(r"(\d+(?:[.,]\d+)?)\s*(?:м|метр(?:а|ов)?|m)(?![a-z])", raw, flags=re.I)
+        category_match = re.search(r"\bcat\s*(5e|6a|6|7|8)\b", normalized)
+        shield_match = re.search(r"\b(s/?ftp|sf/utp|ftp|stp|f/utp|u/utp|utp)\b", normalized, flags=re.I)
+        return f"""
+Тип кабельного изделия: Кабель/шнур для ИТ-инфраструктуры Заказчика
+Тип разъемов / интерфейсов: По типу товара и спецификации производителя
+Длина кабеля: не менее {str(length_match.group(1)).replace(",", ".") if length_match else "1"} м
+Категория / стандарт: {"не ниже Cat" + category_match.group(1).upper() if category_match else "По требованиям Заказчика и спецификации производителя"}
+Конструкция кабеля / экранирование: {shield_match.group(1).upper() if shield_match else "Неэкранированное и/или экранированное исполнение по типу товара"}
+Материал проводника: Медь и/или иной материал по спецификации производителя
+Материал оболочки: ПВХ, LSZH и/или иной материал по спецификации производителя
+Совместимость: Совместимость с оборудованием, интерфейсами и кабельной системой Заказчика
+Комплектность: Кабельное изделие в заводском исполнении/упаковке производителя
+"""
+
+    if key in _CONNECTOR_TYPES:
+        return """
+Тип изделия: Разъем/модуль/соединитель для коммутационной инфраструктуры
+Исполнение разъема: По типу товара и спецификации производителя
+Категория / стандарт: Не ниже требуемой категории/стандарта по типу кабельной системы Заказчика
+Тип монтажа / подключения: Обжимной, модульный, безынструментальный и/или иной по типу товара
+Материал контактов: Сплав с защитным покрытием по спецификации производителя
+Совместимый тип проводника / кабеля: В соответствии с технической документацией производителя
+Совместимость: Совместимость с портами, панелями, кабелем и иными элементами инфраструктуры Заказчика
+Комплектность / упаковка: По спецификации производителя и требованиям Заказчика
+"""
+
+    if key in _TOOL_TYPES:
+        return """
+Назначение: Для монтажа, диагностики и обслуживания ИТ-инфраструктуры Заказчика
+Тип изделия: Инструмент и/или комплект инструментов по типу товара
+Состав / функциональность: По типу товара и технической документации производителя
+Поддерживаемые разъемы / интерфейсы: RJ-45, RJ-11, RJ-12, коаксиальные и/или иные по типу инструмента
+Материал рабочих частей: Инструментальная сталь или эквивалент
+Эргономика / исполнение рукояток: Противоскользящее покрытие и/или эргономичное исполнение
+Комплектность: Изделие/набор, кейс/чехол (при наличии), расходные принадлежности (при наличии), документация производителя
+Условия эксплуатации: В соответствии с документацией производителя
+"""
+
+    return ""
+
+
+def _get_baseline_specs(goods_type: str = "", query: str = "") -> list[dict]:
+    baseline_text = _build_baseline_spec_text(goods_type, query)
+    if not baseline_text.strip():
+        return []
+    return _extract_spec_pairs(baseline_text, max_items=25)
+
+
+def _should_prefer_query_baseline(goods_type: str = "") -> bool:
+    return goods_type in _CABLE_TYPES or goods_type in _CONNECTOR_TYPES or goods_type in _TOOL_TYPES
+
+
+def _enrich_with_baseline(specs: list[dict], goods_type: str = "", query: str = "") -> list[dict]:
+    baseline = _get_baseline_specs(goods_type, query)
+    if not baseline:
+        return _dedupe_specs(specs)
+    if not specs:
+        return baseline
+    if _should_prefer_query_baseline(goods_type):
+        return _merge_specs(baseline, specs)
+    if len(specs) < 8:
+        return _merge_specs(specs, baseline)
+    return _dedupe_specs(specs)
+
+
+def _build_readable_proxy_candidates(url: str) -> list[str]:
+    value = str(url or "").strip()
+    if not re.match(r"^https?://", value, flags=re.I):
+        return []
+    without_scheme = re.sub(r"^https?://", "", value, flags=re.I)
+    return [
+        f"https://r.jina.ai/http://{without_scheme}",
+        f"https://r.jina.ai/https://{without_scheme}",
+    ]
+
+
+def _fetch_readable_page(url: str, timeout: int = 10) -> str:
+    for proxy_url in _build_readable_proxy_candidates(url):
+        proxied = _fetch_url(proxy_url, timeout=timeout)
+        if proxied and len(proxied) >= 160:
+            return proxied[:22000]
+    direct = _fetch_url(url, timeout=timeout)
+    return _extract_text_from_html(direct, max_chars=18000) if direct else ""
+
+
+def _bing_rss_search(query: str, num: int = 5) -> list[dict]:
+    xml = _fetch_url(f"https://www.bing.com/search?format=rss&q={quote_plus(query)}", timeout=12)
+    if not xml or "<rss" not in xml.lower():
+        return []
+    results: list[dict] = []
+    for item in re.findall(r"<item>([\s\S]*?)</item>", xml, flags=re.I):
+        if len(results) >= max(1, num):
+            break
+        title_match = re.search(r"<title>([\s\S]*?)</title>", item, flags=re.I)
+        link_match = re.search(r"<link>([\s\S]*?)</link>", item, flags=re.I)
+        desc_match = re.search(r"<description>([\s\S]*?)</description>", item, flags=re.I)
+        link = _strip_tags(unescape(link_match.group(1))) if link_match else ""
+        if not re.match(r"^https?://", link, flags=re.I):
+            continue
+        title = _strip_tags(unescape(title_match.group(1)))[:180] if title_match else ""
+        snippet = _strip_tags(unescape(desc_match.group(1)))[:400] if desc_match else ""
+        results.append({"title": title, "link": link[:500], "snippet": snippet})
+    return results
 
 
 def _ai_extract_specs(context_text: str, product: str, goods_type: str = "") -> list[dict]:
@@ -515,115 +1272,194 @@ def _parse_json_with_repair(text: str) -> list | None:
     return None
 
 
+# ── Post-processing: clean specs for 44-ФЗ compliance ────────────
+_PROHIBITED_SPEC_NAMES_RE = re.compile(
+    r"^(модель|model|артикул|арт\b|part\s*number|p/n|pn|sku|бренд|brand|производитель|manufacturer|торговая\s+марка)$",
+    re.IGNORECASE,
+)
+_PLACEHOLDER_VALUE_RE = re.compile(
+    r"^(не\s*указан[аоы]?|н/?[аду]|—|-|отсутствует|нет\s*данных|неизвестн[аоы]?|n/?a|unknown|-)$",
+    re.IGNORECASE,
+)
+
+
+def _clean_specs_for_compliance(specs: list[dict]) -> list[dict]:
+    """Remove specs that would trigger Anti-FAS compliance violations."""
+    cleaned = []
+    for s in specs:
+        name = str(s.get("name", "")).strip()
+        value = str(s.get("value", "")).strip()
+        # Skip empty
+        if not name or not value:
+            continue
+        # Skip placeholder values
+        if _PLACEHOLDER_VALUE_RE.match(value):
+            continue
+        # Skip prohibited spec names (model, brand, article etc.)
+        if _PROHIBITED_SPEC_NAMES_RE.match(name):
+            continue
+        cleaned.append(s)
+    return cleaned
+
+
 # ── Unified search — single DDG query per function ──────────────
 # DuckDuckGo rate-limits after ~5 requests. Use ONE comprehensive query.
 
 async def search_internet_specs(product: str, goods_type: str = "") -> list[dict]:
     """
-    Search internet for product specs using ONE DuckDuckGo query + page fetching + AI extraction.
+    Search internet for product specs using Bing RSS results + readable pages + AI extraction.
+    Falls back to deterministic type-aware baselines when search/AI is unavailable.
     Returns list of {name, value, unit} dicts.
     """
+    product = _clean_search_query(product)
     cache_key = f"internet:{goods_type}:{product}"
     cached = _cache_get(cache_key)
     if cached is not None:
         logger.info(f"[internet] Cache hit: {product!r} ({len(cached)} specs)")
         return cached
 
-    type_hint = _TYPE_SEARCH_HINTS.get(goods_type, "")
-    # ONE comprehensive query
-    query = f"{product} технические характеристики спецификация"
-    if type_hint and type_hint.lower() not in product.lower():
-        query = f"{product} {type_hint} характеристики"
+    baseline_specs = _get_baseline_specs(goods_type, product)
+    search_query = _build_type_aware_query(product, goods_type)
+    queries = [
+        f"{search_query} характеристики",
+        f"{search_query} технические характеристики",
+        f"{search_query} specification",
+        f"{search_query} datasheet",
+    ]
 
-    logger.info(f"[internet] Search: {query!r}")
+    logger.info(f"[internet] Search: {search_query!r}")
     loop = asyncio.get_event_loop()
+    results_nested = await asyncio.gather(*[
+        loop.run_in_executor(None, lambda q=q: _bing_rss_search(q, num=6))
+        for q in queries
+    ])
+    raw_results = [item for bucket in results_nested for item in bucket]
+    deduped_results: list[dict] = []
+    seen_links: set[str] = set()
+    for item in sorted(raw_results, key=lambda entry: _score_search_result(entry, search_query, goods_type), reverse=True):
+        link = str(item.get("link", "")).strip()
+        if not link or link in seen_links:
+            continue
+        if not _is_relevant_search_result(item, search_query, goods_type):
+            continue
+        seen_links.add(link)
+        deduped_results.append(item)
+        if len(deduped_results) >= 8:
+            break
 
-    results = await loop.run_in_executor(None, lambda: _search_web(query, num=8))
-    if not results:
-        logger.warning(f"[internet] No DDG results for: {query}")
-        return []
+    if not deduped_results:
+        logger.warning(f"[internet] No relevant search results for: {search_query}")
+        return baseline_specs
 
-    logger.info(f"[internet] DDG returned {len(results)} results")
+    logger.info(f"[internet] Search returned {len(deduped_results)} relevant results")
 
     # Collect context from snippets + top pages
-    context_parts = []
-    for r in results[:8]:
+    context_parts: list[str] = []
+    for r in deduped_results[:8]:
         snippet = r.get("snippet", "")
         title = r.get("title", "")
         if snippet:
             context_parts.append(f"{title}: {snippet}")
 
-    # Fetch top 2-3 pages (in parallel)
-    skip_domains = {"youtube.com", "facebook.com", "vk.com", "instagram.com", "twitter.com", "t.me"}
-    urls = [r["link"] for r in results[:5] if r.get("link") and not any(d in r["link"] for d in skip_domains)][:3]
+    urls = [
+        r["link"]
+        for r in deduped_results[:5]
+        if r.get("link") and not any(domain in r["link"] for domain in _BLOCKED_RESULT_HOSTS)
+    ][:3]
 
     if urls:
-        fetch_tasks = [loop.run_in_executor(None, lambda u=url: _fetch_url(u, timeout=10)) for url in urls]
+        fetch_tasks = [loop.run_in_executor(None, lambda u=url: _fetch_readable_page(u, timeout=10)) for url in urls]
         fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
-        for url, html in zip(urls, fetch_results):
-            if isinstance(html, Exception) or not html:
+        for url, page_text in zip(urls, fetch_results):
+            if isinstance(page_text, Exception) or not page_text:
                 continue
-            text = _extract_text_from_html(html, max_chars=5000)
+            text = str(page_text)[:5000]
             if text and len(text) > 150:
                 context_parts.append(f"[{url}]:\n{text}")
 
     if not context_parts:
-        return []
+        return baseline_specs
 
     full_context = "\n\n".join(context_parts)
     specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, product, goods_type))
-    logger.info(f"[internet] Extracted {len(specs)} specs for {product!r}")
-    if specs:
-        _cache_set(cache_key, specs)
-    return specs
+    final_specs = _clean_specs_for_compliance(_enrich_with_baseline(specs, goods_type, product))
+    logger.info(f"[internet] Extracted {len(specs)} specs, final {len(final_specs)} specs for {product!r}")
+    if final_specs:
+        _cache_set(cache_key, final_specs)
+    return final_specs
 
 
 async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
     """
-    Search for TZ documents (procurement specs) using ONE DuckDuckGo query.
+    Search for ready-made procurement specs on EIS / Rostender / zakupki.mos via Bing RSS site queries.
     Falls back to general internet search if procurement-specific search fails.
     Returns list of {name, value, unit} dicts.
     """
+    query = _clean_search_query(query)
     cache_key = f"eis:{goods_type}:{query}"
     cached = _cache_get(cache_key)
     if cached is not None:
         logger.info(f"[eis] Cache hit: {query!r} ({len(cached)} specs)")
         return cached
 
-    type_hint = _TYPE_SEARCH_HINTS.get(goods_type, "")
-    base = query.strip()
+    base = str(query or "").strip()
+    search_query = _build_type_aware_query(base, goods_type)
+    type_hint = _get_type_hint(goods_type) or search_query
+    site_queries = [
+        f"site:zakupki.gov.ru {type_hint} КТРУ характеристики",
+        f"site:zakupki.gov.ru {search_query} техническое задание",
+        f"site:zakupki.gov.ru {search_query} описание объекта закупки",
+        f"site:zakupki.gov.ru {type_hint} описание объекта закупки",
+        f"site:rostender.info {search_query} техническое задание",
+        f"site:rostender.info {type_hint} описание объекта закупки",
+        f"site:zakupki.mos.ru {search_query} техническое задание",
+        f"site:zakupki.mos.ru {search_query} описание объекта закупки",
+        f"site:zakupki.mos.ru {type_hint} описание объекта закупки",
+    ]
 
-    # ONE comprehensive procurement-focused query
-    eis_query = f'{base} техническое задание характеристики госзакупки'
-    if type_hint and type_hint.lower() not in base.lower():
-        eis_query = f'{base} {type_hint} характеристики техническое задание'
-
-    logger.info(f"[eis] Search: {eis_query!r}")
+    logger.info(f"[eis] Search: {search_query!r}")
     loop = asyncio.get_event_loop()
+    search_sets = await asyncio.gather(*[
+        loop.run_in_executor(None, lambda q=q: _bing_rss_search(q, num=5))
+        for q in site_queries
+    ])
+    raw_results = [item for bucket in search_sets for item in bucket]
+    procurement_results: list[dict] = []
+    seen_links: set[str] = set()
+    for item in sorted(raw_results, key=lambda entry: _score_search_result(entry, search_query, goods_type), reverse=True):
+        link = str(item.get("link", "")).strip()
+        if not link or link in seen_links:
+            continue
+        if not _is_relevant_search_result(item, search_query, goods_type, procurement_only=True):
+            continue
+        seen_links.add(link)
+        procurement_results.append(item)
+        if len(procurement_results) >= 8:
+            break
 
-    results = await loop.run_in_executor(None, lambda: _search_web(eis_query, num=8))
-    logger.info(f"[eis] DDG returned {len(results)} results for {base!r}")
+    logger.info(f"[eis] Procurement search returned {len(procurement_results)} relevant results for {base!r}")
 
-    context_parts = []
-    if results:
-        for r in results[:8]:
-            snippet = r.get("snippet", "")
-            title = r.get("title", "")
-            if snippet:
-                context_parts.append(f"{title}: {snippet}")
+    context_parts: list[str] = []
+    for r in procurement_results[:8]:
+        snippet = r.get("snippet", "")
+        title = r.get("title", "")
+        if snippet:
+            context_parts.append(f"{title}: {snippet}")
 
-        # Fetch top pages
-        skip_domains = {"youtube.com", "facebook.com", "vk.com", "instagram.com", "twitter.com", "t.me"}
-        urls = [r["link"] for r in results[:5] if r.get("link") and not any(d in r["link"] for d in skip_domains)][:3]
-        if urls:
-            fetch_tasks = [loop.run_in_executor(None, lambda u=url: _fetch_url(u, timeout=10)) for url in urls]
-            fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
-            for url, html in zip(urls, fetch_results):
-                if isinstance(html, Exception) or not html:
-                    continue
-                text = _extract_text_from_html(html, max_chars=5000)
-                if text and len(text) > 150:
-                    context_parts.append(f"[{url}]:\n{text}")
+    urls = [
+        r["link"]
+        for r in procurement_results[:5]
+        if r.get("link") and not any(host in r["link"] for host in _BLOCKED_RESULT_HOSTS)
+    ][:3]
+    if urls:
+        fetch_tasks = [loop.run_in_executor(None, lambda u=url: _fetch_readable_page(u, timeout=10)) for url in urls]
+        fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+        for url, page_text in zip(urls, fetch_results):
+            if isinstance(page_text, Exception) or not page_text:
+                continue
+            text = str(page_text)[:5000]
+            if text and len(text) > 150:
+                context_parts.append(f"[{url}]:\n{text}")
 
     # Fallback to general internet search
     if not context_parts:
@@ -635,8 +1471,9 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
 
     full_context = "\n".join(context_parts)
     specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, query, goods_type))
-    logger.info(f"[eis] Extracted {len(specs)} specs for {query!r}")
+    final_specs = _clean_specs_for_compliance(_enrich_with_baseline(specs, goods_type, query))
+    logger.info(f"[eis] Extracted {len(specs)} specs, final {len(final_specs)} specs for {query!r}")
 
-    if specs:
-        _cache_set(cache_key, specs)
-    return specs
+    if final_specs:
+        _cache_set(cache_key, final_specs)
+    return final_specs

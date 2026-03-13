@@ -36,6 +36,12 @@ const MODEL_WORD_RE = /\b(модель|model)\b/i;
 const ARTICLE_CODE_RE = /\b[A-ZА-Я]{1,6}-\d{2,8}[A-ZА-Я0-9-]*\b/;
 const OPERATOR_RE = /(>=|<=|>|<)/;
 
+// Whitelist: технические стандарты и интерфейсы, которые НЕ являются торговыми марками
+const TECH_STANDARD_WHITELIST = /\b(RJ-?45|RJ-?11|RJ-?12|USB|HDMI|VGA|DVI|DP|DisplayPort|SFP|SFP\+|QSFP|QSFP\+|QSFP28|LC|SC|FC|ST|MTP|MPO|Cat\.?\s*[5-8][eaEA]?|UTP|FTP|STP|S\/FTP|PoE|PoE\+|DDR[2-5]|PCIe|PCI-?E|SATA|SAS|NVMe|M\.2|mSATA|SO-?DIMM|DIMM|ECC|LAN|WAN|IEEE\s*802\.\d+|Wi-?Fi\s*\d*[a-z]?|Bluetooth|BLE|Ethernet|GbE|10GbE|40GbE|100GbE|IPv[46]|TCP|UDP|HTTP[S]?|FTP|SNMP|SSH|SSL|TLS|AES|RSA|SHA|IPS|IDS|RAID|SSD|HDD|NAND|TLC|QLC|MLC|SLC|OLED|IPS|VA|TN|LED|LCD|ГГц|МГц|ГБ|МБ|ТБ|Вт|дБ|лк|кд|Гбит|Мбит)\b/i;
+
+// Whitelist для ARTICLE_CODE_RE: разрешённые паттерны типа "RJ-45", "Cat-6", "USB-C"
+const ARTICLE_CODE_WHITELIST = /^(RJ-?\d+|Cat-?\d+[eaEA]?|USB-?[A-C]|SFP-?\d*|DP-?\d*|Type-?[A-C])$/i;
+
 function addIssue(
   issues: ComplianceIssue[],
   row: RowForCompliance,
@@ -65,18 +71,30 @@ export function buildAntiFasReport(rows: RowForCompliance[], minScore = 85): Com
       const text = `${name} ${value}`.trim();
       if (!text) continue;
 
-      if (BRAND_RE.test(text)) {
+      // Strip whitelisted tech standards before brand check
+      const textNoStd = text.replace(TECH_STANDARD_WHITELIST, '___').trim();
+      if (BRAND_RE.test(textNoStd)) {
+        // If value already contains "или эквивалент" — downgrade to minor (compliant with 44-ФЗ ст.33 ч.3)
+        const hasEquiv = /или\s+эквивалент/i.test(value);
         addIssue(
           issues,
           row,
           spec,
-          'critical',
-          'Обнаружено упоминание торговой марки/производителя.',
-          'Замените на функциональные характеристики и формулировку «без указания товарного знака (эквивалент)».'
+          hasEquiv ? 'minor' : 'critical',
+          hasEquiv
+            ? 'Упоминание торговой марки с «или эквивалент» — допустимо по ч. 3 ст. 33 44-ФЗ.'
+            : 'Обнаружено упоминание торговой марки/производителя.',
+          hasEquiv
+            ? 'Проверьте, что функциональные требования описаны достаточно для обеспечения конкуренции.'
+            : 'Замените на функциональные характеристики и формулировку «без указания товарного знака (эквивалент)».'
         );
       }
 
-      if (ARTICLE_RE.test(text) || MODEL_WORD_RE.test(name) || ARTICLE_CODE_RE.test(value)) {
+      // Check for article/model — but skip whitelisted tech codes like RJ-45, Cat-6
+      const hasArticle = ARTICLE_RE.test(text);
+      const hasModel = MODEL_WORD_RE.test(name);
+      const hasArticleCode = ARTICLE_CODE_RE.test(value) && !ARTICLE_CODE_WHITELIST.test(value.match(ARTICLE_CODE_RE)?.[0] ?? '');
+      if (hasArticle || hasModel || hasArticleCode) {
         addIssue(
           issues,
           row,

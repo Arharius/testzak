@@ -42,5 +42,8 @@ jobs:
           npm ci
           npm run build
 
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
       - name: Playwright e2e (mock API)
         run: bash tests/run_e2e.sh

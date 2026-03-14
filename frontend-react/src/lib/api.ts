@@ -319,6 +319,18 @@ export async function generateItemSpecs(
   model: string,
   prompt: string
 ): Promise<string> {
+  return generateItemSpecsMessages(provider, apiKey, model, [{ role: 'user', content: prompt }]);
+}
+
+/**
+ * Генерация характеристик через AI с произвольным массивом messages (system + user).
+ */
+export async function generateItemSpecsMessages(
+  provider: Provider,
+  apiKey: string,
+  model: string,
+  messages: { role: string; content: string }[]
+): Promise<string> {
   const endpoint = API_ENDPOINTS[provider];
   const safeApiKey = normalizeHeaderValue('API ключ', apiKey);
   if (!safeApiKey) {
@@ -330,14 +342,13 @@ export async function generateItemSpecs(
   };
   if (provider === 'openrouter') {
     headers['HTTP-Referer'] = 'https://openrouter.ai';
-    // Browser XHR rejects non ISO-8859-1 header values.
     headers['X-Title'] = 'TZ Generator React';
   }
   const response = await axios.post(
     endpoint,
     {
       model,
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       temperature: 0.1,
       max_tokens: 4096
     },

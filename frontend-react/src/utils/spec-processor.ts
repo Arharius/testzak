@@ -167,8 +167,57 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
       (item as SpecItem)._fixed = true;
     }
 
+    // 15. Автозаполнение пустых единиц измерения
+    if (!unit || unit.trim() === '') {
+      unit = inferUnit(nameLower, value);
+    }
+
     return { ...item, group, name, value, unit };
   });
+}
+
+/** Инферит единицу измерения из контекста имени/значения характеристики */
+function inferUnit(nameLower: string, value: string): string {
+  const v = value.toLowerCase();
+  // Массовые/весовые
+  if (/масса|вес/.test(nameLower)) return 'кг';
+  // Размеры
+  if (/габарит|размер|ширин|высот|глубин|толщин|диаметр|длин/.test(nameLower)) return 'мм';
+  // Мощность
+  if (/мощност|потреблен|tdp/.test(nameLower)) return 'Вт';
+  // Шум
+  if (/шум|громкост/.test(nameLower)) return 'дБА';
+  // Температура
+  if (/температур/.test(nameLower)) return '°C';
+  // Ёмкость/объём дисков
+  if (/объ[её]м|[её]мкост/.test(nameLower) && /гб|тб|мб|\d/.test(v)) {
+    if (/тб/i.test(v)) return 'ТБ';
+    if (/мб/i.test(v)) return 'МБ';
+    return 'ГБ';
+  }
+  // Частота
+  if (/частот/.test(nameLower)) {
+    if (/мгц/i.test(v)) return 'МГц';
+    return 'ГГц';
+  }
+  // Количество
+  if (/количеств|число|кол-во|портов|разъем|слот|ядер|поток/.test(nameLower)) return 'шт';
+  // Гарантия / срок
+  if (/гарант|срок|поддержк/.test(nameLower)) return 'мес';
+  // Диагональ
+  if (/диагональ/.test(nameLower)) return 'дюйм';
+  // Яркость
+  if (/яркост/.test(nameLower)) return 'кд/м²';
+  // Скорость сети
+  if (/скорост.*сет|пропускн/.test(nameLower)) return 'Мбит/с';
+  // Разрешение
+  if (/разрешен/.test(nameLower)) return 'пикс';
+  // Boolean / наличие
+  if (/^(да|нет|есть|имеется|поддерж|обеспеч|соответств)/i.test(value)) return 'наличие';
+  // Текстовое описание
+  if (/тип|вид|формат|стандарт|интерфейс|класс|категори|протокол|режим/.test(nameLower)) return '—';
+  // Fallback
+  return '—';
 }
 
 /**

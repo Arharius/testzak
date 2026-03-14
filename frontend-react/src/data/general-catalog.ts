@@ -1065,11 +1065,11 @@ export const GENERAL_CATALOG: Record<string, GeneralGoodsItem> = {
   // 🚪 УНИВЕРСАЛЬНЫЕ ПОЗИЦИИ
   // ═══════════════════════════════════════════════════════════
   otherGoods: {
-    name: 'Другой товар (AI определит характеристики)',
+    name: '⭐ Любой товар (введите описание)',
     okpd2: '00.00.00.000',
-    okpd2name: 'Товар — ОКПД2 определяется автоматически',
-    placeholder: 'Опишите товар максимально подробно: что это, для чего, какие параметры важны...',
-    specHint: 'AI определит необходимые характеристики автоматически на основании описания товара',
+    okpd2name: 'ОКПД2 определяется автоматически по описанию товара',
+    placeholder: 'Введите ЛЮБОЙ товар: «стул офисный с подлокотниками», «бензопила Husqvarna 450», «палатка туристическая 4-местная», «микроскоп бинокулярный»...',
+    specHint: 'AI автоматически определит: 1) правильный код ОКПД2, 2) КТРУ если есть, 3) нацрежим (ПП 1875), 4) все технические характеристики для ТЗ по 44-ФЗ. Опишите товар максимально подробно.',
   },
 };
 
@@ -1077,6 +1077,9 @@ export const GENERAL_CATALOG: Record<string, GeneralGoodsItem> = {
 // Группы для меню
 // ══════════════════════════════════════════════════════════════
 export const GENERAL_GROUPS: GeneralGoodsGroup[] = [
+  { label: '⭐ Любой товар (свободный ввод)', items: [
+    'otherGoods',
+  ]},
   { label: '🪑 Мебель офисная', items: [
     'deskOffice', 'deskComputer', 'deskHeight', 'deskNegotiation', 'chairOffice', 'chairDirector',
     'chairVisitor', 'cabinet', 'cabinetMetal', 'safe', 'pedestal', 'bookcase', 'wardrobe',
@@ -1156,9 +1159,6 @@ export const GENERAL_GROUPS: GeneralGoodsGroup[] = [
   ]},
   { label: '🌡️ Измерительные приборы', items: [
     'thermometer', 'alcoholTester', 'metalDetector',
-  ]},
-  { label: '🚪 Универсальные позиции', items: [
-    'otherGoods',
   ]},
 ];
 

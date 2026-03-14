@@ -3040,31 +3040,6 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     }));
 
     // Рендер таблицы характеристик для одной позиции
-    // ── Inline spec editing ─────────────────────────────────────
-    const updateSpecField = useCallback((rowId: number, specIdx: number, field: 'name' | 'value' | 'unit', newVal: string) => {
-      setRows(prev => prev.map(r => {
-        if (r.id !== rowId || !r.specs) return r;
-        const updated = [...r.specs];
-        updated[specIdx] = { ...updated[specIdx], [field]: newVal };
-        return { ...r, specs: updated };
-      }));
-    }, []);
-
-    const deleteSpec = useCallback((rowId: number, specIdx: number) => {
-      setRows(prev => prev.map(r => {
-        if (r.id !== rowId || !r.specs) return r;
-        return { ...r, specs: r.specs.filter((_, i) => i !== specIdx) };
-      }));
-    }, []);
-
-    const addSpec = useCallback((rowId: number) => {
-      setRows(prev => prev.map(r => {
-        if (r.id !== rowId) return r;
-        const newSpec: SpecItem = { name: '', value: '', unit: '' };
-        return { ...r, specs: [...(r.specs ?? []), newSpec] };
-      }));
-    }, []);
-
     const editCellStyle: React.CSSProperties = {
       ...tdC,
       padding: 0,
@@ -3105,14 +3080,14 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               ) : (
                 <tr key={`spec-${fr.idx}-${fi}`} style={{ background: fr.spec?._warning ? '#3D3020' : undefined }}>
                   <td style={editCellStyle}>
-                    <input style={editInputStyle} value={fr.spec?.name ?? ''} onChange={e => updateSpecField(row.id, fr.idx, 'name', e.target.value)} title="Редактировать название" />
+                    <input style={editInputStyle} value={fr.spec?.name ?? ''} onChange={e => updateSpec(row.id, fr.idx, 'name', e.target.value)} title="Редактировать название" />
                   </td>
                   <td style={editCellStyle}>
-                    <input style={editInputStyle} value={fr.spec?.value ?? ''} onChange={e => updateSpecField(row.id, fr.idx, 'value', e.target.value)} title="Редактировать значение" />
+                    <input style={editInputStyle} value={fr.spec?.value ?? ''} onChange={e => updateSpec(row.id, fr.idx, 'value', e.target.value)} title="Редактировать значение" />
                     {fr.spec?._warning && <span style={{ color: '#FBBF24', fontSize: 10, display: 'block', padding: '0 8px 2px' }}>⚠️ {fr.spec._warning}</span>}
                   </td>
                   <td style={editCellStyle}>
-                    <input style={{ ...editInputStyle, textAlign: 'center' }} value={fr.spec?.unit ?? ''} onChange={e => updateSpecField(row.id, fr.idx, 'unit', e.target.value)} title="Ед. измерения" />
+                    <input style={{ ...editInputStyle, textAlign: 'center' }} value={fr.spec?.unit ?? ''} onChange={e => updateSpec(row.id, fr.idx, 'unit', e.target.value)} title="Ед. измерения" />
                   </td>
                   <td style={{ ...tdC, textAlign: 'center', cursor: 'pointer', padding: '0 2px' }} onClick={() => deleteSpec(row.id, fr.idx)} title="Удалить характеристику">✕</td>
                 </tr>

@@ -998,7 +998,7 @@ def _yookassa_create_payment(amount: str, currency: str, description: str, retur
 
 @app.get("/")
 def root():
-    return {"message": "TZ Generator API", "version": "2.0"}
+    return {"message": "TZ Generator API", "version": "2.1.0-tz-endpoints"}
 
 @app.get("/health")
 def health():

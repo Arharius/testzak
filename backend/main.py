@@ -23,11 +23,17 @@ from typing import Optional, Any
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError, URLError
 
-from fastapi import FastAPI, HTTPException, Depends, Header, Query
+import re as _re
+
+from fastapi import FastAPI, HTTPException, Depends, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 # Package-safe imports (works for both `uvicorn backend.main:app` and `uvicorn main:app`)
 try:
@@ -133,8 +139,17 @@ CORS_ORIGINS = [s.strip() for s in _cors_raw.split(",") if s.strip()] if _cors_r
     "http://127.0.0.1:5174",
 ]
 
+# ── Rate limiter ───────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
+
 # ── FastAPI app ─────────────────────────────────────────────────
-app = FastAPI(title="TZ Generator API", version="2.0.0")
+app = FastAPI(title="TZ Generator API", version="3.0.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, lambda req, exc: JSONResponse(
+    status_code=429,
+    content={"detail": "Слишком много запросов. Подождите немного.", "retry_after": str(exc.detail)},
+))
+app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -146,9 +161,38 @@ app.add_middleware(
 
 init_db()
 
+# ── Global error handler ──────────────────────────────────────
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled error: {type(exc).__name__}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Внутренняя ошибка сервера. Попробуйте позже."},
+    )
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    import time as _t
+    start = _t.time()
+    response = await call_next(request)
+    elapsed = _t.time() - start
+    if elapsed > 2.0:
+        logger.warning(f"SLOW {request.method} {request.url.path} → {response.status_code} in {elapsed:.1f}s")
+    return response
+
 # ── Pydantic models ─────────────────────────────────────────────
+_EMAIL_RE = _re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+
 class SendLinkRequest(BaseModel):
     email: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not _EMAIL_RE.match(v):
+            raise ValueError("Некорректный формат email")
+        return v
 
 class VerifyTokenRequest(BaseModel):
     token: str
@@ -1260,7 +1304,8 @@ def enterprise_autopilot(
 
 # ── Auth ──────────────────────────────────────────────────────
 @app.post("/api/auth/send-link")
-def send_link(req: SendLinkRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def send_link(request: Request, req: SendLinkRequest, db: Session = Depends(get_db)):
     email = req.email.lower().strip()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Некорректный email")
@@ -1328,7 +1373,8 @@ def get_me(user: User = Depends(get_current_user)):
 
 # ── AI Proxy ──────────────────────────────────────────────────
 @app.post("/api/ai/generate")
-def ai_generate(req: AIGenerateRequest, user: Optional[User] = Depends(get_optional_user), db: Session = Depends(get_db)):
+@limiter.limit("20/minute")
+def ai_generate(request: Request, req: AIGenerateRequest, user: Optional[User] = Depends(get_optional_user), db: Session = Depends(get_db)):
     # Allow anonymous AI access when INTEGRATION_ALLOW_ANON is enabled
     if user is None:
         if not INTEGRATION_ALLOW_ANON:
@@ -1344,7 +1390,8 @@ def ai_generate(req: AIGenerateRequest, user: Optional[User] = Depends(get_optio
 
 # ── Search: internet specs ─────────────────────────────────────
 @app.post("/api/search/specs")
-async def search_specs(req: SearchSpecsRequest, user: Optional[User] = Depends(get_optional_user)):
+@limiter.limit("15/minute")
+async def search_specs(request: Request, req: SearchSpecsRequest, user: Optional[User] = Depends(get_optional_user)):
     if not req.product.strip():
         raise HTTPException(status_code=400, detail="Укажите модель товара")
     import time as _time
@@ -1361,7 +1408,8 @@ async def search_specs(req: SearchSpecsRequest, user: Optional[User] = Depends(g
 
 # ── Search: EIS zakupki.gov.ru ─────────────────────────────────
 @app.post("/api/search/eis")
-async def search_eis(req: SearchEisRequest, user: Optional[User] = Depends(get_optional_user)):
+@limiter.limit("15/minute")
+async def search_eis(request: Request, req: SearchEisRequest, user: Optional[User] = Depends(get_optional_user)):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Укажите запрос")
     import time as _time
@@ -1438,7 +1486,8 @@ async def search_debug(q: str = "HP ProBook 450 G10"):
 
 # ── Payments ───────────────────────────────────────────────────
 @app.post("/api/payment/create")
-def payment_create(req: PaymentCreateRequest, user: User = Depends(get_current_user)):
+@limiter.limit("3/minute")
+def payment_create(request: Request, req: PaymentCreateRequest, user: User = Depends(get_current_user)):
     plan = req.plan.strip().lower()
     if plan not in PLAN_PRICES:
         raise HTTPException(status_code=400, detail="Неверный план. Доступно: pro, annual")

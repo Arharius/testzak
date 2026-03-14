@@ -2964,7 +2964,41 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     }));
 
     // Рендер таблицы характеристик для одной позиции
-    const renderSpecsTable = (_row: GoodsRow, specs: SpecItem[], isSW: boolean, nacRegime: string) => {
+    // ── Inline spec editing ─────────────────────────────────────
+    const updateSpecField = useCallback((rowId: number, specIdx: number, field: 'name' | 'value' | 'unit', newVal: string) => {
+      setRows(prev => prev.map(r => {
+        if (r.id !== rowId || !r.specs) return r;
+        const updated = [...r.specs];
+        updated[specIdx] = { ...updated[specIdx], [field]: newVal };
+        return { ...r, specs: updated };
+      }));
+    }, []);
+
+    const deleteSpec = useCallback((rowId: number, specIdx: number) => {
+      setRows(prev => prev.map(r => {
+        if (r.id !== rowId || !r.specs) return r;
+        return { ...r, specs: r.specs.filter((_, i) => i !== specIdx) };
+      }));
+    }, []);
+
+    const addSpec = useCallback((rowId: number) => {
+      setRows(prev => prev.map(r => {
+        if (r.id !== rowId) return r;
+        const newSpec: SpecItem = { name: '', value: '', unit: '' };
+        return { ...r, specs: [...(r.specs ?? []), newSpec] };
+      }));
+    }, []);
+
+    const editCellStyle: React.CSSProperties = {
+      ...tdC,
+      padding: 0,
+    };
+    const editInputStyle: React.CSSProperties = {
+      width: '100%', background: 'transparent', border: 'none', color: '#F5F0E8',
+      padding: '4px 8px', fontSize: 12, fontFamily: 'inherit', outline: 'none',
+    };
+
+    const renderSpecsTable = (row: GoodsRow, specs: SpecItem[], isSW: boolean, nacRegime: string) => {
       // Pre-compute group headers (no mutable state during render)
       const flatRows: { type: 'group' | 'spec'; idx: number; spec?: SpecItem; groupLabel?: string }[] = [];
       let prevGroup = '';
@@ -2982,27 +3016,43 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             <tr style={{ background: '#1F5C8B', color: '#fff' }}>
               <th style={{ border: bdr, padding: '4px 8px' }}>Наименование характеристики</th>
               <th style={{ border: bdr, padding: '4px 8px' }}>Значение характеристики</th>
-              <th style={{ border: bdr, padding: '4px 8px', width: 90 }}>Единица измерения</th>
+              <th style={{ border: bdr, padding: '4px 8px', width: 90 }}>Ед. изм.</th>
+              <th style={{ border: bdr, padding: '4px 4px', width: 32 }}>🗑</th>
             </tr>
           </thead>
           <tbody>
             {flatRows.map((fr, fi) =>
               fr.type === 'group' ? (
                 <tr key={`grp-${fr.idx}`}>
-                  <td colSpan={3} style={{ border: bdr, padding: '4px 8px', background: '#2D3A5C', fontWeight: 700, textAlign: 'center', color: '#F5F0E8' }}>{fr.groupLabel}</td>
+                  <td colSpan={4} style={{ border: bdr, padding: '4px 8px', background: '#2D3A5C', fontWeight: 700, textAlign: 'center', color: '#F5F0E8' }}>{fr.groupLabel}</td>
                 </tr>
               ) : (
                 <tr key={`spec-${fr.idx}-${fi}`} style={{ background: fr.spec?._warning ? '#3D3020' : undefined }}>
-                  <td style={tdC}>{fr.spec?.name ?? ''}</td>
-                  <td style={tdC}>{fr.spec?.value ?? ''}{fr.spec?._warning && <span style={{ color: '#FBBF24', fontSize: 10, display: 'block' }}>⚠️ {fr.spec._warning}</span>}</td>
-                  <td style={tdC}>{fr.spec?.unit ?? ''}</td>
+                  <td style={editCellStyle}>
+                    <input style={editInputStyle} value={fr.spec?.name ?? ''} onChange={e => updateSpecField(row.id, fr.idx, 'name', e.target.value)} title="Редактировать название" />
+                  </td>
+                  <td style={editCellStyle}>
+                    <input style={editInputStyle} value={fr.spec?.value ?? ''} onChange={e => updateSpecField(row.id, fr.idx, 'value', e.target.value)} title="Редактировать значение" />
+                    {fr.spec?._warning && <span style={{ color: '#FBBF24', fontSize: 10, display: 'block', padding: '0 8px 2px' }}>⚠️ {fr.spec._warning}</span>}
+                  </td>
+                  <td style={editCellStyle}>
+                    <input style={{ ...editInputStyle, textAlign: 'center' }} value={fr.spec?.unit ?? ''} onChange={e => updateSpecField(row.id, fr.idx, 'unit', e.target.value)} title="Ед. измерения" />
+                  </td>
+                  <td style={{ ...tdC, textAlign: 'center', cursor: 'pointer', padding: '0 2px' }} onClick={() => deleteSpec(row.id, fr.idx)} title="Удалить характеристику">✕</td>
                 </tr>
               )
             )}
             {!isSW && (nacRegime === 'pp878' || nacRegime === 'pp616') && (
-              <tr key="torp"><td style={tdC}>ТОРП</td><td style={tdC}>Да</td><td style={tdC}></td></tr>
+              <tr key="torp"><td style={tdC}>ТОРП</td><td style={tdC}>Да</td><td style={tdC}></td><td style={tdC}></td></tr>
             )}
           </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={4} style={{ border: bdr, padding: '4px 8px', textAlign: 'center' }}>
+                <button onClick={() => addSpec(row.id)} style={{ background: '#1F5C8B', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 16px', cursor: 'pointer', fontSize: 11 }}>+ Добавить характеристику</button>
+              </td>
+            </tr>
+          </tfoot>
         </table>
       );
     };

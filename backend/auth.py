@@ -13,6 +13,14 @@ JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-prod")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 24 * 30  # 30 days
 
+if JWT_SECRET == "dev-secret-change-in-prod":
+    import warnings
+    warnings.warn(
+        "⚠️  JWT_SECRET is default! Set JWT_SECRET env var in production. "
+        "Current sessions are insecure.",
+        stacklevel=2,
+    )
+
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.yandex.ru")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USER = os.getenv("SMTP_USER", "")

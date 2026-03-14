@@ -73,64 +73,71 @@ export function isLoggedIn(): boolean {
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 
-async function apiPost<T>(path: string, body: object, auth: boolean | 'optional' = false): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (auth) {
-    const token = getStoredToken();
-    if (token) {
-      const safeToken = normalizeBearerToken(token);
-      if (safeToken) headers['Authorization'] = `Bearer ${safeToken}`;
-    } else if (auth !== 'optional') {
-      throw new Error('Требуется авторизация');
-    }
+const DEFAULT_TIMEOUT_MS = 60_000; // 60s for AI calls
+const SHORT_TIMEOUT_MS = 15_000;   // 15s for auth/CRUD
+
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const existingSignal = init.signal;
+  // Merge external signal if provided
+  if (existingSignal) {
+    existingSignal.addEventListener('abort', () => controller.abort(existingSignal.reason));
   }
-  const resp = await fetch(buildApiUrl(path), { method: 'POST', headers, body: JSON.stringify(body) });
-  const data = await resp.json();
-  if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
-  return data as T;
+  const timer = setTimeout(() => controller.abort(new Error('Превышено время ожидания сервера')), timeoutMs);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-async function apiGet<T>(path: string, auth = false): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (auth) {
-    const token = getStoredToken();
-    if (!token) throw new Error('Требуется авторизация');
-    const safeToken = normalizeBearerToken(token);
-    if (!safeToken) throw new Error('Требуется авторизация');
-    headers['Authorization'] = `Bearer ${safeToken}`;
-  }
-  const resp = await fetch(buildApiUrl(path), { headers });
-  const data = await resp.json();
-  if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
-  return data as T;
-}
-
-async function apiPut<T>(path: string, body: object, auth = true): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (auth) {
-    const token = getStoredToken();
-    if (!token) throw new Error('Требуется авторизация');
+function _addAuth(headers: Record<string, string>, auth: boolean | 'optional'): void {
+  if (!auth) return;
+  const token = getStoredToken();
+  if (token) {
     const safeToken = normalizeBearerToken(token);
     if (safeToken) headers['Authorization'] = `Bearer ${safeToken}`;
+  } else if (auth !== 'optional') {
+    throw new Error('Требуется авторизация');
   }
-  const resp = await fetch(buildApiUrl(path), { method: 'PUT', headers, body: JSON.stringify(body) });
-  const data = await resp.json();
-  if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+}
+
+async function _handleResponse<T>(resp: Response): Promise<T> {
+  let data: Record<string, unknown>;
+  try {
+    data = await resp.json();
+  } catch {
+    throw new Error(`HTTP ${resp.status}: ответ сервера не является JSON`);
+  }
+  if (!resp.ok) {
+    const detail = typeof data.detail === 'string' ? data.detail : `HTTP ${resp.status}`;
+    throw new Error(detail);
+  }
   return data as T;
 }
 
-async function apiDelete<T>(path: string, auth = true): Promise<T> {
+async function apiPost<T>(path: string, body: object, auth: boolean | 'optional' = false, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  _addAuth(headers, auth);
+  const resp = await fetchWithTimeout(buildApiUrl(path), { method: 'POST', headers, body: JSON.stringify(body) }, timeoutMs);
+  return _handleResponse<T>(resp);
+}
+
+async function apiGet<T>(path: string, auth = false, timeoutMs = SHORT_TIMEOUT_MS): Promise<T> {
   const headers: Record<string, string> = {};
-  if (auth) {
-    const token = getStoredToken();
-    if (!token) throw new Error('Требуется авторизация');
-    const safeToken = normalizeBearerToken(token);
-    if (safeToken) headers['Authorization'] = `Bearer ${safeToken}`;
-  }
-  const resp = await fetch(buildApiUrl(path), { method: 'DELETE', headers });
-  const data = await resp.json();
-  if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
-  return data as T;
+  _addAuth(headers, auth);
+  const resp = await fetchWithTimeout(buildApiUrl(path), { headers }, timeoutMs);
+  return _handleResponse<T>(resp);
+}
+
+async function apiPut<T>(path: string, body: object, auth = true, timeoutMs = SHORT_TIMEOUT_MS): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  _addAuth(headers, auth);
+  const resp = await fetchWithTimeout(buildApiUrl(path), { method: 'PUT', headers, body: JSON.stringify(body) }, timeoutMs);
+  return _handleResponse<T>(resp);
+}
+
+async function apiDelete<T>(path: string, auth = true, timeoutMs = SHORT_TIMEOUT_MS): Promise<T> {
+  const headers: Record<string, string> = {};
+  _addAuth(headers, auth);
+  const resp = await fetchWithTimeout(buildApiUrl(path), { method: 'DELETE', headers }, timeoutMs);
+  return _handleResponse<T>(resp);
 }
 
 // ── Auth ────────────────────────────────────────────────────────────────────

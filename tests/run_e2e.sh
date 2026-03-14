@@ -8,8 +8,20 @@ REACT_PREVIEW_LOG="/tmp/tz_e2e_react_preview.log"
 
 mkdir -p "$PLAYWRIGHT_TMP"
 
-if [ ! -d "$PLAYWRIGHT_TMP/node_modules/playwright" ]; then
-  (cd "$PLAYWRIGHT_TMP" && npm init -y >/dev/null 2>&1 && npm install playwright >/dev/null 2>&1)
+# Install Playwright if not already installed (skip if CI pre-installed it)
+if [[ "${SKIP_PLAYWRIGHT_INSTALL:-}" != "1" ]]; then
+  if [ ! -d "$PLAYWRIGHT_TMP/node_modules/playwright" ]; then
+    (cd "$PLAYWRIGHT_TMP" && npm init -y >/dev/null 2>&1 && npm install playwright >/dev/null 2>&1)
+  fi
+fi
+
+# Use project-level node_modules if available, otherwise temp dir
+if [ -d "node_modules/playwright" ]; then
+  PW_NODE_PATH="$(pwd)/node_modules"
+elif [ -d "$PLAYWRIGHT_TMP/node_modules/playwright" ]; then
+  PW_NODE_PATH="$PLAYWRIGHT_TMP/node_modules"
+else
+  PW_NODE_PATH="$(pwd)/node_modules"
 fi
 
 python3 -m http.server 8765 --bind 127.0.0.1 >"$SERVER_LOG" 2>&1 &
@@ -32,12 +44,15 @@ for _ in $(seq 1 40); do
   sleep 0.25
 done
 
-NODE_PATH="$PLAYWRIGHT_TMP/node_modules" node tests/e2e_browser_check.cjs
+NODE_PATH="$PW_NODE_PATH" node tests/e2e_browser_check.cjs
 
 # React production-like e2e on Vite preview.
-(cd frontend-react && npm run build >"$REACT_BUILD_LOG" 2>&1)
+if [[ "${SKIP_REACT_BUILD:-}" != "1" ]]; then
+  (cd frontend-react && npm run build >"$REACT_BUILD_LOG" 2>&1)
+fi
+
 (cd frontend-react && npm run preview -- --host 127.0.0.1 --port 4173 >"$REACT_PREVIEW_LOG" 2>&1) &
 REACT_PID=$!
 sleep 2
 
-E2E_REACT_BASE_URL="http://127.0.0.1:4173" NODE_PATH="$PLAYWRIGHT_TMP/node_modules" node tests/e2e_react_check.cjs
+E2E_REACT_BASE_URL="http://127.0.0.1:4173" NODE_PATH="$PW_NODE_PATH" node tests/e2e_react_check.cjs

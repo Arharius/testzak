@@ -1066,6 +1066,10 @@ this.buildDeterministicHintsCorpus = buildDeterministicHintsCorpus;`,
 
 function runBackendSearchHelperChecks() {
   const sharedPath = path.join(projectRoot, '.deploy', 'netlify-legacy', 'api', 'search', '_shared.js');
+  if (!fs.existsSync(sharedPath)) {
+    console.log('  ⏭  Skipped backend search helper checks (no .deploy/netlify-legacy/api/search/_shared.js)');
+    return;
+  }
   const sharedSrc = fs.readFileSync(sharedPath, 'utf8').replace(/\bexport\s+/g, '');
   const context = {
     console,

@@ -7,7 +7,10 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node tests/agents/run_quality_agents.cjs",
+    "test:quality": "node tests/agents/run_quality_agents.cjs",
+    "test:autodetect": "node tests/autodetect_matrix.cjs",
+    "test:deep": "node tests/deep_checks.cjs"
   },
   "keywords": [],
   "author": "",

@@ -13,6 +13,7 @@ set -euo pipefail
 #                      or <username>.eu.pythonanywhere.com for EU host
 #   PA_PYTHON_VERSION- python312 (default) used only on webapp creation
 #   PA_SITE_PATH     - /home/<username>/tz_generator_site (default)
+#   PA_REACT_BASE_PATH - /react/ (default) base path for Vite React build
 #   PA_PASSWORD_PROTECTION_ENABLED - true/false to enable/disable webapp password protection
 #   PA_PASSWORD_PROTECTION_USERNAME - username for PythonAnywhere webapp password protection
 #   PA_PASSWORD_PROTECTION_PASSWORD - password for PythonAnywhere webapp password protection
@@ -22,6 +23,7 @@ PA_API_TOKEN="${PA_API_TOKEN:-}"
 PA_HOST="${PA_HOST:-www.pythonanywhere.com}"
 PA_PYTHON_VERSION="${PA_PYTHON_VERSION:-python312}"
 PA_REACT_MODE="${PA_REACT_MODE:-react}"
+PA_REACT_BASE_PATH="${PA_REACT_BASE_PATH:-/react/}"
 PA_PASSWORD_PROTECTION_ENABLED="${PA_PASSWORD_PROTECTION_ENABLED:-}"
 PA_PASSWORD_PROTECTION_USERNAME="${PA_PASSWORD_PROTECTION_USERNAME:-}"
 PA_PASSWORD_PROTECTION_PASSWORD="${PA_PASSWORD_PROTECTION_PASSWORD:-}"
@@ -179,7 +181,9 @@ for rel in "${FILES_TO_UPLOAD[@]}"; do
 done
 
 if [[ "${PA_REACT_MODE}" == "legacy" ]]; then
-  echo "==> Using legacy HTML for /react"
+  echo "==> Using legacy HTML for / and /react"
+  call_request POST "${BASE_URL}/files/path${PA_SITE_PATH}/index.html" -F "content=@${PROJECT_ROOT}/legacy/index.html"
+  assert_status "$API_STATUS" "201,200" "$API_BODY"
   call_request POST "${BASE_URL}/files/path${PA_SITE_PATH}/react/index.html" -F "content=@${PROJECT_ROOT}/legacy/index.html"
   assert_status "$API_STATUS" "201,200" "$API_BODY"
   call_request POST "${BASE_URL}/files/path${PA_SITE_PATH}/react/docx.min.js" -F "content=@${PROJECT_ROOT}/docx.min.js"
@@ -193,7 +197,7 @@ else
     if [[ ! -d "${PROJECT_ROOT}/frontend-react/node_modules" ]]; then
       (cd "${PROJECT_ROOT}/frontend-react" && npm ci)
     fi
-    (cd "${PROJECT_ROOT}/frontend-react" && npm run build)
+    (cd "${PROJECT_ROOT}/frontend-react" && VITE_BASE_PATH="${PA_REACT_BASE_PATH}" npm run build)
 
     if [[ -d "${REACT_DIST_DIR}" ]]; then
       echo "==> Uploading React static files to ${PA_SITE_PATH}/react"

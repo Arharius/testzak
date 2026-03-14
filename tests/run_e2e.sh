@@ -24,8 +24,13 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Give local server a moment to bind.
-sleep 1
+# Wait until local server is ready to accept connections.
+for _ in $(seq 1 40); do
+  if curl -fsS "http://127.0.0.1:8765/legacy/index.html" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.25
+done
 
 NODE_PATH="$PLAYWRIGHT_TMP/node_modules" node tests/e2e_browser_check.cjs
 

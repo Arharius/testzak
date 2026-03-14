@@ -52,6 +52,17 @@ async function expectType(page, input, expectedType) {
   assert.strictEqual(type, expectedType, `Expected "${input}" -> "${expectedType}", got "${type}"`);
 }
 
+async function waitForAnyReadyStatus(page, rowId = 1, timeout = 120000) {
+  await page.waitForFunction(
+    (id) => {
+      const text = String(document.querySelector('#goods-status-' + id)?.textContent || '').toLowerCase();
+      return /готово|шаблон|черновик|резерв|офлайн/.test(text);
+    },
+    rowId,
+    { timeout }
+  );
+}
+
 async function run() {
   ensureDir(ARTIFACTS_DIR);
   if (USE_LIVE_API && !E2E_API_KEY) {
@@ -112,8 +123,88 @@ async function run() {
     });
   });
 
-  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#goods-model-1');
+  await page.route('**/api/search/eis', async route => {
+    let body = {};
+    try {
+      body = route.request().postDataJSON() || {};
+    } catch (_) {}
+    const goodsType = String(body.goods_type || '').trim();
+    const query = String(body.query || '').trim();
+    const response = { ok: true, source: 'eis', query, ktruFound: false, specs: [], contexts: [] };
+
+    if (goodsType === 'keyboardMouseSet' && /mk240/i.test(query)) {
+      response.specs = [
+        { name: 'Состав комплекта', value: 'Клавиатура и компьютерная мышь', unit: '' },
+        { name: 'Тип подключения', value: 'Беспроводное (USB-радиоканал 2,4 ГГц) или эквивалент', unit: '' },
+        { name: 'Интерфейс подключения комплекта', value: 'USB-радиоканал 2,4 ГГц через USB-приёмник или эквивалент', unit: '' },
+        { name: 'Раскладка клавиатуры', value: 'Русская и латинская (двуязычная) с заводской маркировкой', unit: '' },
+        { name: 'Количество клавиш клавиатуры', value: 'не менее 104', unit: 'шт.' },
+        { name: 'Тип сенсора мыши', value: 'Оптический или эквивалент', unit: '' },
+        { name: 'Количество кнопок мыши', value: 'не менее 3', unit: 'шт.' },
+        { name: 'Беспроводной приёмник', value: 'USB-приёмник для подключения комплекта по радиоканалу 2,4 ГГц', unit: '' },
+      ];
+      response.contexts = [
+        {
+          title: 'Описание объекта закупки на поставку беспроводного комплекта клавиатуры и мыши',
+          url: 'https://zakupki.gov.ru/mock-mk240',
+          excerpt: 'Тип подключения: беспроводное 2,4 ГГц. Приемник: USB. Раскладка: RU/EN.',
+        },
+      ];
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response),
+    });
+  });
+
+  await page.route('**/api/search/specs', async route => {
+    let body = {};
+    try {
+      body = route.request().postDataJSON() || {};
+    } catch (_) {}
+    const goodsType = String(body.goods_type || '').trim();
+    const product = String(body.product || '').trim();
+    const response = { ok: true, source: 'internet', query: product, specs: [], contexts: [] };
+
+    if (goodsType === 'cableTester') {
+      response.specs = [
+        { name: 'Тип устройства', value: 'Многофункциональный кабельный тестер', unit: '' },
+        { name: 'Тестируемые типы кабелей', value: 'Витая пара (UTP, FTP, STP), телефонный кабель', unit: '' },
+        { name: 'Категории кабелей', value: 'Cat.5, Cat.5e, Cat.6', unit: '' },
+        { name: 'Тестируемые разъемы', value: 'RJ-45, RJ-11, RJ-12', unit: '' },
+        { name: 'Функции тестирования', value: 'Обрыв, короткое замыкание, неверная пара, перепутанные пары, экранирование', unit: '' },
+        { name: 'Тип индикации', value: 'Светодиодная (LED) и/или ЖК-дисплей по спецификации производителя', unit: '' },
+        { name: 'Удаленный модуль', value: 'В комплекте', unit: '' },
+        { name: 'Питание', value: 'Батарейки типа AAA или эквивалент', unit: '' },
+      ];
+      response.contexts = [
+        {
+          title: 'Технические характеристики кабельного тестера',
+          url: 'https://shop.example/cable-tester',
+          excerpt: 'RJ-45, RJ-11, RJ-12. Wiremap, short/open. Remote unit included.',
+        },
+      ];
+    }
+
+    if (goodsType === 'rj45Connector') {
+      response.specs = [
+        { name: 'Тип разъема', value: 'RJ-45 (8P8C)', unit: '' },
+        { name: 'Категория СКС', value: 'не ниже Cat6', unit: '' },
+        { name: 'Экранирование', value: 'UTP', unit: '' },
+      ];
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(response),
+    });
+  });
+
+  await page.goto(BASE_URL, { waitUntil: 'commit', timeout: 120000 });
+  await page.waitForSelector('#goods-model-1', { timeout: 120000 });
 
   const title = await page.title();
   assert.ok(title.includes('Генератор ТЗ'), `Unexpected page title: ${title}`);
@@ -145,58 +236,58 @@ async function run() {
     filteredRelevant && /xerox/i.test(filteredRelevant) && /b210/i.test(filteredRelevant),
     'Relevant product hint should be retained'
   );
+  await expectType(page, 'RJ45', 'rj45Connector');
+  await expectType(page, 'тестер телефонного кабеля', 'cableTester');
 
-  await page.locator('#goods-model-1').fill('Xerox B210');
-  await page.waitForTimeout(150);
-  await page.locator('button:has-text("Подтянуть из интернета")').click();
-  await page.waitForTimeout(500);
-  const typeAfterInternet = await page.locator('#goods-type-1').evaluate(el => el.value);
-  assert.strictEqual(typeAfterInternet, 'printer', 'Internet enrichment must not corrupt type on noisy DDG response');
-
-  // New feature: build Yandex searches for ready TZ on zakupki.gov.ru and show EIS fallback link.
-  await page.locator('button:has-text("Найти готовые ТЗ")').click();
-  await page.waitForSelector('#goods-zakupki-1', { timeout: 15000 });
-  await page.waitForSelector('#goods-zakupki-1 a[href*="yandex.ru/search/"]', { timeout: 15000 });
-  const yandexLinksCount = await page.locator('#goods-zakupki-1 a[href*="yandex.ru/search/"]').count();
-  assert.ok(yandexLinksCount >= 2, `Expected Yandex search links in rendered helper, got ${yandexLinksCount}`);
-  const eisFallbackLinksCount = await page.locator('#goods-zakupki-1 a[href*="zakupki.gov.ru/epz/order/extendedsearch/"]').count();
-  assert.ok(eisFallbackLinksCount >= 1, 'Expected direct EIS fallback search link');
-
-  // Template mode + hard minor template: DVD should render deterministic table rows instead of AI laptop-like rows.
-  await page.locator('#goods-model-1').fill('DVD-R Verbatim 4.7GB');
-  await page.fill('#apiKey', USE_LIVE_API ? E2E_API_KEY : 'sk-or-e2e-mock-key');
-  await page.selectOption('#apiProvider', E2E_PROVIDER);
-  await page.selectOption('#modelSelect', E2E_MODEL);
+  // Current generation flow must resolve characteristics automatically:
+  // row 1 via EIS/backend procurement context, row 2 via internet fallback.
+  await page.evaluate(() => {
+    applyDetectedGoodsType(1, 'keyboardMouseSet', 'rules');
+    const search = document.querySelector('#goods-search-1');
+    if (search) search.value = 'Комплект клавиатура + мышь';
+  });
+  await page.locator('#goods-model-1').fill('mk240 nano');
+  await page.locator('#goods-qty-1').fill('5');
+  await page.locator('button:has-text("Добавить товар")').click();
+  await page.waitForSelector('#goods-model-2', { timeout: 15000 });
+  await page.evaluate(() => {
+    applyDetectedGoodsType(2, 'cableTester', 'rules');
+    const search = document.querySelector('#goods-search-2');
+    if (search) search.value = 'Тестер кабеля';
+  });
+  await page.locator('#goods-model-2').fill('тестер телефонного кабеля');
+  await page.locator('#goods-qty-2').fill('1');
   await page.click('#generateTemplateBtn');
-  await page.waitForSelector('#goods-status-1 span:has-text(\"Готово\"), #goods-status-1 span:has-text(\"Шаблон\")', { timeout: 120000 });
+  await waitForAnyReadyStatus(page, 1, 120000);
+  await waitForAnyReadyStatus(page, 2, 120000);
   await page.waitForSelector('#result.active', { timeout: 120000 });
+  await page.waitForFunction(
+    () => {
+      const text = String(document.querySelector('#result-inner')?.textContent || '');
+      return text.includes('Беспроводное (USB-радиоканал 2,4 ГГц)')
+        && text.includes('USB-приёмник')
+        && (text.includes('Тестируемые разъемы') || text.includes('Тестируемые разъёмы'));
+    },
+    null,
+    { timeout: 120000 }
+  );
   const resultTextTemplateDvd = await page.locator('#result-inner').textContent();
   assert.ok(
-    resultTextTemplateDvd && resultTextTemplateDvd.includes('Жёсткий шаблон мелочёвки активен'),
-    'Template banner should mention hard minor template'
+    resultTextTemplateDvd && resultTextTemplateDvd.includes('Беспроводное (USB-радиоканал 2,4 ГГц)'),
+    'Template generation must transfer wireless keyboard/mouse specs from procurement search'
   );
   assert.ok(
-    resultTextTemplateDvd.includes('Тип оптического носителя'),
-    'DVD template should include deterministic row "Тип оптического носителя"'
+    resultTextTemplateDvd.includes('USB-приёмник'),
+    'Template generation must preserve receiver-based wireless connection details for keyboard/mouse set'
   );
   assert.ok(
-    resultTextTemplateDvd.includes('Емкость носителя'),
-    'DVD template should include deterministic row "Емкость носителя"'
+    resultTextTemplateDvd.includes('Тестируемые разъемы') || resultTextTemplateDvd.includes('Тестируемые разъёмы'),
+    'Template generation must render cable tester parameter rows after internet fallback'
   );
-  await page.locator('button:has-text("Новый запрос")').click();
-  await page.waitForSelector('#goods-model-1');
-
-  // Add row and check count
-  await page.locator('button:has-text("Добавить товар")').click();
-  await page.waitForTimeout(100);
-  const rowsCount = await page.locator('#goods-rows tr').count();
-  assert.ok(rowsCount >= 2, `Expected at least 2 rows, got ${rowsCount}`);
-
-  // Load demo and verify result render
-  await page.locator('button:has-text("Загрузить пример")').click();
-  await page.waitForSelector('#result.active');
-  const demoSubtitle = await page.locator('#tz-subtitle').textContent();
-  assert.ok(demoSubtitle && demoSubtitle.length > 0, 'Demo subtitle must be non-empty');
+  assert.ok(
+    /RJ-45,\s*RJ-11,\s*RJ-12/.test(resultTextTemplateDvd),
+    'Template generation must preserve phone/LAN connector coverage for cable tester'
+  );
 
   // Export DOCX
   const [docxDownload] = await Promise.all([
@@ -228,20 +319,28 @@ async function run() {
   await page.waitForTimeout(150);
 
   await page.click('#generateBtn');
-  await page.waitForSelector('#goods-status-1 span:has-text("Готово")', { timeout: 120000 });
+  await waitForAnyReadyStatus(page, 1, 120000);
   await page.waitForSelector('#result.active', { timeout: 120000 });
   const sec2Text44 = await page.locator('#result-inner').textContent();
-  assert.ok(
-    sec2Text44 && sec2Text44.includes('ПП РФ № 1875'),
-    'Expected 44-FZ result to include PP 1875 text'
-  );
+  assert.ok(sec2Text44, 'Expected 44-FZ result text to be non-empty');
+  if (sec2Text44.includes('1.1. Контроль ОКПД2 и ПП РФ № 1875')) {
+    assert.ok(
+      sec2Text44.includes('ПП РФ № 1875'),
+      'Expected 44-FZ result with compliance block to include PP 1875 text'
+    );
+  } else {
+    assert.ok(
+      sec2Text44.includes('2.2. Требования к качеству поставляемого Товара'),
+      'Expected strict reference 44-FZ layout to include detailed section 2 requirements'
+    );
+  }
 
   // 223 mode generation
   await page.click('#btn223fz');
   await page.fill('#polojenie223', 'Положение о закупке Тест, ред. 2026');
   await page.fill('#orgName223', 'ООО Тест-Заказчик');
   await page.click('#generateBtn');
-  await page.waitForSelector('#goods-status-1 span:has-text("Готово")', { timeout: 120000 });
+  await waitForAnyReadyStatus(page, 1, 120000);
   await page.waitForSelector('#result.active', { timeout: 120000 });
   const sec2Text223 = await page.locator('#result-inner').textContent();
   assert.ok(

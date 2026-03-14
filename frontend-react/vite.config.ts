@@ -1,28 +1,40 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// Hosted builds use root base. Only explicit GH_PAGES=1 keeps /testzak/.
-const isGhPages = !!process.env.GH_PAGES;
-const base = isGhPages ? '/testzak/' : '/';
+// Optional override for subpath hosting (for example /react/ on PythonAnywhere).
+const explicitBase = process.env.VITE_BASE_PATH;
 
-export default defineConfig({
-  base,
-  plugins: [react()],
-  server: {
-    host: '0.0.0.0',
-    port: 5174,
-    proxy: {
-      '/api': {
-        target: 'https://tz-generator-backend.onrender.com',
-        changeOrigin: true,
-        secure: true,
-      },
-      '/proxy/zakupki': {
-        target: 'https://zakupki.gov.ru',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/proxy\/zakupki/, ''),
-        secure: true,
-      },
+// Hosted builds use root base by default. Only explicit GH_PAGES=1 keeps /testzak/.
+const isGhPages = !!process.env.GH_PAGES;
+const base = explicitBase || (isGhPages ? '/testzak/' : '/');
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const backendTarget = (env.VITE_BACKEND_URL || 'https://backend-production-3b942.up.railway.app').replace(/\/$/, '');
+  const apiProxy = {
+    '/api': {
+      target: backendTarget,
+      changeOrigin: true,
+      secure: true,
     },
-  },
+    '/proxy/zakupki': {
+      target: 'https://zakupki.gov.ru',
+      changeOrigin: true,
+      rewrite: (path: string) => path.replace(/^\/proxy\/zakupki/, ''),
+      secure: true,
+    },
+  };
+
+  return {
+    base,
+    plugins: [react()],
+    server: {
+      host: '0.0.0.0',
+      port: 5174,
+      proxy: apiProxy,
+    },
+    preview: {
+      proxy: apiProxy,
+    },
+  };
 });

@@ -43,8 +43,31 @@ import {
 import { appendAutomationLog, appendImmutableAudit } from '../lib/storage';
 import type { AutomationSettings, EnterpriseSettings, PlatformIntegrationSettings } from '../types/schemas';
 import { GOODS_CATALOG, GOODS_GROUPS, detectGoodsType, detectAllGoodsTypes, getNacRegime, type GoodsItem, type HardSpec } from '../data/goods-catalog';
+import { GENERAL_CATALOG, GENERAL_GROUPS, getGeneralNacRegime, type GeneralGoodsItem } from '../data/general-catalog';
 import { postProcessSpecs, parseAiResponse, type SpecItem } from '../utils/spec-processor';
 import { buildSection2Rows, buildSection4Rows, buildSection5Rows, type LawMode } from '../utils/npa-blocks';
+
+// ── Объединённый каталог: ИТ + не-ИТ ─────────────────────────
+type CatalogMode = 'it' | 'general';
+
+/** Адаптер: GeneralGoodsItem → GoodsItem для совместимости */
+function toGoodsItem(g: GeneralGoodsItem): GoodsItem {
+  return { name: g.name, okpd2: g.okpd2, okpd2name: g.okpd2name, ktruFixed: g.ktruFixed, placeholder: g.placeholder };
+}
+/** Единый lookup по ключу из обоих каталогов */
+function lookupCatalog(key: string): GoodsItem {
+  return GOODS_CATALOG[key] ?? (GENERAL_CATALOG[key] ? toGoodsItem(GENERAL_CATALOG[key]) : GOODS_CATALOG['pc']);
+}
+/** Единый getNacRegime */
+function getUnifiedNacRegime(key: string): string {
+  if (GOODS_CATALOG[key]) return getNacRegime(key);
+  if (GENERAL_CATALOG[key]) return getGeneralNacRegime(key);
+  return 'none';
+}
+/** Есть ли specHint в general-catalog */
+function getSpecHint(key: string): string | undefined {
+  return GENERAL_CATALOG[key]?.specHint;
+}
 import { buildAntiFasReport, type ComplianceReport } from '../utils/compliance';
 
 type Provider = 'openrouter' | 'groq' | 'deepseek';
@@ -1370,16 +1393,20 @@ const specHintsMap: Record<string, string> = {
 
 // ── Промпты по типу товара ────────────────────────────────────────────────────
 function buildPrompt(row: GoodsRow, lawMode: LawMode): string {
-  const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+  const g = lookupCatalog(row.type);
   const goodsName = g.name;
   const okpd2 = g.okpd2;
   const ktru = g.ktruFixed ?? '';
   const law = lawMode === '223' ? '223-ФЗ' : '44-ФЗ';
   const isSW = !!g.isSoftware;
 
-  const hint = specHintsMap[row.type]
-    ?? (isSW ? '- Наименование и версия ПО\n- Функциональные возможности (подробно, не менее 10 характеристик)\n- Количество лицензий\n- Поддерживаемые ОС (Windows, российские Linux-ОС или эквивалентные)\n- Совместимость с другими системами\n- Безопасность (аутентификация, шифрование, аудит)\n- Централизованное управление\n- Наличие в Едином реестре российского ПО Минцифры России\n- Сертификат ФСТЭК России (если применимо)\n- Тип лицензии (бессрочная/подписка)\n- Срок технической поддержки (мес)\n- Документация на русском языке'
-             : '- Основные технические характеристики (не менее 15 параметров)\n- Интерфейсы и совместимость\n- Потребляемая мощность (не более, Вт)\n- Габариты (ШxГxВ, мм)\n- Масса (не более, кг)\n- Гарантия производителя');
+  // specHint из general-catalog (для не-ИТ) или specHintsMap (для ИТ)
+  const generalHint = getSpecHint(row.type);
+  const hint = generalHint
+    ? generalHint.split(',').map(s => `- ${s.trim()}`).join('\n')
+    : (specHintsMap[row.type]
+      ?? (isSW ? '- Наименование и версия ПО\n- Функциональные возможности (подробно, не менее 10 характеристик)\n- Количество лицензий\n- Поддерживаемые ОС (Windows, российские Linux-ОС или эквивалентные)\n- Совместимость с другими системами\n- Безопасность (аутентификация, шифрование, аудит)\n- Централизованное управление\n- Наличие в Едином реестре российского ПО Минцифры России\n- Сертификат ФСТЭК России (если применимо)\n- Тип лицензии (бессрочная/подписка)\n- Срок технической поддержки (мес)\n- Документация на русском языке'
+               : '- Основные технические характеристики (не менее 15 параметров)\n- Интерфейсы и совместимость\n- Потребляемая мощность (не более, Вт)\n- Габариты (ШxГxВ, мм)\n- Масса (не более, кг)\n- Гарантия производителя'));
 
   return `Ты — эксперт по госзакупкам РФ (${law}, ст. 33 44-ФЗ, ПП РФ № 1875 от 23.12.2024).
 Сформируй технические характеристики для товара по ${law}.
@@ -1424,7 +1451,7 @@ ${hint}
     "okpd2_code": "${okpd2}",
     "okpd2_name": "${g.okpd2name}",
     "ktru_code": "${ktru}",
-    "nac_regime": "${(['os','office','antivirus','crypto','dbms','erp','virt','vdi','backup_sw','dlp','siem','firewall_sw','edr','waf','pam','iam','pki','email','vks','ecm','portal','project_sw','bpm','itsm','monitoring','mdm','hr','gis','ldap','vpn','reporting','cad','license']).includes(row.type) ? 'pp1236' : 'pp878'}",
+    "nac_regime": "${getUnifiedNacRegime(row.type)}",
     "law175_status": "exempt",
     "law175_basis": ""
   },
@@ -1726,12 +1753,12 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
   });
 
   const multi = doneRows.length > 1;
-  const hasHW = doneRows.some((r) => !(GOODS_CATALOG[r.type]?.isSoftware));
-  const hasSW = doneRows.some((r) => !!(GOODS_CATALOG[r.type]?.isSoftware));
+  const hasHW = doneRows.some((r) => !(lookupCatalog(r.type)?.isSoftware));
+  const hasSW = doneRows.some((r) => !!(lookupCatalog(r.type)?.isSoftware));
 
   // Сбор уникальных нацрежимов
   const regimes = new Set(doneRows.map((r) => {
-    return (r.meta?.nac_regime) || getNacRegime(r.type);
+    return (r.meta?.nac_regime) || getUnifiedNacRegime(r.type);
   }));
 
   // ── Helper: builds spec table rows with product name header ──
@@ -1782,7 +1809,7 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
   // РАЗДЕЛ: Наименование, Заказчик, Исполнитель, сроки и адрес поставки
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    const row0 = doneRows[0]; const g0 = GOODS_CATALOG[row0.type] ?? GOODS_CATALOG['pc'];
+    const row0 = doneRows[0]; const g0 = lookupCatalog(row0.type);
     children.push(sectionHead('Наименование, Заказчик, Исполнитель, сроки и адрес поставки', 0));
     children.push(regPara(`Наименование объекта поставки: ${multi ? `Комплект товаров (${doneRows.length} позиций)` : g0.name}`));
     children.push(regPara('Заказчик: '));
@@ -1810,7 +1837,7 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
       }),
     ];
     for (let i = 0; i < doneRows.length; i++) {
-      const row = doneRows[i]; const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+      const row = doneRows[i]; const g = lookupCatalog(row.type);
       svodRows.push(new TableRow({ children: [
         dataCell(String(i + 1), { w: 500 }),
         dataCell(`${g.name}${row.model ? ' (' + row.model + ')' : ''}`, { w: 4000 }),
@@ -1821,7 +1848,7 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
     }
     children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: svodRows }));
   } else {
-    const row0 = doneRows[0]; const g0 = GOODS_CATALOG[row0.type] ?? GOODS_CATALOG['pc'];
+    const row0 = doneRows[0]; const g0 = lookupCatalog(row0.type);
     children.push(regPara(g0.isSoftware
       ? `Требования к количеству поставляемого Товара: ${row0.qty} (${numText(row0.qty)}) лицензий.`
       : `Требования к количеству поставляемого Товара: ${row0.qty} (${numText(row0.qty)}) штук.`));
@@ -1832,9 +1859,9 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
 
   // ── Таблица характеристик (inline для одной позиции — как в референсе) ──
   if (!multi) {
-    const row0 = doneRows[0]; const g0 = GOODS_CATALOG[row0.type] ?? GOODS_CATALOG['pc'];
+    const row0 = doneRows[0]; const g0 = lookupCatalog(row0.type);
     const isSW0 = !!g0.isSoftware;
-    const nacRegime0 = row0.meta?.nac_regime || getNacRegime(row0.type);
+    const nacRegime0 = row0.meta?.nac_regime || getUnifiedNacRegime(row0.type);
     const specs0 = row0.specs ?? [];
     const productName = `${g0.name}${row0.model ? ' (' + row0.model + ')' : ''}`;
     if (specs0.length > 0) {
@@ -1943,9 +1970,9 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
   if (multi) {
     for (let i = 0; i < doneRows.length; i++) {
       const row = doneRows[i];
-      const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+      const g = lookupCatalog(row.type);
       const isSW = !!g.isSoftware;
-      const nacRegime = row.meta?.nac_regime || getNacRegime(row.type);
+      const nacRegime = row.meta?.nac_regime || getUnifiedNacRegime(row.type);
       const specs = row.specs ?? [];
       const ktru = row.meta?.ktru_code || g.ktruFixed || '';
       const productName = `${g.name}${row.model ? ' (' + row.model + ')' : ''}`;
@@ -2008,6 +2035,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   // Local mode keeps previous behavior (requires signed-in user).
   const useBackend = !!(BACKEND_URL || (backendUser && isBackendApiAvailable()));
   const [lawMode, setLawMode] = useState<LawMode>('44');
+  const [catalogMode, setCatalogMode] = useState<CatalogMode>('it');
   const [provider, setProvider] = useState<Provider>('deepseek');
   const [apiKey, setApiKey] = useState('');
   const [model, setModel] = useState('deepseek-chat');
@@ -2064,9 +2092,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const useBackendAi = useBackend && !hasUserApiKey;
   const apiKeyInputType: 'password' | 'text' = showApiKey ? 'text' : 'password';
 
-  const allRowsHaveTemplate = useMemo(() => rows.every((r) => !!GOODS_CATALOG[r.type]?.hardTemplate), [rows]);
+  const allRowsHaveTemplate = useMemo(() => rows.every((r) => !!lookupCatalog(r.type)?.hardTemplate), [rows]);
   const canGenerate = useMemo(
-    () => (useBackend || hasUserApiKey || allRowsHaveTemplate) && rows.every((r) => r.model.trim().length > 0 || !!GOODS_CATALOG[r.type]?.hardTemplate),
+    () => (useBackend || hasUserApiKey || allRowsHaveTemplate) && rows.every((r) => r.model.trim().length > 0 || !!lookupCatalog(r.type)?.hardTemplate),
     [useBackend, hasUserApiKey, allRowsHaveTemplate, rows]
   );
   const shouldRunEnterpriseAutopilot = useMemo(() => {
@@ -2271,8 +2299,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       model: NON_BRAND_LABEL,
       qty: r.qty,
       status: r.status,
-      okpd2: r.meta?.okpd2_code || GOODS_CATALOG[r.type]?.okpd2 || '',
-      ktru: r.meta?.ktru_code || GOODS_CATALOG[r.type]?.ktruFixed || '',
+      okpd2: r.meta?.okpd2_code || lookupCatalog(r.type)?.okpd2 || '',
+      ktru: r.meta?.ktru_code || lookupCatalog(r.type)?.ktruFixed || '',
     })),
   }), [
     lawMode,
@@ -2314,8 +2342,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         type: r.type,
         model: NON_BRAND_LABEL,
         qty: r.qty,
-        okpd2: r.meta?.okpd2_code || GOODS_CATALOG[r.type]?.okpd2 || '',
-        ktru: r.meta?.ktru_code || GOODS_CATALOG[r.type]?.ktruFixed || '',
+        okpd2: r.meta?.okpd2_code || lookupCatalog(r.type)?.okpd2 || '',
+        ktru: r.meta?.ktru_code || lookupCatalog(r.type)?.ktruFixed || '',
         specsCount: r.specs?.length ?? 0,
       })),
     };
@@ -2341,7 +2369,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
   const fetchInternetCandidateForRow = useCallback(async (row: GoodsRow): Promise<SpecsCandidate | null> => {
     if (!row.model.trim()) return null;
-    const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+    const g = lookupCatalog(row.type);
 
     if (useBackend) {
       const backendSpecs = await searchInternetSpecs(row.model.trim(), row.type);
@@ -2382,7 +2410,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
   const fetchEisCandidateForRow = useCallback(async (row: GoodsRow): Promise<SpecsCandidate | null> => {
     if (!row.model.trim()) return null;
-    const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+    const g = lookupCatalog(row.type);
 
     if (useBackend) {
       const eisSpecs = await searchEisSpecs(row.model.trim(), row.type);
@@ -2450,12 +2478,12 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const mutation = useMutation({
     mutationFn: async (options?: GenerateOptions) => {
       const autopilotEnabled = !!(options?.forceAutopilot || automationSettings.autopilot);
-      if (!rows.every((r) => r.model.trim().length > 0 || !!GOODS_CATALOG[r.type]?.hardTemplate)) {
+      if (!rows.every((r) => r.model.trim().length > 0 || !!lookupCatalog(r.type)?.hardTemplate)) {
         showToast('❌ Заполните поле «Модель / описание» для всех строк', false);
         return;
       }
       // Allow generation if all rows have hardTemplate (no API key needed)
-      const allHaveTemplate = rows.every((r) => !!GOODS_CATALOG[r.type]?.hardTemplate);
+      const allHaveTemplate = rows.every((r) => !!lookupCatalog(r.type)?.hardTemplate);
       if (!useBackend && !hasUserApiKey && !allHaveTemplate) {
         showToast('❌ Нужен вход в аккаунт или API-ключ', false);
         return;
@@ -2475,7 +2503,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           setRows([...next]);
 
           const currentRow = next[i];
-          const g = GOODS_CATALOG[currentRow.type] ?? GOODS_CATALOG['pc'];
+          const g = lookupCatalog(currentRow.type);
 
           // Если для типа товара есть жёсткий шаблон — пропускаем AI
           if (g.hardTemplate && g.hardTemplate.length > 0) {
@@ -2511,8 +2539,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               const picked = pickBestCandidate(internetCandidate, eisCandidate, automationSettings.autoPickTopCandidate);
               if (picked) {
                 // Валидация нацрежима и ОКПД2 для результатов поиска
-                const catEntry = GOODS_CATALOG[currentRow.type];
-                const regime = getNacRegime(currentRow.type);
+                const catEntry = lookupCatalog(currentRow.type);
+                const regime = getUnifiedNacRegime(currentRow.type);
                 const pickedMeta = { ...picked.meta };
                 if (!pickedMeta.nac_regime || pickedMeta.nac_regime !== regime) {
                   pickedMeta.nac_regime = regime;
@@ -2543,8 +2571,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             const processed = postProcessSpecs(specs);
 
             // ── Валидация нацрежима и ОКПД2 по каталогу (ПП 1875) ──
-            const catalogEntry = GOODS_CATALOG[currentRow.type];
-            const correctRegime = getNacRegime(currentRow.type);
+            const catalogEntry = lookupCatalog(currentRow.type);
+            const correctRegime = getUnifiedNacRegime(currentRow.type);
             const validatedMeta = { ...meta };
 
             // Если ИИ вернул неверный нацрежим — переопределяем по каталогу
@@ -2805,8 +2833,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           throw new Error('данные ЕИС не найдены');
         }
         // Валидация нацрежима и ОКПД2 по каталогу (ПП 1875)
-        const catEis = GOODS_CATALOG[next[i].type];
-        const regimeEis = getNacRegime(next[i].type);
+        const catEis = lookupCatalog(next[i].type);
+        const regimeEis = getUnifiedNacRegime(next[i].type);
         const eisMeta = { ...candidate.meta };
         if (!eisMeta.nac_regime || eisMeta.nac_regime !== regimeEis) {
           eisMeta.nac_regime = regimeEis;
@@ -2909,7 +2937,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     addLine('');
 
     for (const row of rows.filter((r) => r.status === 'done' && r.specs)) {
-      const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+      const g = lookupCatalog(row.type);
       addLine(`\n=== ${g.name} (${row.qty} шт.) ===`, true);
 
       // Раздел 2
@@ -2954,13 +2982,13 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     const pStyle = { margin: '4px 0', lineHeight: 1.5, color: '#F5F0E8' } as const;
     const boldStyle = { fontWeight: 700, margin: '10px 0 4px', color: '#F5F0E8' } as const;
     const multi = done.length > 1;
-    const hasHW = done.some((r) => !(GOODS_CATALOG[r.type]?.isSoftware));
-    const hasSW = done.some((r) => !!(GOODS_CATALOG[r.type]?.isSoftware));
+    const hasHW = done.some((r) => !(lookupCatalog(r.type)?.isSoftware));
+    const hasSW = done.some((r) => !!(lookupCatalog(r.type)?.isSoftware));
 
     // Сбор уникальных нацрежимов
     const regimes = new Set(done.map((r) => {
-      const g = GOODS_CATALOG[r.type] ?? GOODS_CATALOG['pc'];
-      return (r.meta?.nac_regime) || (g.isSoftware ? 'pp1236' : getNacRegime(r.type));
+      const g = lookupCatalog(r.type);
+      return (r.meta?.nac_regime) || (g.isSoftware ? 'pp1236' : getUnifiedNacRegime(r.type));
     }));
 
     // Рендер таблицы характеристик для одной позиции
@@ -3062,7 +3090,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
         {/* === ШАПКА: Наименование, Заказчик, Исполнитель === */}
         <div style={{ ...boldStyle, fontSize: 13 }}>Наименование, Заказчик, Исполнитель, сроки и адрес поставки</div>
-        <p style={pStyle}>Наименование объекта поставки: {multi ? `комплект товаров (${done.length} позиций)` : (GOODS_CATALOG[done[0].type]?.name ?? '').toLowerCase()}.</p>
+        <p style={pStyle}>Наименование объекта поставки: {multi ? `комплект товаров (${done.length} позиций)` : (lookupCatalog(done[0].type)?.name ?? '').toLowerCase()}.</p>
         <p style={pStyle}>Заказчик: </p>
         <p style={pStyle}>Исполнитель: определяется по результатам закупочных процедур.</p>
 
@@ -3083,7 +3111,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               </thead>
               <tbody>
                 {done.map((row, idx) => {
-                  const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+                  const g = lookupCatalog(row.type);
                   return (
                     <tr key={row.id}>
                       <td style={tdC}>{idx + 1}</td>
@@ -3098,7 +3126,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             </table>
           </>
         ) : (
-          <p style={pStyle}>{(GOODS_CATALOG[done[0].type]?.isSoftware)
+          <p style={pStyle}>{(lookupCatalog(done[0].type)?.isSoftware)
             ? `Требования к количеству поставляемого Товара: ${done[0].qty} (${numText(done[0].qty)}) лицензий.`
             : `Требования к количеству поставляемого Товара: ${done[0].qty} (${numText(done[0].qty)}) штук.`}
           </p>
@@ -3107,8 +3135,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         {/* Требования к качеству → таблица характеристик (одна позиция — прямо здесь) */}
         <p style={{ ...pStyle, fontWeight: 600 }}>Требования к качеству поставляемого Товара:</p>
         {!multi && (() => {
-          const row = done[0]; const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
-          const isSW = !!g.isSoftware; const nacRegime = row.meta?.nac_regime || getNacRegime(row.type);
+          const row = done[0]; const g = lookupCatalog(row.type);
+          const isSW = !!g.isSoftware; const nacRegime = row.meta?.nac_regime || getUnifiedNacRegime(row.type);
           return renderSpecsTable(row, row.specs ?? [], isSW, nacRegime);
         })()}
 
@@ -3196,9 +3224,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
         {/* === ПРИЛОЖЕНИЯ (по одному на каждую позицию, если > 1) === */}
         {multi && done.map((row, idx) => {
-          const g = GOODS_CATALOG[row.type] ?? GOODS_CATALOG['pc'];
+          const g = lookupCatalog(row.type);
           const isSW = !!g.isSoftware;
-          const nacRegime = row.meta?.nac_regime || getNacRegime(row.type);
+          const nacRegime = row.meta?.nac_regime || getUnifiedNacRegime(row.type);
           const specs = row.specs ?? [];
           return (
             <div key={row.id} style={{ marginTop: 32, pageBreakBefore: 'always' }}>
@@ -3360,6 +3388,34 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         </div>
       </div>
 
+      {/* ── Переключатель каталога: ИТ / Любой товар ── */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 8, borderRadius: 10, overflow: 'hidden', border: '1px solid rgba(245,240,232,0.15)', width: 'fit-content' }}>
+        <button
+          onClick={() => { setCatalogMode('it'); setRows(prev => prev.map(r => GOODS_CATALOG[r.type] ? r : { ...r, type: 'pc' })); }}
+          style={{
+            padding: '9px 22px', fontSize: 14, fontWeight: catalogMode === 'it' ? 700 : 400, cursor: 'pointer', border: 'none',
+            background: catalogMode === 'it' ? 'linear-gradient(135deg, #1E3A5F, #2563EB)' : 'rgba(30,25,20,0.6)',
+            color: catalogMode === 'it' ? '#F5F0E8' : '#9CA3AF',
+            transition: 'all 0.2s',
+          }}
+        >
+          🖥️ ИТ-оборудование и ПО
+          <span style={{ fontSize: 10, marginLeft: 6, opacity: 0.7 }}>({Object.keys(GOODS_CATALOG).length})</span>
+        </button>
+        <button
+          onClick={() => { setCatalogMode('general'); setRows(prev => prev.map(r => GENERAL_CATALOG[r.type] ? r : { ...r, type: 'deskOffice' })); }}
+          style={{
+            padding: '9px 22px', fontSize: 14, fontWeight: catalogMode === 'general' ? 700 : 400, cursor: 'pointer', border: 'none',
+            background: catalogMode === 'general' ? 'linear-gradient(135deg, #4A2C1A, #B45309)' : 'rgba(30,25,20,0.6)',
+            color: catalogMode === 'general' ? '#F5F0E8' : '#9CA3AF',
+            transition: 'all 0.2s',
+          }}
+        >
+          📦 Любой товар
+          <span style={{ fontSize: 10, marginLeft: 6, opacity: 0.7 }}>({Object.keys(GENERAL_CATALOG).length})</span>
+        </button>
+      </div>
+
       {/* Таблица позиций */}
       <div className="rows-table-wrap">
         <table className="rows-table">
@@ -3387,26 +3443,39 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                       setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, type: val } : x)));
                     }}
                     style={{
-                      minWidth: 180,
+                      minWidth: 220,
                       ...(autoDetectedRow === row.id ? { outline: '2px solid #FBBF24', outlineOffset: 1 } : {}),
                     }}
                   >
-                    {GOODS_GROUPS.flatMap((group) => [
-                      <option key={`hdr_${group.label}`} disabled value="" style={{ fontWeight: 'bold', background: '#1a1613' }}>
-                        {'── ' + group.label + ' ──'}
-                      </option>,
-                      ...group.items.map((key) => (
-                        <option key={key} value={key}>
-                          {'  ' + (GOODS_CATALOG[key]?.name ?? key)}
-                        </option>
-                      )),
-                    ])}
+                    {catalogMode === 'it' ? (
+                      GOODS_GROUPS.flatMap((group) => [
+                        <option key={`hdr_${group.label}`} disabled value="" style={{ fontWeight: 'bold', background: '#1a1613' }}>
+                          {'── ' + group.label + ' ──'}
+                        </option>,
+                        ...group.items.map((key) => (
+                          <option key={key} value={key}>
+                            {'  ' + (GOODS_CATALOG[key]?.name ?? key)}
+                          </option>
+                        )),
+                      ])
+                    ) : (
+                      GENERAL_GROUPS.flatMap((group) => [
+                        <option key={`ghdr_${group.label}`} disabled value="" style={{ fontWeight: 'bold', background: '#1a1613' }}>
+                          {'── ' + group.label + ' ──'}
+                        </option>,
+                        ...group.items.map((key) => (
+                          <option key={key} value={key}>
+                            {'  ' + (GENERAL_CATALOG[key]?.name ?? key)}
+                          </option>
+                        )),
+                      ])
+                    )}
                   </select>
                   {/* ОКПД2 и нацрежим */}
                   <div style={{ fontSize: 10, marginTop: 2, color: '#9CA3AF', lineHeight: 1.2 }}>
-                    {GOODS_CATALOG[row.type]?.okpd2 ?? ''}
+                    {lookupCatalog(row.type)?.okpd2 ?? ''}
                     {(() => {
-                      const r = getNacRegime(row.type);
+                      const r = getUnifiedNacRegime(row.type);
                       const labels: Record<string, string> = { pp878: 'РЭПР', pp1236: 'Реестр ПО', pp616: 'Промтовар', none: '—' };
                       return r !== 'none' ? <span style={{ marginLeft: 6, padding: '0 4px', borderRadius: 3, fontSize: 9, background: r === 'pp878' ? '#1E3A5F' : r === 'pp1236' ? '#1B4332' : '#3D2B1F', color: '#F5F0E8' }}>{labels[r]}</span> : null;
                     })()}
@@ -3416,7 +3485,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                 <td>
                   <input
                     value={row.model}
-                    placeholder={GOODS_CATALOG[row.type]?.placeholder ?? 'Модель / описание...'}
+                    placeholder={lookupCatalog(row.type)?.placeholder ?? 'Модель / описание...'}
                     onChange={(e) => {
                       const value = e.target.value;
                       const inputEl = e.target as HTMLElement;
@@ -3442,7 +3511,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                           // Проверяем кэш
                           if (aiSearchCacheRef.current[query]) {
                             const cached = aiSearchCacheRef.current[query];
-                            const items = cached.map(k => ({ type: k, name: GOODS_CATALOG[k]?.name ?? k, okpd2: GOODS_CATALOG[k]?.okpd2 ?? '' }));
+                            const items = cached.map(k => ({ type: k, name: lookupCatalog(k)?.name ?? k, okpd2: lookupCatalog(k)?.okpd2 ?? '' }));
                             if (items.length > 0) {
                               const el2 = document.querySelector(`input[placeholder*="Например"]`) as HTMLElement;
                               const r2 = el2 ? el2.getBoundingClientRect() : inputRect;
@@ -3451,9 +3520,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                             return;
                           }
                           // Формируем список ключей и лейблов
-                          const keys = Object.keys(GOODS_CATALOG);
+                          const keys = [...Object.keys(GOODS_CATALOG), ...Object.keys(GENERAL_CATALOG)];
                           const labels: Record<string, string> = {};
-                          keys.forEach(k => { labels[k] = GOODS_CATALOG[k]?.name ?? k; });
+                          keys.forEach(k => { labels[k] = lookupCatalog(k)?.name ?? k; });
                           try {
                             const aiTypes = await detectBrandTypesAI(provider, apiKey, model, query, keys, labels);
                             aiSearchCacheRef.current[query] = aiTypes;
@@ -3462,9 +3531,10 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                               const seen = new Set(allTypes.map(t => t.type));
                               const merged = [...allTypes];
                               for (const k of aiTypes) {
-                                if (!seen.has(k) && GOODS_CATALOG[k]) {
+                                const lk = lookupCatalog(k);
+                                if (!seen.has(k) && lk) {
                                   seen.add(k);
-                                  merged.push({ type: k, name: GOODS_CATALOG[k].name, okpd2: GOODS_CATALOG[k].okpd2 });
+                                  merged.push({ type: k, name: lk.name, okpd2: lk.okpd2 });
                                 }
                               }
                               const el2 = document.querySelector(`input[placeholder*="Например"]`) as HTMLElement;
@@ -3511,7 +3581,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                 </td>
                 <td>
                   <span className={row.status === 'done' ? 'ok' : row.status === 'error' ? 'warn' : 'muted'}>
-                    {row.status === 'idle' && (GOODS_CATALOG[row.type]?.hardTemplate ? '📋 Шаблон готов' : 'Ожидание')}
+                    {row.status === 'idle' && (lookupCatalog(row.type)?.hardTemplate ? '📋 Шаблон готов' : 'Ожидание')}
                     {row.status === 'loading' && '⏳ Генерация...'}
                     {row.status === 'done' && `✅ Готово (${row.specs?.length ?? 0} хар-к)`}
                     {row.status === 'error' && `❌ ${row.error ?? 'Ошибка'}`}
@@ -3544,7 +3614,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                   <td colSpan={6} style={{ padding: 0 }}>
                     <div className="spec-editor" style={{ background: '#141824', border: '1px solid #2A3444', borderRadius: 0, padding: '12px 16px', margin: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <strong style={{ color: '#FBBF24', fontSize: 13 }}>✏️ Редактирование характеристик — {GOODS_CATALOG[row.type]?.name ?? row.type}</strong>
+                        <strong style={{ color: '#FBBF24', fontSize: 13 }}>✏️ Редактирование характеристик — {lookupCatalog(row.type)?.name ?? row.type}</strong>
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button type="button" onClick={() => addSpec(row.id)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, background: '#166534', color: '#fff', border: 'none', cursor: 'pointer' }}>+ Добавить</button>
                           <button type="button" onClick={finishEditing} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 4, background: '#1F5C8B', color: '#fff', border: 'none', cursor: 'pointer' }}>✓ Готово</button>
@@ -3793,7 +3863,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           </div>
           {/* Строки */}
           {typeSuggestions.items.map((item, idx) => {
-            const regime = getNacRegime(item.type);
+            const regime = getUnifiedNacRegime(item.type);
             const regLabels: Record<string, string> = { pp878: 'РЭПР', pp1236: 'Реестр ПО', pp616: 'Промтовар', none: '—' };
             const regColors: Record<string, string> = { pp878: '#2563EB', pp1236: '#16A34A', pp616: '#D97706', none: '#6B7280' };
             const currentRow = rows.find(r => r.id === typeSuggestions.rowId);

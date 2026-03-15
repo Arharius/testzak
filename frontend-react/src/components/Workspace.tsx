@@ -2081,7 +2081,7 @@ type Props = {
   automationSettings: AutomationSettings;
   platformSettings: PlatformIntegrationSettings;
   enterpriseSettings: EnterpriseSettings;
-  backendUser?: { email: string; role: string; tz_count: number; tz_limit: number } | null;
+  backendUser?: { email: string; role: string; tz_count: number; tz_limit: number; trial_active?: boolean; trial_days_left?: number } | null;
 };
 
 export function Workspace({ automationSettings, platformSettings, enterpriseSettings, backendUser }: Props) {

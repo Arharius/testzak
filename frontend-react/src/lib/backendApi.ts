@@ -61,7 +61,17 @@ export function clearStoredAuth(): void {
   localStorage.removeItem(USER_KEY);
 }
 
-export function getStoredUser(): { email: string; role: string; tz_count: number; tz_limit: number } | null {
+export type BackendUser = {
+  email: string;
+  role: string;
+  tz_count: number;
+  tz_limit: number;
+  trial_active?: boolean;
+  trial_days_left?: number;
+  trial_ends_at?: string | null;
+};
+
+export function getStoredUser(): BackendUser | null {
   const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
@@ -149,7 +159,7 @@ export async function sendMagicLink(email: string): Promise<{ ok: boolean; messa
 export async function loginWithPassword(username: string, password: string): Promise<{
   ok: boolean;
   token: string;
-  user: { email: string; role: string; tz_count: number; tz_limit: number };
+  user: BackendUser;
 }> {
   return apiPost('/api/auth/login', { username, password }, false, SHORT_TIMEOUT_MS);
 }
@@ -157,14 +167,12 @@ export async function loginWithPassword(username: string, password: string): Pro
 export async function verifyMagicToken(token: string): Promise<{
   ok: boolean;
   token: string;
-  user: { email: string; role: string; tz_count: number; tz_limit: number };
+  user: BackendUser;
 }> {
   return apiGet(`/api/auth/verify?token=${encodeURIComponent(token)}`);
 }
 
-export async function getMe(): Promise<{
-  email: string; role: string; tz_count: number; tz_limit: number; subscription_until: string | null;
-}> {
+export async function getMe(): Promise<BackendUser & { subscription_until: string | null }> {
   return apiGet('/api/auth/me', true);
 }
 

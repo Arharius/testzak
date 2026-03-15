@@ -225,6 +225,9 @@ html[data-theme='contrast'] .orb { opacity: 0.12; }
 .auth-toast.ok { background: rgba(5, 100, 70, 0.92); }
 .auth-toast.err { background: rgba(150, 20, 35, 0.92); }
 
+.trial-banner ~ .auth-rail {
+  top: 52px;
+}
 .auth-rail {
   position: fixed;
   top: 14px;
@@ -356,6 +359,91 @@ html[data-theme='contrast'] .auth-badge.pro {
   color: var(--text-muted);
   background: rgba(107, 122, 141, 0.1);
   border-color: rgba(107, 122, 141, 0.2);
+}
+.auth-badge.trial {
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-color: rgba(251, 191, 36, 0.3);
+  animation: trial-pulse 2s ease-in-out infinite;
+}
+html[data-theme='contrast'] .auth-badge.trial {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.25);
+}
+@keyframes trial-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* ── Trial banner ─────────────────────────────────────────── */
+.trial-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10020;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 24px;
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.15) 0%, rgba(245, 158, 11, 0.1) 100%);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.25);
+  backdrop-filter: blur(16px);
+  font-size: 13px;
+  color: var(--text);
+}
+.trial-banner.trial-expired {
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.12) 0%, rgba(239, 68, 68, 0.08) 100%);
+  border-bottom-color: rgba(248, 113, 113, 0.2);
+}
+html[data-theme='contrast'] .trial-banner {
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.08) 0%, rgba(245, 158, 11, 0.04) 100%);
+  border-bottom-color: rgba(245, 158, 11, 0.15);
+  color: var(--text);
+}
+html[data-theme='contrast'] .trial-banner.trial-expired {
+  background: linear-gradient(90deg, rgba(248, 113, 113, 0.06) 0%, rgba(239, 68, 68, 0.03) 100%);
+  border-bottom-color: rgba(248, 113, 113, 0.12);
+}
+.trial-banner-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.trial-banner-text {
+  flex: 1;
+  max-width: 600px;
+}
+.trial-banner-text strong {
+  color: var(--amber);
+}
+.trial-expired .trial-banner-text strong {
+  color: var(--red);
+}
+html[data-theme='contrast'] .trial-banner-text strong {
+  color: #b45309;
+}
+html[data-theme='contrast'] .trial-expired .trial-banner-text strong {
+  color: #dc2626;
+}
+.trial-banner-btn {
+  flex-shrink: 0;
+  padding: 6px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.trial-banner-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  transform: translateY(-1px);
 }
 
 .auth-ghost-btn, .auth-primary-btn, .auth-submit-btn {

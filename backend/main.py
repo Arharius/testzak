@@ -59,6 +59,8 @@ try:
         decode_jwt,
         sync_user_entitlements,
         authenticate_superadmin,
+        is_trial_active,
+        trial_days_left,
     )
 except ImportError:
     from database import (
@@ -82,6 +84,8 @@ except ImportError:
         decode_jwt,
         sync_user_entitlements,
         authenticate_superadmin,
+        is_trial_active,
+        trial_days_left,
     )
 
 # ── Search module ──────────────────────────────────────────────
@@ -185,6 +189,19 @@ async def log_requests(request: Request, call_next):
 
 # ── Pydantic models ─────────────────────────────────────────────
 _EMAIL_RE = _re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
+
+def _user_response(user: User) -> dict:
+    """Build standardized user info dict for API responses."""
+    return {
+        "email": user.email,
+        "role": user.role,
+        "tz_count": user.tz_count,
+        "tz_limit": user.tz_limit,
+        "trial_active": is_trial_active(user),
+        "trial_days_left": trial_days_left(user),
+        "trial_ends_at": user.trial_ends_at.isoformat() if user.trial_ends_at else None,
+    }
+
 
 class SendLinkRequest(BaseModel):
     email: str
@@ -1344,12 +1361,7 @@ def login_with_password(request: Request, req: LoginRequest, db: Session = Depen
     return {
         "ok": True,
         "token": jwt_token,
-        "user": {
-            "email": user.email,
-            "role": user.role,
-            "tz_count": user.tz_count,
-            "tz_limit": user.tz_limit,
-        },
+        "user": _user_response(user),
     }
 
 @app.get("/api/auth/verify")
@@ -1363,12 +1375,7 @@ def verify_token(token: str = Query(...), db: Session = Depends(get_db)):
     return {
         "ok": True,
         "token": jwt_token,
-        "user": {
-            "email": user.email,
-            "role": user.role,
-            "tz_count": user.tz_count,
-            "tz_limit": user.tz_limit,
-        },
+        "user": _user_response(user),
     }
 
 @app.post("/api/auth/verify")
@@ -1381,23 +1388,14 @@ def verify_token_post(req: VerifyTokenRequest, db: Session = Depends(get_db)):
     return {
         "ok": True,
         "token": jwt_token,
-        "user": {
-            "email": user.email,
-            "role": user.role,
-            "tz_count": user.tz_count,
-            "tz_limit": user.tz_limit,
-        },
+        "user": _user_response(user),
     }
 
 @app.get("/api/auth/me")
 def get_me(user: User = Depends(get_current_user)):
-    return {
-        "email": user.email,
-        "role": user.role,
-        "tz_count": user.tz_count,
-        "tz_limit": user.tz_limit,
-        "subscription_until": user.subscription_until.isoformat() if user.subscription_until else None,
-    }
+    resp = _user_response(user)
+    resp["subscription_until"] = user.subscription_until.isoformat() if user.subscription_until else None
+    return resp
 
 # ── AI Proxy ──────────────────────────────────────────────────
 @app.post("/api/ai/generate")

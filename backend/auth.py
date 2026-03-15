@@ -49,6 +49,27 @@ ADMIN_EMAILS = set(
 def is_admin_email(email: str) -> bool:
     return email.lower().strip() in ADMIN_EMAILS
 
+def is_trial_active(user: User) -> bool:
+    """Check if user is within their PRO trial period."""
+    if not user.trial_ends_at:
+        return False
+    trial_end = user.trial_ends_at
+    if hasattr(trial_end, "replace") and trial_end.tzinfo is None:
+        trial_end = trial_end.replace(tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) < trial_end
+
+
+def trial_days_left(user: User) -> int:
+    """Return number of days left in trial (0 if expired or no trial)."""
+    if not user.trial_ends_at:
+        return 0
+    trial_end = user.trial_ends_at
+    if hasattr(trial_end, "replace") and trial_end.tzinfo is None:
+        trial_end = trial_end.replace(tzinfo=timezone.utc)
+    delta = trial_end - datetime.now(timezone.utc)
+    return max(0, delta.days + (1 if delta.seconds > 0 else 0))
+
+
 def sync_user_entitlements(user: User) -> bool:
     """Bring DB user role/limits in line with env-configured entitlements."""
     changed = False
@@ -65,10 +86,18 @@ def sync_user_entitlements(user: User) -> bool:
             user.tz_limit = -1
             changed = True
     else:
-        desired_limit = max(1, FREE_TZ_LIMIT)
-        if user.tz_limit != desired_limit:
-            user.tz_limit = desired_limit
-            changed = True
+        # Free user — check if trial is still active
+        if is_trial_active(user):
+            # During trial → unlimited
+            if user.tz_limit != -1:
+                user.tz_limit = -1
+                changed = True
+        else:
+            # Trial expired or no trial → standard free limit
+            desired_limit = max(1, FREE_TZ_LIMIT)
+            if user.tz_limit != desired_limit:
+                user.tz_limit = desired_limit
+                changed = True
 
     return changed
 
@@ -126,16 +155,28 @@ def verify_magic_token(token: str, db) -> str | None:
     db.commit()
     return mt.email
 
+TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
+
+
 def get_or_create_user(email: str, db) -> User:
     email = email.lower().strip()
     user = db.query(User).filter_by(email=email).first()
     if not user:
         role = "admin" if is_admin_email(email) else "free"
+        trial_end = None
+        effective_limit = max(1, FREE_TZ_LIMIT)
+        if role == "admin":
+            effective_limit = -1
+        elif TRIAL_DAYS > 0:
+            # New user gets a PRO trial
+            trial_end = datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)
+            effective_limit = -1  # unlimited during trial
         user = User(
             id=str(uuid.uuid4()),
             email=email,
             role=role,
-            tz_limit=-1 if role == "admin" else max(1, FREE_TZ_LIMIT)
+            tz_limit=effective_limit,
+            trial_ends_at=trial_end,
         )
         db.add(user)
         db.flush()

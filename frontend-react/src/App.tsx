@@ -279,7 +279,9 @@ export function App() {
       ? 'Admin'
       : backendUser.role === 'pro'
         ? 'Pro'
-        : `Free (${backendUser.tz_count}/${backendUser.tz_limit})`)
+        : backendUser.trial_active
+          ? `Trial (${backendUser.trial_days_left}д)`
+          : `Free (${backendUser.tz_count}/${backendUser.tz_limit})`)
     : '';
 
   const themeNote = theme === 'contrast'
@@ -303,6 +305,32 @@ export function App() {
         </div>
       )}
 
+      {/* Trial banner */}
+      {backendUser && backendUser.trial_active && backendUser.trial_days_left != null && (
+        <div className="trial-banner">
+          <span className="trial-banner-icon">⚡</span>
+          <span className="trial-banner-text">
+            PRO-trial: <strong>{backendUser.trial_days_left} {backendUser.trial_days_left === 1 ? 'день' : backendUser.trial_days_left < 5 ? 'дня' : 'дней'}</strong> осталось — безлимитные ТЗ, все 91 тип, приоритетная AI-генерация
+          </span>
+          <button className="trial-banner-btn" onClick={() => setShowLogin(true)}>
+            Оформить Pro
+          </button>
+        </div>
+      )}
+
+      {/* Trial expired banner */}
+      {backendUser && !backendUser.trial_active && backendUser.trial_ends_at && backendUser.role === 'free' && (
+        <div className="trial-banner trial-expired">
+          <span className="trial-banner-icon">⏰</span>
+          <span className="trial-banner-text">
+            Пробный период завершён. Вы на плане <strong>Free ({backendUser.tz_limit} ТЗ/мес)</strong>. Оформите Pro для безлимитного доступа.
+          </span>
+          <button className="trial-banner-btn" onClick={() => setShowLogin(true)}>
+            Оформить Pro — 1500 ₽/мес
+          </button>
+        </div>
+      )}
+
       {/* Auth bar — top right */}
       {backendAvailable && (
         <div className="auth-rail">
@@ -312,7 +340,7 @@ export function App() {
                 <span className="auth-dot" aria-hidden="true"></span>
                 {backendUser.email}
               </span>
-              <span className={`auth-badge ${backendUser.role === 'admin' ? 'admin' : backendUser.role === 'pro' ? 'pro' : 'free'}`}>
+              <span className={`auth-badge ${backendUser.role === 'admin' ? 'admin' : backendUser.role === 'pro' ? 'pro' : backendUser.trial_active ? 'trial' : 'free'}`}>
                 {backendTierLabel}
               </span>
               <button

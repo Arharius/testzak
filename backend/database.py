@@ -23,6 +23,7 @@ class User(Base):
     tz_count = Column(Integer, default=0)
     tz_limit = Column(Integer, default=3)  # free = 3/month, pro/admin = -1 (unlimited)
     tz_month_start = Column(DateTime, nullable=True)  # track monthly reset
+    trial_ends_at = Column(DateTime, nullable=True)  # 7-day PRO trial end
     subscription_id = Column(String, nullable=True)
     subscription_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -111,3 +112,5 @@ def _auto_migrate():
                 conn.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR UNIQUE"))
             if "password_hash" not in existing:
                 conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
+            if "trial_ends_at" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN trial_ends_at TIMESTAMP"))

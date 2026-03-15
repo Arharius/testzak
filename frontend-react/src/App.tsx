@@ -284,14 +284,14 @@ export function App() {
 
   const themeNote = theme === 'contrast'
     ? {
-      label: 'Amber Pulse',
-      title: 'Контрастный режим для интенсивной работы',
-      description: 'Тот же функционал проекта с акцентом на янтарно-киановую палитру, более яркие маркеры состояния и повышенную читаемость рабочих блоков.',
+      label: 'Arctic',
+      title: 'Светлая тема для комфортной дневной работы',
+      description: 'Чистый светлый интерфейс с высокой контрастностью текста. Идеально для длительной работы с документацией и спецификациями.',
     }
     : {
-      label: 'Sapphire Sovereign',
-      title: 'Тихий интерфейс для тяжёлых закупочных задач',
-      description: 'Оставили текущую бизнес-логику проекта и компоненты, но перевели оболочку в более “классический” premium-стиль с акцентом на рабочую область.',
+      label: 'Obsidian',
+      title: 'Профессиональная тёмная тема',
+      description: 'Минималистичный тёмный интерфейс с чёткими шрифтами и холодными акцентами. Снижает нагрузку на глаза при работе в тёмном окружении.',
     };
 
   return (
@@ -347,7 +347,7 @@ export function App() {
           onClick={() => setTheme('sapphire')}
           aria-pressed={theme === 'sapphire'}
         >
-          Классика
+          Obsidian
         </button>
         <button
           type="button"
@@ -355,7 +355,7 @@ export function App() {
           onClick={() => setTheme('contrast')}
           aria-pressed={theme === 'contrast'}
         >
-          Янтарь
+          Arctic
         </button>
       </div>
 

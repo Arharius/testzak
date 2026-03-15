@@ -105,11 +105,20 @@ def _auto_migrate():
     """Add missing columns to existing tables (safe to run multiple times)."""
     from sqlalchemy import inspect, text
     insp = inspect(engine)
+    is_sqlite = "sqlite" in DATABASE_URL
     if "users" in insp.get_table_names():
         existing = {c["name"] for c in insp.get_columns("users")}
         with engine.begin() as conn:
             if "username" not in existing:
-                conn.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR UNIQUE"))
+                # SQLite cannot add UNIQUE columns; add without UNIQUE, then create index
+                if is_sqlite:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR"))
+                    try:
+                        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_username ON users(username)"))
+                    except Exception:
+                        pass
+                else:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR UNIQUE"))
             if "password_hash" not in existing:
                 conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
             if "trial_ends_at" not in existing:

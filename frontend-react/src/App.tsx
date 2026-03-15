@@ -109,6 +109,13 @@ export function App() {
     return () => window.removeEventListener('tz:automation-log-updated', onLogUpdated as EventListener);
   }, []);
 
+  // Listen for pricing modal open event from Workspace
+  useEffect(() => {
+    const onOpenPricing = () => setShowPricing(true);
+    window.addEventListener('tz:open-pricing', onOpenPricing);
+    return () => window.removeEventListener('tz:open-pricing', onOpenPricing);
+  }, []);
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     try {

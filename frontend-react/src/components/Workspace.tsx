@@ -106,21 +106,6 @@ const PROCUREMENT_METHOD_LABELS: Record<string, string> = {
   single_supplier: 'Единственный поставщик',
 };
 
-function EyeIcon({ open }: { open: boolean }) {
-  return open ? (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M2 12c1.9-4.1 5.6-7 10-7s8.1 2.9 10 7c-1.9 4.1-5.6 7-10 7s-8.1-2.9-10-7Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="1.7" />
-    </svg>
-  ) : (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M2 12c1.9-4.1 5.6-7 10-7 2.2 0 4.2.7 5.9 2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M22 12c-1.9 4.1-5.6 7-10 7-2.2 0-4.2-.7-5.9-2" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="m3 3 18 18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 // ── РАСШИРЕННЫЕ specHints (уровень детализации ЕИС) ──
 // Для ПО: 25-50 параметров, для оборудования: 15-30 параметров
 // Вынесены на уровень модуля для доступа из buildPrompt, buildSpecSearchPrompt и buildEisStylePrompt
@@ -2065,11 +2050,11 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const useBackend = !!(BACKEND_URL || (backendUser && isBackendApiAvailable()));
   const [lawMode, setLawMode] = useState<LawMode>('44');
   const [catalogMode, setCatalogMode] = useState<CatalogMode>('it');
-  const [provider, setProvider] = useState<Provider>('deepseek');
-  const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('deepseek-chat');
+  const [provider, _setProvider] = useState<Provider>('deepseek');  // eslint-disable-line @typescript-eslint/no-unused-vars
+  const [apiKey] = useState(''); // Client-side keys disabled — all AI through backend
+  const [model] = useState('deepseek-chat');
   const [authPanelOpen, setAuthPanelOpen] = useState<boolean>(() => !useBackend);
-  const [showApiKey, setShowApiKey] = useState(false);
+  void _setProvider; // keep setter for future admin panel
   const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
   const [docxReady, setDocxReady] = useState(false);
   const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
@@ -2117,14 +2102,13 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     setTimeout(() => previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
   }, []);
 
-  const hasUserApiKey = apiKey.trim().length > 6;
-  const useBackendAi = useBackend && !hasUserApiKey;
-  const apiKeyInputType: 'password' | 'text' = showApiKey ? 'text' : 'password';
+  const hasUserApiKey = false; // Client-side API keys disabled — all AI through backend
+  const useBackendAi = useBackend;
 
   const allRowsHaveTemplate = useMemo(() => rows.every((r) => !!lookupCatalog(r.type)?.hardTemplate), [rows]);
   const canGenerate = useMemo(
-    () => (useBackend || hasUserApiKey || allRowsHaveTemplate) && rows.every((r) => r.model.trim().length > 0 || !!lookupCatalog(r.type)?.hardTemplate),
-    [useBackend, hasUserApiKey, allRowsHaveTemplate, rows]
+    () => (useBackend || allRowsHaveTemplate) && rows.every((r) => r.model.trim().length > 0 || !!lookupCatalog(r.type)?.hardTemplate),
+    [useBackend, allRowsHaveTemplate, rows]
   );
   const shouldRunEnterpriseAutopilot = useMemo(() => {
     if (!useBackend) return false;
@@ -3301,113 +3285,41 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           aria-expanded={authPanelOpen}
         >
           <span className="workspace-auth-toggle-title">
-            <span className={`workspace-auth-dot ${useBackend ? 'is-backend' : 'is-local'}`} aria-hidden="true"></span>
-            Авторизация и доступ к AI
+            <span className={`workspace-auth-dot ${backendUser ? 'is-backend' : 'is-local'}`} aria-hidden="true"></span>
+            Доступ и лимиты
           </span>
           <span className="workspace-auth-toggle-meta">
-            {useBackend ? (hasUserApiKey ? 'Backend + ваш ключ' : 'Backend') : 'Локально по ключу'}
+            {backendUser ? (backendUser.role === 'pro' || backendUser.role === 'admin' ? 'Pro' : backendUser.trial_active ? 'Trial' : 'Free') : 'Требуется вход'}
           </span>
           <span className={`workspace-auth-toggle-chevron ${authPanelOpen ? 'open' : ''}`} aria-hidden="true">▾</span>
         </button>
 
         <div className={`workspace-auth-collapse ${authPanelOpen ? 'open' : ''}`}>
           <div className="workspace-auth-collapse-inner">
-            {useBackend ? (
-              <>
-                <div style={{ background: '#0F3B1E', border: '1px solid #166534', borderRadius: 8, padding: '10px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, fontSize: 13 }}>
-                  <span style={{ color: '#86EFAC' }}>
-                    ✅ Сервер подключён{hasUserApiKey ? ' — AI по вашему ключу' : ' — API-ключ не обязателен'}
+            {backendUser ? (
+              <div style={{ background: '#0F3B1E', border: '1px solid #166534', borderRadius: 8, padding: '12px 16px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12, fontSize: 13 }}>
+                <span style={{ color: '#86EFAC' }}>
+                  ✅ {backendUser.email}
+                </span>
+                <span style={{ color: '#4ADE80', fontSize: 12, fontWeight: 600 }}>
+                  {backendUser.role === 'admin' ? 'Безлимит (Admin)' : backendUser.role === 'pro' ? '♾️ Pro — безлимитные ТЗ' : backendUser.trial_active ? `⚡ Trial (${backendUser.trial_days_left} дн.) — безлимит` : `Free — ${backendUser.tz_count ?? 0}/${backendUser.tz_limit ?? 3} ТЗ в этом месяце`}
+                </span>
+                {backendUser.role === 'free' && !backendUser.trial_active && (
+                  <span style={{ marginLeft: 'auto', fontSize: 12, color: '#FBBF24' }}>
+                    Хотите больше? <strong style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { const evt = new CustomEvent('tz:open-pricing'); window.dispatchEvent(evt); }}>Оформите Pro</strong>
                   </span>
-                  <span style={{ color: '#4ADE80', fontSize: 12 }}>
-                    {backendUser?.role === 'admin' ? 'Безлимит (Admin)' : backendUser?.role === 'pro' ? '∞ Pro' : `${backendUser?.tz_count ?? 0}/${backendUser?.tz_limit ?? 3} ТЗ`}
-                  </span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', color: '#94A3B8', fontSize: 12 }}>
-                    Провайдер:
-                    <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)} style={{ fontSize: 12, padding: '2px 6px', background: '#1E293B', color: '#E2E8F0', border: '1px solid #334155', borderRadius: 4 }}>
-                      <option value="deepseek">DeepSeek</option>
-                      <option value="openrouter">OpenRouter</option>
-                      <option value="groq">Groq</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="grid two">
-                  <label>
-                    Модель
-                    <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
-                  </label>
-                  <label>
-                    API-ключ (опционально)
-                    <div className="workspace-secret-row">
-                      <input
-                        type={apiKeyInputType}
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        placeholder="sk-..."
-                        autoComplete="off"
-                        spellCheck={false}
-                      />
-                      <button
-                        type="button"
-                        className="workspace-secret-toggle"
-                        onClick={() => setShowApiKey((v) => !v)}
-                        aria-label={showApiKey ? 'Скрыть API-ключ' : 'Показать API-ключ'}
-                        title={showApiKey ? 'Скрыть ключ' : 'Показать ключ'}
-                      >
-                        <EyeIcon open={showApiKey} />
-                        <span className="sr-only">{showApiKey ? 'Скрыть' : 'Показать'}</span>
-                      </button>
-                    </div>
-                  </label>
-                </div>
-                <div style={{ fontSize: 12, color: '#94A3B8', padding: '6px 10px', background: '#1E293B', borderRadius: 6, marginBottom: 8 }}>
-                  💡 Поле ключа скрывает ввод. Если указать ключ, AI-запросы пойдут напрямую к провайдеру (например, DeepSeek).
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="grid two">
-                  <label>
-                    Провайдер
-                    <select value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
-                      <option value="deepseek">DeepSeek</option>
-                      <option value="openrouter">OpenRouter</option>
-                      <option value="groq">Groq</option>
-                    </select>
-                  </label>
-                  <label>
-                    Модель
-                    <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-chat" />
-                  </label>
-                  <label>
-                    API-ключ
-                    <div className="workspace-secret-row">
-                      <input
-                        type={apiKeyInputType}
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        placeholder="sk-..."
-                        autoComplete="off"
-                        spellCheck={false}
-                      />
-                      <button
-                        type="button"
-                        className="workspace-secret-toggle"
-                        onClick={() => setShowApiKey((v) => !v)}
-                        aria-label={showApiKey ? 'Скрыть API-ключ' : 'Показать API-ключ'}
-                        title={showApiKey ? 'Скрыть ключ' : 'Показать ключ'}
-                      >
-                        <EyeIcon open={showApiKey} />
-                        <span className="sr-only">{showApiKey ? 'Скрыть' : 'Показать'}</span>
-                      </button>
-                    </div>
-                  </label>
-                </div>
-                {isBackendApiAvailable() && (
-                  <div style={{ fontSize: 12, color: '#94A3B8', padding: '6px 10px', background: '#1E293B', borderRadius: 6, marginBottom: 8 }}>
-                    💡 <strong style={{ color: '#CBD5E1' }}>Войдите</strong> (кнопка «Войти» вверху справа) — без API-ключа, реальный поиск в интернете и ЕИС.
-                  </div>
                 )}
-              </>
+              </div>
+            ) : (
+              <div style={{ background: '#1E293B', border: '1px solid #334155', borderRadius: 8, padding: '16px', textAlign: 'center' }}>
+                <div style={{ fontSize: 15, color: '#E2E8F0', marginBottom: 8 }}>
+                  🔐 Для генерации ТЗ необходима авторизация
+                </div>
+                <div style={{ fontSize: 13, color: '#94A3B8', marginBottom: 12 }}>
+                  Войдите или зарегистрируйтесь (кнопка «Войти» вверху справа).<br/>
+                  Новым пользователям — <strong style={{ color: '#FBBF24' }}>7 дней бесплатного Pro</strong>.
+                </div>
+              </div>
             )}
           </div>
         </div>
@@ -3750,25 +3662,26 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         <button type="button" onClick={addRow}>+ Добавить строку</button>
         <button
           type="button"
-          disabled={!canGenerate || mutation.isPending}
-          onClick={() => mutation.mutate({ trigger: 'manual' })}
-          style={{ background: canGenerate && !mutation.isPending ? '#1F5C8B' : undefined, color: canGenerate && !mutation.isPending ? '#fff' : undefined }}
+          disabled={!canGenerate || mutation.isPending || !backendUser}
+          onClick={() => backendUser ? mutation.mutate({ trigger: 'manual' }) : undefined}
+          style={{ background: canGenerate && !mutation.isPending && backendUser ? '#1F5C8B' : undefined, color: canGenerate && !mutation.isPending && backendUser ? '#fff' : undefined }}
+          title={!backendUser ? 'Войдите для генерации ТЗ (кнопка «Войти» вверху справа)' : undefined}
         >
-          {mutation.isPending ? '⏳ Генерация...' : '🚀 Сгенерировать ТЗ'}
+          {mutation.isPending ? '⏳ Генерация...' : !backendUser ? '🔐 Войдите для генерации' : '🚀 Сгенерировать ТЗ'}
         </button>
         <button
           type="button"
           onClick={() => void enrichFromInternet()}
-          disabled={internetSearching}
-          title="ИИ ищет реальные технические характеристики именно этой модели (из документации производителя) и заполняет ТЗ"
+          disabled={internetSearching || !backendUser}
+          title={!backendUser ? 'Войдите для поиска' : 'ИИ ищет реальные технические характеристики именно этой модели (из документации производителя) и заполняет ТЗ'}
         >
           {internetSearching ? '⏳ Ищу характеристики...' : '🌐 Подтянуть из интернета'}
         </button>
         <button
           type="button"
           onClick={() => void searchZakupki()}
-          disabled={eisSearching}
-          title="Ищет похожие закупки на zakupki.gov.ru и адаптирует найденное ТЗ под ваш запрос через ИИ"
+          disabled={eisSearching || !backendUser}
+          title={!backendUser ? 'Войдите для поиска в ЕИС' : 'Ищет похожие закупки на zakupki.gov.ru и адаптирует найденное ТЗ под ваш запрос через ИИ'}
         >
           {eisSearching ? '⏳ Ищу в ЕИС...' : '🏛️ Найти ТЗ в ЕИС'}
         </button>

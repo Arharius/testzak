@@ -8,7 +8,7 @@ export interface SpecItem {
   [key: string]: unknown;
 }
 
-const BRAND_TOKEN_PATTERN = /\b(Intel|AMD|Nvidia|Samsung|Micron|Kingston|WD|Western\s+Digital|Seagate|Toshiba|Qualcomm|Broadcom|Realtek|Marvell|Mellanox|Hynix|SK\s*Hynix|Lenovo|Huawei|Cisco|Dell|Acer|Asus|Apple|MSI|Gigabyte|Supermicro|HP|HPE|Интел|Самсунг|Леново|Хуавей|Делл)\b/gi;
+const BRAND_TOKEN_PATTERN = /\b(Intel|AMD|Nvidia|Samsung|Micron|Kingston|WD|Western\s+Digital|Seagate|Toshiba|Qualcomm|Broadcom|Realtek|Marvell|Mellanox|Hynix|SK\s*Hynix|Lenovo|Huawei|Cisco|Dell|Acer|Asus|Apple|MSI|Gigabyte|Supermicro|HP|HPE|TP-?Link|D-?Link|Juniper|Aruba|ZTE|Hikvision|Dahua|Canon|Epson|Ricoh|Kyocera|Brother|Xerox|Pantum|LG|BenQ|ViewSonic|AOC|iiyama|Logitech|Jabra|Plantronics|Poly|Synology|QNAP|NetApp|MikroTik|Ubiquiti|Zyxel|Eltex|APC|Eaton|Vertiv|Noctua|Corsair|be\s*quiet|Chieftec|Thermaltake|Cooler\s*Master|DeepCool|Интел|Самсунг|Леново|Хуавей|Делл|Кэнон|Эпсон)\b/gi;
 const MAX_PARAMS      = ['вес', 'масса', 'толщина', 'высота корпуса', 'уровень шума'];
 const BATTERY_PARAMS  = ['ёмкость аккумулятора', 'емкость аккумулятора', 'ёмкость батареи', 'емкость батареи', 'аккумулятор'];
 const SOCKET_PATTERN  = /\b(LGA\s*\d{3,4}|AM[345][+]?|FM[12]|BGA\s*\d+)\b/i;
@@ -90,8 +90,10 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
       (nameLower === 'тип' &&
         (groupLower.includes('оперативн') || groupLower === 'озу' || groupLower === 'ram'));
     if (isRamField) {
-      if (/^DDR\d?(\s*\d+)?$/i.test(value.trim()) && !/или выше|или DDR5|or higher/i.test(value)) {
-        value = 'DDR4 или выше';
+      const ddrMatch = value.trim().match(/^(DDR\d?)(\s*\d+)?$/i);
+      if (ddrMatch && !/или выше|или DDR|or higher/i.test(value)) {
+        const ddrVersion = ddrMatch[1].toUpperCase(); // DDR4, DDR5, etc.
+        value = `${ddrVersion} или выше`;
         (item as SpecItem)._fixed = true;
       }
     }

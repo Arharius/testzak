@@ -2515,18 +2515,35 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     };
   }, [useBackend, useBackendAi, provider, model, apiKey]);
 
+  const MIN_QUALITY_SPECS = 15; // минимум характеристик для принятия результата поиска
+
   const pickBestCandidate = useCallback((
     internetCandidate: SpecsCandidate | null,
     eisCandidate: SpecsCandidate | null,
     autoPickTopCandidate: boolean,
   ): SpecsCandidate | null => {
     if (!internetCandidate && !eisCandidate) return null;
-    if (!autoPickTopCandidate) return eisCandidate ?? internetCandidate;
+    if (!autoPickTopCandidate) {
+      const c = eisCandidate ?? internetCandidate;
+      // Если результат поиска содержит слишком мало характеристик — отклоняем, пусть сгенерирует ИИ
+      if (c && c.specs.length < MIN_QUALITY_SPECS) {
+        console.warn(`[Quality] Поисковый результат содержит ${c.specs.length} хар-к (мин. ${MIN_QUALITY_SPECS}), переход к ИИ-генерации.`);
+        return null;
+      }
+      return c;
+    }
     const internetCount = internetCandidate?.specs.length ?? 0;
     const eisCount = eisCandidate?.specs.length ?? 0;
-    if (eisCount > internetCount) return eisCandidate;
-    if (internetCount > eisCount) return internetCandidate;
-    return eisCandidate ?? internetCandidate;
+    // Выбираем лучший по количеству, но отклоняем если меньше порога
+    let best: SpecsCandidate | null = null;
+    if (eisCount >= internetCount) best = eisCandidate;
+    else best = internetCandidate;
+    if (!best) best = eisCandidate ?? internetCandidate;
+    if (best && best.specs.length < MIN_QUALITY_SPECS) {
+      console.warn(`[Quality] Лучший поисковый результат: ${best.specs.length} хар-к (мин. ${MIN_QUALITY_SPECS}), переход к ИИ-генерации.`);
+      return null;
+    }
+    return best;
   }, []);
 
   const mutation = useMutation({

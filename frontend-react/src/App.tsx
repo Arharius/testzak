@@ -5,6 +5,7 @@ import { EnterprisePanel } from './components/EnterprisePanel';
 import { PlatformPanel } from './components/PlatformPanel';
 import { EventLog } from './components/EventLog';
 import { Workspace } from './components/Workspace';
+import { PricingModal } from './components/PricingModal';
 import {
   flushAutomationQueue,
   flushPlatformQueue,
@@ -76,6 +77,7 @@ export function App() {
   const [loginMode, setLoginMode] = useState<'email' | 'password'>('password');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showPricing, setShowPricing] = useState(false);
 
   // ── Handle magic link from URL on load ──────────────────────────────────
   useEffect(() => {
@@ -312,7 +314,7 @@ export function App() {
           <span className="trial-banner-text">
             PRO-trial: <strong>{backendUser.trial_days_left} {backendUser.trial_days_left === 1 ? 'день' : backendUser.trial_days_left < 5 ? 'дня' : 'дней'}</strong> осталось — безлимитные ТЗ, все 91 тип, приоритетная AI-генерация
           </span>
-          <button className="trial-banner-btn" onClick={() => setShowLogin(true)}>
+          <button className="trial-banner-btn" onClick={() => setShowPricing(true)}>
             Оформить Pro
           </button>
         </div>
@@ -325,7 +327,7 @@ export function App() {
           <span className="trial-banner-text">
             Пробный период завершён. Вы на плане <strong>Free ({backendUser.tz_limit} ТЗ/мес)</strong>. Оформите Pro для безлимитного доступа.
           </span>
-          <button className="trial-banner-btn" onClick={() => setShowLogin(true)}>
+          <button className="trial-banner-btn" onClick={() => setShowPricing(true)}>
             Оформить Pro — 1500 ₽/мес
           </button>
         </div>
@@ -343,6 +345,15 @@ export function App() {
               <span className={`auth-badge ${backendUser.role === 'admin' ? 'admin' : backendUser.role === 'pro' ? 'pro' : backendUser.trial_active ? 'trial' : 'free'}`}>
                 {backendTierLabel}
               </span>
+              {backendUser.role !== 'admin' && backendUser.role !== 'pro' && (
+                <button
+                  onClick={() => setShowPricing(true)}
+                  className="auth-primary-btn"
+                  style={{ padding: '4px 12px', fontSize: '12px' }}
+                >
+                  Upgrade Pro
+                </button>
+              )}
               <button
                 onClick={handleLogout}
                 className="auth-ghost-btn"
@@ -491,6 +502,16 @@ export function App() {
             &bull; Не нужен собственный API-ключ
           </div>
         </div>
+      )}
+
+      {/* Pricing modal */}
+      {showPricing && backendUser && (
+        <PricingModal
+          onClose={() => setShowPricing(false)}
+          currentRole={backendUser.role}
+          trialActive={backendUser.trial_active}
+          trialDaysLeft={backendUser.trial_days_left}
+        />
       )}
 
       <div className="bg-layer" aria-hidden="true">

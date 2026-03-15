@@ -73,7 +73,7 @@ export function isLoggedIn(): boolean {
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 
-const DEFAULT_TIMEOUT_MS = 60_000; // 60s for AI calls
+const DEFAULT_TIMEOUT_MS = 120_000; // 120s for AI calls (DeepSeek can take 40-60s)
 const SHORT_TIMEOUT_MS = 15_000;   // 15s for auth/CRUD
 
 function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
@@ -171,7 +171,7 @@ export async function generateWithBackend(
 ): Promise<string> {
   const result = await apiPost<{ ok: boolean; data: { choices?: { message?: { content?: string } }[] } }>(
     '/api/ai/generate',
-    { provider, model, messages, temperature, max_tokens: maxTokens },
+    { provider, model, messages, temperature, max_tokens: maxTokens, timeout_sec: 100 },
     'optional',
   );
   return result.data?.choices?.[0]?.message?.content || '';

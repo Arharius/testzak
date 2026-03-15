@@ -352,7 +352,7 @@ export async function generateItemSpecsMessages(
       temperature: 0.1,
       max_tokens: 4096
     },
-    { headers, timeout: 60000 }
+    { headers, timeout: 120000 }
   );
   return response.data?.choices?.[0]?.message?.content || '';
 }

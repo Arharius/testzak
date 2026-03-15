@@ -15,6 +15,7 @@ import {
 } from './lib/api';
 import {
   sendMagicLink,
+  loginWithPassword,
   verifyMagicToken,
   getStoredUser,
   setStoredToken,
@@ -72,6 +73,9 @@ export function App() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [showLogin, setShowLogin] = useState(false);
   const [authMsg, setAuthMsg] = useState('');
+  const [loginMode, setLoginMode] = useState<'email' | 'password'>('password');
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
 
   // ── Handle magic link from URL on load ──────────────────────────────────
   useEffect(() => {
@@ -121,6 +125,26 @@ export function App() {
       setLoginSent(true);
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : 'Ошибка отправки');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handlePasswordLogin = async () => {
+    if (!loginUsername.trim() || !loginPassword.trim()) return;
+    setLoginLoading(true);
+    setLoginError('');
+    try {
+      const res = await loginWithPassword(loginUsername.trim(), loginPassword.trim());
+      setStoredToken(res.token, res.user);
+      setBackendUser(res.user);
+      setShowLogin(false);
+      setLoginUsername('');
+      setLoginPassword('');
+      setAuthMsg(`Vhod vypolnen: ${res.user.email} (${res.user.role})`);
+      setTimeout(() => setAuthMsg(''), 4000);
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : 'Ошибка входа');
     } finally {
       setLoginLoading(false);
     }
@@ -341,13 +365,63 @@ export function App() {
           <div className="auth-popover-head">
             <div>
               <div className="micro-label">Авторизация</div>
-              <h3>Вход по ссылке в email</h3>
+              <h3>{loginMode === 'password' ? 'Вход по логину' : 'Вход по ссылке в email'}</h3>
             </div>
             <span className="auth-popover-mark">DeepSeek</span>
           </div>
-          {loginSent ? (
+
+          {/* Mode switcher */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <button
+              onClick={() => { setLoginMode('password'); setLoginError(''); }}
+              className={loginMode === 'password' ? 'auth-submit-btn' : 'auth-ghost-btn'}
+              style={{ flex: 1, fontSize: '13px', padding: '6px 8px' }}
+            >
+              Логин/Пароль
+            </button>
+            <button
+              onClick={() => { setLoginMode('email'); setLoginError(''); }}
+              className={loginMode === 'email' ? 'auth-submit-btn' : 'auth-ghost-btn'}
+              style={{ flex: 1, fontSize: '13px', padding: '6px 8px' }}
+            >
+              Email-ссылка
+            </button>
+          </div>
+
+          {loginMode === 'password' ? (
+            <>
+              <input
+                type="text"
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && document.getElementById('pwd-input')?.focus()}
+                placeholder="Логин"
+                className="auth-input"
+                autoComplete="username"
+              />
+              <input
+                id="pwd-input"
+                type="password"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handlePasswordLogin()}
+                placeholder="Пароль"
+                className="auth-input"
+                style={{ marginTop: '8px' }}
+                autoComplete="current-password"
+              />
+              {loginError && <div className="auth-error">{loginError}</div>}
+              <button
+                onClick={handlePasswordLogin}
+                disabled={loginLoading || !loginUsername.trim() || !loginPassword.trim()}
+                className="auth-submit-btn"
+              >
+                {loginLoading ? 'Вход...' : 'Войти'}
+              </button>
+            </>
+          ) : loginSent ? (
             <div className="auth-success">
-              ✅ Письмо отправлено на <strong>{loginEmail}</strong>.<br />
+              Письмо отправлено на <strong>{loginEmail}</strong>.<br />
               <span className="muted">Нажмите ссылку в письме для входа.</span>
               <br /><br />
               <button
@@ -373,7 +447,7 @@ export function App() {
                 disabled={loginLoading || !loginEmail.trim()}
                 className="auth-submit-btn"
               >
-                {loginLoading ? '⏳ Отправка...' : 'Отправить ссылку для входа'}
+                {loginLoading ? 'Отправка...' : 'Отправить ссылку для входа'}
               </button>
               <p className="auth-hint">
                 Ссылка действует 30 минут. Пароль не требуется.
@@ -382,11 +456,11 @@ export function App() {
           )}
           <div className="auth-pro-box">
             <div className="micro-label">Pro доступ</div>
-            <strong>Pro план — 1500 ₽/мес</strong><br />
-            • Безлимитные ТЗ<br />
-            • Поиск в интернете (реальные характеристики)<br />
-            • Поиск в ЕИС (готовые ТЗ из zakupki.gov.ru)<br />
-            • Не нужен собственный API-ключ
+            <strong>Pro план — 1500 &#x20bd;/мес</strong><br />
+            &bull; Безлимитные ТЗ<br />
+            &bull; Поиск в интернете (реальные характеристики)<br />
+            &bull; Поиск в ЕИС (готовые ТЗ из zakupki.gov.ru)<br />
+            &bull; Не нужен собственный API-ключ
           </div>
         </div>
       )}

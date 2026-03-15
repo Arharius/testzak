@@ -146,6 +146,14 @@ export async function sendMagicLink(email: string): Promise<{ ok: boolean; messa
   return apiPost('/api/auth/send-link', { email });
 }
 
+export async function loginWithPassword(username: string, password: string): Promise<{
+  ok: boolean;
+  token: string;
+  user: { email: string; role: string; tz_count: number; tz_limit: number };
+}> {
+  return apiPost('/api/auth/login', { username, password }, false, SHORT_TIMEOUT_MS);
+}
+
 export async function verifyMagicToken(token: string): Promise<{
   ok: boolean;
   token: string;

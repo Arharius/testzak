@@ -17,6 +17,8 @@ class User(Base):
     __tablename__ = "users"
     id = Column(String, primary_key=True)
     email = Column(String, unique=True, index=True)
+    username = Column(String, unique=True, nullable=True, index=True)  # for login/password auth
+    password_hash = Column(String, nullable=True)  # PBKDF2-SHA256 hash
     role = Column(String, default="free")  # free | pro | admin
     tz_count = Column(Integer, default=0)
     tz_limit = Column(Integer, default=3)  # free = 3/month, pro/admin = -1 (unlimited)
@@ -94,3 +96,18 @@ def get_db():
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # Auto-migrate: add columns that may not exist yet
+    _auto_migrate()
+
+
+def _auto_migrate():
+    """Add missing columns to existing tables (safe to run multiple times)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "users" in insp.get_table_names():
+        existing = {c["name"] for c in insp.get_columns("users")}
+        with engine.begin() as conn:
+            if "username" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN username VARCHAR UNIQUE"))
+            if "password_hash" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))

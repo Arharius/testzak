@@ -1,6 +1,7 @@
 """
 TZ Generator — FastAPI backend
 Endpoints:
+  POST /api/auth/login          — login with username/password (super admin)
   POST /api/auth/send-link      — send magic link to email
   GET  /api/auth/verify         — verify token, return JWT
   GET  /api/auth/me             — get current user info
@@ -57,6 +58,7 @@ try:
         create_jwt,
         decode_jwt,
         sync_user_entitlements,
+        authenticate_superadmin,
     )
 except ImportError:
     from database import (
@@ -79,6 +81,7 @@ except ImportError:
         create_jwt,
         decode_jwt,
         sync_user_entitlements,
+        authenticate_superadmin,
     )
 
 # ── Search module ──────────────────────────────────────────────
@@ -193,6 +196,10 @@ class SendLinkRequest(BaseModel):
         if not _EMAIL_RE.match(v):
             raise ValueError("Некорректный формат email")
         return v
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 class VerifyTokenRequest(BaseModel):
     token: str
@@ -1323,6 +1330,27 @@ def send_link(request: Request, req: SendLinkRequest, db: Session = Depends(get_
             "magic_link": link,
             "smtp_configured": False,
         }
+
+@app.post("/api/auth/login")
+@limiter.limit("10/minute")
+def login_with_password(request: Request, req: LoginRequest, db: Session = Depends(get_db)):
+    if not req.username.strip() or not req.password.strip():
+        raise HTTPException(status_code=400, detail="Введите логин и пароль")
+    user = authenticate_superadmin(req.username.strip(), req.password.strip(), db)
+    if not user:
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+    jwt_token = create_jwt(user.email, user.role)
+    logger.info(f"Password login: {user.email} role={user.role}")
+    return {
+        "ok": True,
+        "token": jwt_token,
+        "user": {
+            "email": user.email,
+            "role": user.role,
+            "tz_count": user.tz_count,
+            "tz_limit": user.tz_limit,
+        },
+    }
 
 @app.get("/api/auth/verify")
 def verify_token(token: str = Query(...), db: Session = Depends(get_db)):

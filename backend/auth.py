@@ -1,4 +1,4 @@
-import os, uuid, secrets, smtplib
+import os, uuid, secrets, smtplib, hashlib
 from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -158,3 +158,61 @@ def decode_jwt(token: str) -> dict | None:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except Exception:
         return None
+
+
+# ── Password auth (super admin) ───────────────────────────────────────────
+
+SUPERADMIN_USERNAME = os.getenv("SUPERADMIN_USERNAME", "").strip()
+SUPERADMIN_PASSWORD = os.getenv("SUPERADMIN_PASSWORD", "").strip()
+SUPERADMIN_EMAIL = os.getenv("SUPERADMIN_EMAIL", "").strip() or (list(ADMIN_EMAILS)[0] if ADMIN_EMAILS else "admin@tz-generator.ru")
+
+
+def hash_password(password: str) -> str:
+    """Hash password using PBKDF2-SHA256 with random salt."""
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 260000)
+    return f"pbkdf2:sha256:260000${salt}${dk.hex()}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    """Verify password against PBKDF2-SHA256 hash."""
+    if not password_hash or "$" not in password_hash:
+        return False
+    try:
+        parts = password_hash.split("$")
+        if len(parts) != 3:
+            return False
+        salt = parts[1]
+        stored_hash = parts[2]
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 260000)
+        return secrets.compare_digest(dk.hex(), stored_hash)
+    except Exception:
+        return False
+
+
+def authenticate_superadmin(username: str, password: str, db) -> User | None:
+    """
+    Authenticate super admin by username/password.
+    Checks env-configured credentials first, then DB-stored password_hash.
+    """
+    # Method 1: env-configured super admin (primary)
+    if SUPERADMIN_USERNAME and SUPERADMIN_PASSWORD:
+        if username == SUPERADMIN_USERNAME and password == SUPERADMIN_PASSWORD:
+            user = get_or_create_user(SUPERADMIN_EMAIL, db)
+            user.role = "admin"
+            user.tz_limit = -1
+            if not user.username:
+                user.username = username
+            if not user.password_hash:
+                user.password_hash = hash_password(password)
+            db.commit()
+            return user
+
+    # Method 2: DB-stored credentials
+    user = db.query(User).filter_by(username=username).first()
+    if user and user.password_hash and verify_password(password, user.password_hash):
+        user.last_login = datetime.now(timezone.utc)
+        db.commit()
+        return user
+
+    return None

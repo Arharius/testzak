@@ -113,7 +113,7 @@ YOOKASSA_SECRET_KEY    = os.getenv("YOOKASSA_SECRET_KEY", "").strip()
 YOOKASSA_RETURN_URL    = os.getenv("YOOKASSA_RETURN_URL", "https://arharius.github.io/testzak/").strip()
 YOOKASSA_WEBHOOK_SECRET = os.getenv("YOOKASSA_WEBHOOK_SECRET", "").strip()
 
-AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "60"))
+AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "100"))
 
 FREE_TZ_LIMIT = int(os.getenv("FREE_TZ_LIMIT", "3"))
 

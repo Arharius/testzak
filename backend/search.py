@@ -46,7 +46,7 @@ _ssl_ctx = _make_ssl_ctx()
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
-AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "45"))
+AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "100"))
 
 # Rotating user-agents to reduce fingerprinting
 import random

@@ -306,7 +306,14 @@ _TOOL_TYPES = {
     "toolSet", "cableTester", "crimper", "soldering", "multimeter", "precisionScrewdriver",
 }
 
-_PROCUREMENT_DOMAINS = ("zakupki.gov.ru", "rostender.info", "zakupki.mos.ru")
+_PROCUREMENT_DOMAINS = ("zakupki.gov.ru", "rostender.info", "zakupki.mos.ru", "minpromtorg.gov.ru", "gisp.gov.ru")
+_PREFERRED_SOURCE_WEIGHTS = {
+    "zakupki.gov.ru": 45,
+    "rostender.info": 32,
+    "zakupki.mos.ru": 28,
+    "gisp.gov.ru": 26,
+    "minpromtorg.gov.ru": 22,
+}
 _BLOCKED_RESULT_HOSTS = (
     "stackoverflow.com", "facebook.com", "support.google.com", "youtube.com", "vk.com",
     "instagram.com", "tiktok.com", "reddit.com", "zhihu.com", "bilibili.com", "pinterest.com",
@@ -646,6 +653,9 @@ def _score_search_result(item: dict[str, Any], query: str, goods_type: str = "")
             score += 10
     if re.search(r"spec|характерист|technical|техническ|datasheet|product", joined, flags=re.I):
         score += 10
+    for domain, weight in _PREFERRED_SOURCE_WEIGHTS.items():
+        if domain in text:
+            score += weight
     if re.search(r"logitech\.com|microsoft\.com|hp\.com|lenovo\.com|dell\.com|asus\.com|acer\.com|a4tech|defender\.ru|sven", joined, flags=re.I):
         score += 6
     return score
@@ -1391,7 +1401,8 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
 
 async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
     """
-    Search for ready-made procurement specs on EIS / Rostender / zakupki.mos via Bing RSS site queries.
+    Search for ready-made procurement specs on EIS / Rostender / zakupki.mos
+    plus registry/industry context from Minpromtorg / GISP via Bing RSS site queries.
     Falls back to general internet search if procurement-specific search fails.
     Returns list of {name, value, unit} dicts.
     """
@@ -1415,6 +1426,12 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
         f"site:zakupki.mos.ru {search_query} техническое задание",
         f"site:zakupki.mos.ru {search_query} описание объекта закупки",
         f"site:zakupki.mos.ru {type_hint} описание объекта закупки",
+        f"site:gisp.gov.ru {type_hint} характеристики",
+        f"site:gisp.gov.ru {search_query} характеристики",
+        f"site:gisp.gov.ru {type_hint} реестр российской промышленной продукции",
+        f"site:minpromtorg.gov.ru {type_hint} характеристики",
+        f"site:minpromtorg.gov.ru {search_query} технические характеристики",
+        f"site:minpromtorg.gov.ru {search_query} реестр российской промышленной продукции",
     ]
 
     logger.info(f"[eis] Search: {search_query!r}")

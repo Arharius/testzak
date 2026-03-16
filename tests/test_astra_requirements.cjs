@@ -75,9 +75,29 @@ const checks = [
     needle: 'Совместимость с экосистемой Astra',
   },
   {
-    name: 'Astra Linux: minimum 35 specs rule',
+    name: 'Astra Linux: minimum 45 specs rule',
     haystack: workspace,
-    needle: '? 35',
+    needle: 'return 45;',
+  },
+  {
+    name: 'Catalog depth: software admin console',
+    haystack: workspace,
+    needle: 'Веб-интерфейс администрирования',
+  },
+  {
+    name: 'Catalog depth: network VLAN support',
+    haystack: workspace,
+    needle: 'Поддержка VLAN и сегментации трафика',
+  },
+  {
+    name: 'Catalog depth: compute OS compatibility',
+    haystack: workspace,
+    needle: 'Совместимость с отечественными ОС',
+  },
+  {
+    name: 'Catalog depth: weak specs rewrite flow',
+    haystack: workspace,
+    needle: 'Слабые / размытые характеристики, которые нужно конкретизировать',
   },
   {
     name: 'RuBackup: global dedup client and server',

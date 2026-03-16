@@ -329,6 +329,7 @@ function buildUniversalSearchPrompt(row: GoodsRow, sourceLabel: string, contextT
     ? `\nКонтекст найденных характеристик (${sourceLabel}):\n---\n${trimmedContext}\n---\n`
     : `\nКонтекст ${sourceLabel} недоступен. Используй описание товара и отраслевые знания о типичных характеристиках этого класса изделий.\n`;
   const commercial = getResolvedCommercialContext(row);
+  const minSpecs = getMinimumSpecCount(row, commercial);
   const explicitCommercialTermsBlock = [
     commercial.suggestedLicenseType ? `- Тип лицензии / сертификата: ${commercial.suggestedLicenseType}` : '',
     commercial.suggestedTerm ? `- Срок действия / технической поддержки: ${commercial.suggestedTerm}` : '',
@@ -348,7 +349,7 @@ ${explicitCommercialTermsBlock ? `Коммерческие параметры и
 5. Сформировать ПОДРОБНЫЙ перечень характеристик для ТЗ
 
 ТРЕБОВАНИЯ К ХАРАКТЕРИСТИКАМ:
-- Не менее 20 характеристик для оборудования и не менее 25 для ПО
+- Не менее ${minSpecs} характеристик
 - Максимально детально, как в реальных ТЗ ЕИС
 - Без торговых марок, производителей, артикулов и точных моделей
 - Числовые значения через «не менее» / «не более»
@@ -2623,6 +2624,85 @@ function getDetailedSpecHint(type: string): string {
   return specHintsMap[type] ?? supplementalSpecHintsMap[type] ?? '';
 }
 
+const SIMPLE_SUPPLY_TYPES = new Set([
+  'flashDrive', 'dvd', 'patchCord', 'fiberCable', 'hdmiCable', 'powerCable', 'cartridge', 'paper', 'toner', 'drum',
+  'battery', 'batteryLithium', 'thermalPaste', 'cleaningSet', 'usbCable', 'labelTape', 'mousePad',
+  'presentationClicker', 'rj45Connector', 'keystoneJack', 'networkSocket', 'rj45Coupler', 'fiberPatchCord',
+  'fiberPigtail', 'spliceTray', 'discCase', 'discSleeve', 'audioCable', 'serialCable', 'consoleCable',
+  'usbAdapter', 'surgeProtector', 'extensionCord', 'plugAdapter', 'electricalTape', 'heatShrinkTube',
+  'solderWire', 'cableTie', 'cableChannel', 'thermalPaper', 'wasteToner',
+]);
+
+const COMPUTE_HW_TYPES = new Set([
+  'pc', 'laptop', 'monoblock', 'server', 'tablet', 'thinClient', 'serverBlade', 'nas', 'san', 'miniPc',
+  'industrialPc', 'workstation', 'aioPc',
+]);
+
+const DISPLAY_AV_TYPES = new Set([
+  'monitor', 'touchMonitor', 'tvPanel', 'interactive', 'projector', 'projectorScreen', 'webcam', 'conferenceCamera',
+  'documentCamera', 'headset', 'speakers', 'microphone', 'speakerphone', 'graphicsTablet', 'signaturePad',
+]);
+
+const NETWORK_INFRA_TYPES = new Set([
+  'switch', 'router', 'firewall', 'accessPoint', 'mediaConverter', 'patchPanel', 'kvm_server', 'voipGateway',
+  'wifiController', 'lteModem', 'consoleServer', 'sfpModule', 'sfpDac', 'poeInjector', 'poeSplitter',
+  'networkAdapter', 'fiberPatchPanel', 'wallCabinet', 'rackCabinet', 'serverRack', 'pdu',
+]);
+
+const PRINT_DOC_TYPES = new Set([
+  'printer', 'mfu', 'scanner', 'barcodeScanner', 'receiptPrinter', 'labelPrinter', 'laminator', 'shredder',
+  'smartCardReader',
+]);
+
+const STORAGE_COMPONENT_TYPES = new Set([
+  'ssd', 'hdd', 'ram', 'tapeLib', 'cpu', 'gpu', 'motherboard', 'psu', 'cooling', 'parts', 'extSsd', 'extHdd',
+  'memoryCard', 'cardReader', 'opticalDrive', 'ltoTape', 'ltoCleaningCartridge', 'pcCase', 'caseFan',
+  'tpmModule', 'soundCard', 'captureCard', 'raidController', 'hbaAdapter', 'upsBattery',
+]);
+
+const ACCESSORY_TYPES = new Set([
+  'keyboard', 'mouse', 'keyboardMouseSet', 'kvm', 'ups', 'dockingStation', 'monitorArm', 'laptopBag',
+  'laptopStand', 'charger', 'usbToken', 'privacyFilter', 'laptopLock', 'cleaner', 'faceplate', 'usbHub',
+  'kvmExtender', 'usbExtender', 'videoAdapter', 'hdmiSplitter', 'hdmiSwitcher', 'rackShelf', 'blankPanel',
+  'cageNutSet', 'serverRailKit',
+]);
+
+const SOFTWARE_INFRA_TYPES = new Set([
+  'os', 'office', 'virt', 'vdi', 'dbms', 'backup_sw', 'itsm', 'monitoring', 'mdm', 'gis', 'email', 'ldap',
+  'remoteAccessSw', 'license',
+]);
+
+const SOFTWARE_SECURITY_TYPES = new Set([
+  'antivirus', 'edr', 'firewall_sw', 'dlp', 'siem', 'crypto', 'waf', 'pam', 'iam', 'pki', 'vpn',
+]);
+
+const SOFTWARE_BUSINESS_TYPES = new Set([
+  'erp', 'cad', 'vks', 'ecm', 'portal', 'project_sw', 'bpm', 'hr',
+]);
+
+const GENERIC_SPEC_VALUE_RE = /(по типу( товара| программного обеспечения)?|по назначению|в соответствии с технической документацией производителя( и требованиями заказчика)?|по условиям поставки и требованиям заказчика|актуальная поддерживаемая версия по документации производителя|в соответствии с требованиями заказчика|при необходимости|по описанию|по согласованию с заказчиком|типовая конфигурация|конкретное значение|согласно документации|согласно требованиям|или иное по требованию|или иное — по требованию|уточнить при необходимости)/i;
+
+type SpecUpsertEntry = { spec: SpecItem; aliases?: string[] };
+
+function isWeakSpecValue(spec: SpecItem): boolean {
+  const value = String(spec.value || '').replace(/\s+/g, ' ').trim();
+  if (!value) return true;
+  return GENERIC_SPEC_VALUE_RE.test(value);
+}
+
+function getWeakSpecEntries(specs: SpecItem[]): SpecItem[] {
+  return specs.filter(isWeakSpecValue);
+}
+
+function getTypeFamilyMinimum(row: GoodsRow): number {
+  if (SIMPLE_SUPPLY_TYPES.has(row.type)) return 24;
+  if (ACCESSORY_TYPES.has(row.type)) return 28;
+  if (DISPLAY_AV_TYPES.has(row.type) || NETWORK_INFRA_TYPES.has(row.type) || COMPUTE_HW_TYPES.has(row.type) || STORAGE_COMPONENT_TYPES.has(row.type) || PRINT_DOC_TYPES.has(row.type)) {
+    return 30;
+  }
+  return 30;
+}
+
 function getMinimumSpecCount(row: GoodsRow, resolvedCommercial = getResolvedCommercialContext(row)): number {
   const g = lookupCatalog(row.type);
   const isSW = !!g.isSoftware;
@@ -2637,15 +2717,158 @@ function getMinimumSpecCount(row: GoodsRow, resolvedCommercial = getResolvedComm
     || resolvedCommercial.ldapProfile === 'client_user'
     || resolvedCommercial.ldapProfile === 'client'
   )) {
-    return 24;
+    return 28;
+  }
+  if (row.type === 'ldap' && (
+    resolvedCommercial.ldapProfile === 'server'
+    || resolvedCommercial.ldapProfile === 'combined'
+  )) {
+    return 38;
   }
   if (row.type === 'os' && isAstraLinuxContext(row)) {
-    return 35;
+    return 45;
   }
   if (isLicenseContext || isSupportContext) {
-    return 35;
+    return 40;
   }
-  return isSW ? 35 : 25;
+  return isSW ? 40 : getTypeFamilyMinimum(row);
+}
+
+function getCatalogDepthProfileEntries(row: GoodsRow, resolved = getResolvedCommercialContext(row)): SpecUpsertEntry[] {
+  const isSW = !!lookupCatalog(row.type)?.isSoftware;
+  const entries: SpecUpsertEntry[] = [];
+
+  if (isSW) {
+    entries.push(
+      { spec: { group: 'Эксплуатация', name: 'Веб-интерфейс администрирования', value: 'наличие административной консоли или иного штатного интерфейса управления', unit: 'наличие' } },
+      { spec: { group: 'Безопасность', name: 'Ролевая модель доступа (RBAC)', value: 'наличие разграничения прав пользователей и администраторов', unit: 'наличие' } },
+      { spec: { group: 'Безопасность', name: 'Аудит действий пользователей и администраторов', value: 'наличие регистрации действий с возможностью последующего анализа', unit: 'наличие' } },
+      { spec: { group: 'Безопасность', name: 'Журналирование системных событий', value: 'наличие журналов работы, ошибок и событий безопасности', unit: 'наличие' } },
+      { spec: { group: 'Интеграция', name: 'Интеграция со службой каталогов', value: 'LDAP, Active Directory, ALD Pro или эквивалентные механизмы при поддержке производителем', unit: 'совместимость' } },
+      { spec: { group: 'Интеграция', name: 'API / средства автоматизации', value: 'REST API, CLI, webhooks или эквивалентные средства интеграции и автоматизации', unit: 'наличие' } },
+      { spec: { group: 'Эксплуатация', name: 'Масштабирование и отказоустойчивость', value: 'поддержка масштабирования и отказоустойчивой схемы развёртывания в рамках редакции поставки', unit: 'наличие' } },
+      { spec: { group: 'Эксплуатация', name: 'Резервное копирование конфигурации', value: 'наличие штатных средств экспорта, резервного копирования и восстановления конфигурации', unit: 'наличие' } },
+      { spec: { group: 'Лицензирование', name: 'Способ поставки', value: 'электронная поставка лицензий, ключей активации и дистрибутива', unit: 'тип' } },
+      { spec: { group: 'Лицензирование', name: 'Обновления и исправления безопасности', value: 'предоставление обновлений и патчей безопасности в период действия лицензии или техподдержки', unit: 'наличие' } },
+      { spec: { group: 'Лицензирование', name: 'Документация на русском языке', value: 'руководство администратора и/или пользователя в электронном виде', unit: 'наличие' } },
+      { spec: { group: 'Лицензирование', name: 'Наличие в Едином реестре российского ПО Минцифры России', value: 'наличие', unit: 'наличие' }, aliases: ['Наличие в Едином реестре российского ПО Минцифры России'] },
+    );
+  } else {
+    entries.push(
+      { spec: { group: 'Общие сведения', name: 'Состояние товара', value: 'новый, не бывший в эксплуатации, не восстановленный и не бывший в ремонте', unit: 'состояние' } },
+      { spec: { group: 'Общие сведения', name: 'Комплект поставки', value: 'изделие, штатные кабели/крепёж/адаптеры питания и эксплуатационная документация по составу производителя', unit: 'комплект' } },
+      { spec: { group: 'Общие сведения', name: 'Документация на русском языке', value: 'наличие паспорта, руководства пользователя или иной эксплуатационной документации на русском языке', unit: 'наличие' } },
+      { spec: { group: 'Общие сведения', name: 'Маркировка и идентификация', value: 'наличие заводской маркировки, серийного номера и обозначения модели на изделии или упаковке', unit: 'наличие' } },
+      { spec: { group: 'Гарантийные обязательства', name: 'Гарантия производителя', value: 'не менее 12', unit: 'мес' } },
+      { spec: { group: 'Гарантийные обязательства', name: 'Упаковка', value: 'заводская упаковка, обеспечивающая защиту изделия при транспортировании и хранении', unit: 'тип' } },
+    );
+  }
+
+  if (COMPUTE_HW_TYPES.has(row.type)) {
+    entries.push(
+      { spec: { group: 'Совместимость', name: 'Совместимость с отечественными ОС', value: 'Astra Linux, ALT Linux, РЕД ОС или эквивалентные операционные системы при поддержке производителем', unit: 'совместимость' } },
+      { spec: { group: 'Интерфейсы и коммуникации', name: 'Сетевой интерфейс', value: 'не менее 1 порта Ethernet RJ-45 со скоростью не ниже 1 Гбит/с', unit: 'порт' } },
+      { spec: { group: 'Эксплуатация', name: 'Удалённое администрирование / мониторинг состояния', value: 'наличие штатных средств диагностики, мониторинга и контроля аппаратного состояния', unit: 'наличие' } },
+      { spec: { group: 'Эксплуатация', name: 'Поддержка модернизации и замены компонентов', value: 'наличие доступа к обслуживаемым компонентам и возможности штатной модернизации в рамках платформы', unit: 'наличие' } },
+    );
+  }
+
+  if (DISPLAY_AV_TYPES.has(row.type)) {
+    entries.push(
+      { spec: { group: 'Изображение и звук', name: 'Основные интерфейсы подключения', value: 'HDMI, DisplayPort, USB, аудиоинтерфейсы или эквивалентные интерфейсы по типу устройства', unit: 'интерфейс' } },
+      { spec: { group: 'Изображение и звук', name: 'Яркость / чувствительность / громкость', value: 'не ниже значений, достаточных для штатной эксплуатации в офисных и учебных помещениях', unit: 'соответствие' } },
+      { spec: { group: 'Изображение и звук', name: 'Поддержка мультимедийных функций', value: 'наличие встроенных средств воспроизведения/захвата аудио и видео по типу устройства', unit: 'наличие' } },
+      { spec: { group: 'Монтаж и размещение', name: 'Крепление / размещение', value: 'наличие штатных средств настольного, настенного или стоечного размещения по типу устройства', unit: 'наличие' } },
+      { spec: { group: 'Монтаж и размещение', name: 'Антибликовое исполнение / эргономика', value: 'наличие мер, снижающих блики и обеспечивающих длительную эксплуатацию без ухудшения качества изображения', unit: 'наличие' } },
+    );
+  }
+
+  if (NETWORK_INFRA_TYPES.has(row.type)) {
+    entries.push(
+      { spec: { group: 'Сетевые функции', name: 'Поддержка IPv4 / IPv6', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Сетевые функции', name: 'Поддержка VLAN и сегментации трафика', value: 'наличие в рамках функционального класса устройства', unit: 'наличие' } },
+      { spec: { group: 'Сетевые функции', name: 'Поддержка QoS / приоритизации трафика', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Управление и мониторинг', name: 'Протоколы управления и мониторинга', value: 'SSHv2, HTTPS, SNMP, Syslog или эквивалентные механизмы', unit: 'протокол' } },
+      { spec: { group: 'Управление и мониторинг', name: 'Обновление встроенного ПО', value: 'наличие штатных средств загрузки и установки обновлений микропрограмм', unit: 'наличие' } },
+      { spec: { group: 'Монтаж и питание', name: 'Исполнение для монтажа', value: 'настольное, настенное или стоечное исполнение в зависимости от класса устройства', unit: 'исполнение' } },
+    );
+  }
+
+  if (PRINT_DOC_TYPES.has(row.type)) {
+    entries.push(
+      { spec: { group: 'Функциональные возможности', name: 'Поддерживаемые форматы носителей', value: 'наличие поддержки основных форматов бумаги и носителей по классу устройства', unit: 'формат' } },
+      { spec: { group: 'Функциональные возможности', name: 'Автоматический двусторонний режим', value: 'наличие для печати и/или сканирования при применимости к классу устройства', unit: 'наличие' } },
+      { spec: { group: 'Функциональные возможности', name: 'Сетевой доступ и совместное использование', value: 'поддержка подключения по USB, Ethernet, Wi‑Fi или эквивалентным интерфейсам по типу устройства', unit: 'наличие' } },
+      { spec: { group: 'Функциональные возможности', name: 'Поддержка драйверов и стандартов печати / сканирования', value: 'TWAIN, WIA, ESC/POS, PCL, PostScript или эквивалентные стандарты при применимости', unit: 'стандарт' } },
+      { spec: { group: 'Эксплуатация', name: 'Ресурс и производительность', value: 'значения месячной нагрузки, ресурса узлов и производительности не ниже требований заявленного класса устройства', unit: 'соответствие' } },
+    );
+  }
+
+  if (STORAGE_COMPONENT_TYPES.has(row.type)) {
+    entries.push(
+      { spec: { group: 'Основные характеристики', name: 'Интерфейс подключения / шина данных', value: 'SATA, SAS, NVMe, PCIe, DIMM, M.2, U.2 или эквивалент по типу изделия', unit: 'интерфейс' } },
+      { spec: { group: 'Основные характеристики', name: 'Форм-фактор / исполнение', value: 'значение по типу изделия и совместимому оборудованию', unit: 'форм-фактор' } },
+      { spec: { group: 'Надёжность и защита данных', name: 'Поддержка механизмов контроля состояния', value: 'SMART, ECC, мониторинг температуры, ошибок или эквивалентные механизмы при применимости', unit: 'наличие' } },
+      { spec: { group: 'Надёжность и защита данных', name: 'Показатели надёжности', value: 'параметры ресурса, MTBF, TBW или иные показатели надёжности не ниже класса изделия', unit: 'соответствие' } },
+      { spec: { group: 'Совместимость', name: 'Совместимость с платформой', value: 'совместимость с серверными, настольными или мобильными платформами по назначению изделия', unit: 'совместимость' } },
+    );
+  }
+
+  if (ACCESSORY_TYPES.has(row.type) || SIMPLE_SUPPLY_TYPES.has(row.type)) {
+    entries.push(
+      { spec: { group: 'Совместимость', name: 'Совместимость и применимость', value: 'совместимость с типовыми устройствами и инфраструктурой по назначению изделия', unit: 'совместимость' } },
+      { spec: { group: 'Материалы и исполнение', name: 'Материал корпуса / оболочки / расходного элемента', value: 'материал, обеспечивающий штатную эксплуатацию по назначению изделия', unit: 'материал' } },
+      { spec: { group: 'Эксплуатация', name: 'Условия хранения и транспортирования', value: 'в соответствии с требованиями производителя и типом изделия без ухудшения потребительских свойств', unit: 'условие' } },
+    );
+  }
+
+  if (SOFTWARE_INFRA_TYPES.has(row.type)) {
+    entries.push(
+      { spec: { group: 'Эксплуатация', name: 'Поддержка отказоустойчивой схемы развёртывания', value: 'наличие возможности развёртывания в отказоустойчивой или кластерной конфигурации в рамках редакции поставки', unit: 'наличие' } },
+      { spec: { group: 'Интеграция', name: 'Импорт / миграция данных и настроек', value: 'наличие штатных средств импорта, миграции и передачи конфигурации из смежных систем или предыдущих версий', unit: 'наличие' } },
+      { spec: { group: 'Интеграция', name: 'Экспорт данных и журналов', value: 'наличие механизмов экспорта данных, отчётов и журналов в открытых форматах', unit: 'наличие' } },
+      { spec: { group: 'Эксплуатация', name: 'Средства мониторинга и оповещений', value: 'наличие штатных механизмов контроля состояния, уведомлений и диагностических сообщений', unit: 'наличие' } },
+    );
+  }
+
+  if (SOFTWARE_SECURITY_TYPES.has(row.type)) {
+    entries.push(
+      { spec: { group: 'Безопасность', name: 'Двухфакторная аутентификация администраторов', value: 'поддержка при необходимости', unit: 'наличие' } },
+      { spec: { group: 'Безопасность', name: 'Шифрование трафика управления', value: 'TLS 1.2 и выше', unit: 'версия' } },
+      { spec: { group: 'Безопасность', name: 'Срок хранения журналов безопасности', value: 'не менее 365', unit: 'сут' } },
+      { spec: { group: 'Безопасность', name: 'Интеграция с внешними системами мониторинга ИБ', value: 'поддержка Syslog, SIEM, внешних оповещений или эквивалентных механизмов', unit: 'наличие' } },
+      { spec: { group: 'Безопасность', name: 'Разграничение административных ролей', value: 'наличие', unit: 'наличие' } },
+    );
+  }
+
+  if (SOFTWARE_BUSINESS_TYPES.has(row.type)) {
+    entries.push(
+      { spec: { group: 'Функциональные возможности', name: 'Веб-клиент / рабочее место пользователя', value: 'наличие веб-клиента, desktop-клиента или иного штатного пользовательского интерфейса', unit: 'наличие' } },
+      { spec: { group: 'Функциональные возможности', name: 'Поиск, фильтрация и отчётность', value: 'наличие штатных средств поиска, фильтрации, построения отчётов и выгрузки данных', unit: 'наличие' } },
+      { spec: { group: 'Функциональные возможности', name: 'Уведомления и маршрутизация событий', value: 'наличие уведомлений, задач, маршрутов согласования или иных событийных механизмов по классу продукта', unit: 'наличие' } },
+      { spec: { group: 'Интеграция', name: 'Импорт / экспорт данных в открытых форматах', value: 'наличие', unit: 'наличие' } },
+    );
+  }
+
+  if (resolved.suggestedLicenseType) {
+    entries.push({
+      spec: {
+        group: 'Лицензирование',
+        name: 'Метрика лицензирования',
+        value: row.type === 'ldap'
+          ? 'серверная часть, клиентские лицензии CAL, CAL на устройство или CAL на пользователя в зависимости от выбранного состава'
+          : resolved.suggestedLicenseType,
+        unit: 'метрика',
+      },
+      aliases: ['Метрика лицензирования'],
+    });
+  }
+
+  return entries;
+}
+
+function enrichSpecsByCatalogDepth(row: GoodsRow, specs: SpecItem[], resolved = getResolvedCommercialContext(row)): SpecItem[] {
+  return upsertSpecBatch(specs, getCatalogDepthProfileEntries(row, resolved));
 }
 
 // ── Промпты по типу товара ────────────────────────────────────────────────────
@@ -3063,7 +3286,7 @@ function adjustSpecsForCommercialContext(row: GoodsRow, specs: SpecItem[]): Spec
     }, ['Срок действия лицензии', 'Срок действия сертификата техподдержки', 'Срок технической поддержки']);
   }
 
-  return next;
+  return enrichSpecsByCatalogDepth(row, next, resolved);
 }
 
 function buildPrompt(row: GoodsRow, lawMode: LawMode): { system: string; user: string } {
@@ -3290,6 +3513,7 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   const isSW = !!g.isSoftware;
   const resolvedCommercial = getResolvedCommercialContext(row);
+  const minSpecs = getMinimumSpecCount(row, resolvedCommercial);
   const hint = getDetailedSpecHint(row.type);
   const ldapRoleHint = row.type === 'ldap'
     ? getLdapRoleHint(resolvedCommercial.ldapProfile, resolvedCommercial.suggestedLicenseType)
@@ -3315,7 +3539,7 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
 - Сокеты процессора — НЕ УКАЗЫВАТЬ
 - Для ОП: «DDR4 или выше»${isSW ? '\n- ПО: наличие в реестре Минцифры России (ПП РФ № 1236)\n- Указать все функциональные модули и возможности' : ''}
 
-ВАЖНО по количеству: ${isSW ? 'Для ПО — не менее 25-40 характеристик, сгруппированных по разделам.' : 'Для оборудования — не менее 15-25 характеристик.'}
+ВАЖНО по количеству: необходимо сформировать не менее ${minSpecs} характеристик, сгруппированных по разделам.
 ${hint ? 'Включить как минимум:\n' + hint.split('\n').filter((l: string) => l.startsWith('- ')).slice(0, 15).join('\n') : ''}
 ${ldapRoleHint}
 
@@ -3390,14 +3614,15 @@ function buildEisStylePrompt(row: GoodsRow, g: GoodsItem, eisContext: string): s
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   const isSW = !!g.isSoftware;
   const resolvedCommercial = getResolvedCommercialContext(row);
+  const minSpecs = getMinimumSpecCount(row, resolvedCommercial);
   const hint = getDetailedSpecHint(row.type);
   const ldapRoleHint = row.type === 'ldap'
     ? getLdapRoleHint(resolvedCommercial.ldapProfile, resolvedCommercial.suggestedLicenseType)
     : '';
   const ctx = eisContext
-    ? `\nКонтекст из ЕИС (zakupki.gov.ru) — используй как образец реальных требований:\n---\n${eisContext}\n---`
-    : '\n(Контекст ЕИС недоступен — используй знания о типичных ТЗ из реестра ЕИС для данного класса товаров. Сгенерируй характеристики уровня реальных закупок.)';
-  return `Ты — эксперт по госзакупкам РФ. Составь ТЗ для закупки по 44-ФЗ в стиле реальных документов ЕИС (zakupki.gov.ru).
+    ? `\nКонтекст из ЕИС / закупочных площадок / реестровых источников (zakupki.gov.ru, Rostender, Минпромторг/ГИСП) — используй как образец реальных требований:\n---\n${eisContext}\n---`
+    : '\n(Контекст ЕИС/закупочных площадок недоступен — используй знания о типичных ТЗ из ЕИС, Rostender и реестровых источников Минпромторга/ГИСП для данного класса товаров. Сгенерируй характеристики уровня реальных закупок.)';
+  return `Ты — эксперт по госзакупкам РФ. Составь ТЗ для закупки по 44-ФЗ в стиле реальных документов ЕИС, закупочных площадок и реестровых источников Минпромторга.
 
 Исходный запрос (только для поиска и контекста, не копировать в ответ): "${row.model}"
 Тип товара: ${g.name}
@@ -3412,7 +3637,7 @@ ${ctx}
 - Числа: «не менее X»
 - Единицы: ГГц, МГц, ГБ, МБ, ТБ
 - Сокеты процессора НЕ УКАЗЫВАТЬ${isSW ? '\n- ПО: реестр Минцифры (ПП РФ № 1236), сертификаты ФСТЭК/ФСБ где применимо\n- Перечислить ВСЕ функциональные модули и возможности' : ''}
-- ${isSW ? 'Не менее 25-40 характеристик для ПО' : 'Не менее 15-25 характеристик для оборудования'}, сгруппированных по разделам
+- Не менее ${minSpecs} характеристик, сгруппированных по разделам
 - КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать «не указан», «не указано», «не указаны», «н/д», «неизвестно» в значениях. Если точное значение неизвестно — укажи ТИПИЧНОЕ значение для данного класса с «не менее»/«не более».
 ${hint ? '\nВключить как минимум:\n' + hint.split('\n').filter((l: string) => l.startsWith('- ')).slice(0, 20).join('\n') : ''}
 ${ldapRoleHint}
@@ -3984,15 +4209,34 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     meta?: Record<string, string>,
   ): Promise<SpecItem[]> => {
     const resolvedCommercial = getResolvedCommercialContext(row);
+    const seededSpecs = enrichSpecsByCatalogDepth(row, specs, resolvedCommercial);
     const target = getMinimumSpecCount(row, resolvedCommercial);
-    if (specs.length >= target) return specs;
+    const weakSpecs = getWeakSpecEntries(seededSpecs);
+    if (seededSpecs.length >= target && weakSpecs.length === 0) return seededSpecs;
 
     try {
       const g = lookupCatalog(row.type);
       const { system } = buildPrompt(row, lawMode);
-      const missing = Math.max(1, target - specs.length);
+      const missing = Math.max(1, target - seededSpecs.length);
+      const hint = getDetailedSpecHint(row.type)
+        .split('\n')
+        .filter((line) => line.trim().startsWith('- '))
+        .slice(0, 24)
+        .join('\n');
+      const weakSpecJson = weakSpecs.length > 0
+        ? JSON.stringify(
+            weakSpecs.slice(0, 20).map((spec) => ({
+              group: spec.group || '',
+              name: spec.name || '',
+              value: spec.value || '',
+              unit: spec.unit || '—',
+            })),
+            null,
+            2,
+          )
+        : '[]';
       const currentJson = JSON.stringify(
-        specs.map((spec) => ({
+        seededSpecs.map((spec) => ({
           group: spec.group || '',
           name: spec.name || '',
           value: spec.value || '',
@@ -4006,19 +4250,26 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
 Тип товара: ${g.name}
 Модель/описание: ${row.model}
-Текущих характеристик: ${specs.length}
+Текущих характеристик: ${seededSpecs.length}
 Требуемый минимум: ${target}
-Нужно добавить минимум ${missing} НОВЫХ уникальных характеристик.
+Нужно добавить минимум ${missing} НОВЫХ уникальных характеристик или конкретизировать существующие размытые характеристики.
 
 Текущие характеристики:
 ${currentJson}
 
+Слабые / размытые характеристики, которые нужно конкретизировать:
+${weakSpecJson}
+
+Обязательные ориентиры по классу товара:
+${hint || '- Используй детальные, проверяемые эксплуатационные, функциональные и совместимые параметры именно для данного класса товара'}
+
 ТРЕБОВАНИЯ:
-- Не повторяй существующие характеристики по имени
-- Не меняй существующие характеристики
-- Добавь только недостающие, более глубокие и проверяемые характеристики
+- Не повторяй существующие характеристики без необходимости
+- Если характеристика уже существует, но значение размытое, общее или формальное, верни ТУ ЖЕ характеристику с конкретизированным значением
+- Добавь недостающие, более глубокие и проверяемые характеристики
 - Используй конкретные значения и непустые units
 - Сфокусируйся на реальных эксплуатационных, функциональных, совместимых, лицензионных и защитных параметрах
+- Избегай формулировок "по документации производителя", "по требованиям заказчика", "при необходимости", "по типу товара"
 
 Ответ СТРОГО в JSON без пояснений:
 {
@@ -4046,13 +4297,13 @@ ${currentJson}
 
       const { specs: extraSpecs } = parseAiResponse(raw);
       const processedExtra = postProcessSpecs(extraSpecs);
-      let merged = [...specs];
+      let merged = [...seededSpecs];
       for (const spec of processedExtra) {
         merged = upsertSpec(merged, spec);
       }
       return adjustSpecsForCommercialContext(row, merged);
     } catch {
-      return specs;
+      return seededSpecs;
     }
   }, [apiKey, lawMode, model, provider, useBackendAi]);
 
@@ -4430,7 +4681,7 @@ ${currentJson}
       // proxy недоступен
     }
     const prompt = isUniversal && universalContext
-      ? buildUniversalSearchPrompt(row, 'ЕИС / закупочные площадки', `${universalContext}${eisContext ? `\n\n${eisContext}` : ''}`)
+      ? buildUniversalSearchPrompt(row, 'ЕИС / закупочные площадки / Минпромторг', `${universalContext}${eisContext ? `\n\n${eisContext}` : ''}`)
       : buildEisStylePrompt(row, g, eisContext);
     let raw: string;
     if (useBackendAi) {
@@ -4457,9 +4708,9 @@ ${currentJson}
     const catalogItem = lookupCatalog(row.type);
     const isUniversal = isUniversalGoodsType(row.type);
     if (isUniversal) {
-      return catalogItem?.isSoftware ? 14 : 12;
+      return catalogItem?.isSoftware ? 18 : 14;
     }
-    return catalogItem?.isSoftware ? 10 : 8;
+    return catalogItem?.isSoftware ? 14 : 10;
   }, []);
 
   const pickBestCandidate = useCallback((
@@ -4470,22 +4721,21 @@ ${currentJson}
   ): SpecsCandidate | null => {
     if (!internetCandidate && !eisCandidate) return null;
     const minQualitySpecs = getMinimumSearchSpecs(row);
+    const isAcceptable = (candidate: SpecsCandidate | null) => !!candidate && candidate.specs.length >= minQualitySpecs;
     if (!autoPickTopCandidate) {
+      if (isAcceptable(eisCandidate)) return eisCandidate;
+      if (isAcceptable(internetCandidate)) return internetCandidate;
       const c = eisCandidate ?? internetCandidate;
-      // Если результат поиска содержит слишком мало характеристик — отклоняем, пусть сгенерирует ИИ
       if (c && c.specs.length < minQualitySpecs) {
         console.warn(`[Quality] Поисковый результат содержит ${c.specs.length} хар-к (мин. ${minQualitySpecs}), переход к ИИ-генерации.`);
         return null;
       }
       return c;
     }
-    const internetCount = internetCandidate?.specs.length ?? 0;
-    const eisCount = eisCandidate?.specs.length ?? 0;
-    // Выбираем лучший по количеству, но отклоняем если меньше порога
-    let best: SpecsCandidate | null = null;
-    if (eisCount >= internetCount) best = eisCandidate;
-    else best = internetCandidate;
-    if (!best) best = eisCandidate ?? internetCandidate;
+    if (isAcceptable(eisCandidate)) {
+      return eisCandidate;
+    }
+    let best: SpecsCandidate | null = internetCandidate ?? eisCandidate;
     if (best && best.specs.length < minQualitySpecs) {
       console.warn(`[Quality] Лучший поисковый результат: ${best.specs.length} хар-к (мин. ${minQualitySpecs}), переход к ИИ-генерации.`);
       return null;
@@ -5727,7 +5977,7 @@ ${currentJson}
           type="button"
           onClick={() => void searchZakupki()}
           disabled={eisSearching || !backendUser}
-          title={!backendUser ? 'Войдите для поиска в ЕИС' : 'Ищет похожие закупки на zakupki.gov.ru и адаптирует найденное ТЗ под ваш запрос через ИИ'}
+          title={!backendUser ? 'Войдите для поиска в ЕИС и реестрах' : 'Ищет похожие закупки и характеристики в ЕИС, zakupki.gov.ru, Rostender и реестровых источниках Минпромторга/ГИСП, затем адаптирует найденное ТЗ под ваш запрос через ИИ'}
         >
           {eisSearching ? '⏳ Ищу в ЕИС...' : '🏛️ Найти ТЗ в ЕИС'}
         </button>

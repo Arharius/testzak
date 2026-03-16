@@ -37,9 +37,14 @@ import {
   searchInternetSpecs,
   detectBrandTypesViaBackend,
   saveTZDocument,
+  saveTZDocumentLocal,
   listTZDocuments,
+  listLocalTZDocuments,
   getTZDocument,
+  getLocalTZDocument,
   deleteTZDocument,
+  deleteLocalTZDocument,
+  isLocalTZDocumentId,
   isLoggedIn,
   type SpecFromSearch,
   type TZDocumentSummary,
@@ -5267,8 +5272,23 @@ ${hint || '- Используй детальные, проверяемые эк�
     if (!isLoggedIn()) return;
     setHistoryLoading(true);
     try {
-      const res = await listTZDocuments(50, 0);
-      if (res.ok) setHistoryItems(res.items);
+      const [backendRes, localRes] = await Promise.allSettled([
+        listTZDocuments(50, 0),
+        listLocalTZDocuments(50, 0),
+      ]);
+      const merged = new Map<string, TZDocumentSummary>();
+      if (backendRes.status === 'fulfilled' && backendRes.value.ok) {
+        for (const item of backendRes.value.items) merged.set(item.id, item);
+      }
+      if (localRes.status === 'fulfilled' && localRes.value.ok) {
+        for (const item of localRes.value.items) merged.set(item.id, item);
+      }
+      const items = [...merged.values()].sort((a, b) => {
+        const aTime = Date.parse(a.updated_at || a.created_at || '') || 0;
+        const bTime = Date.parse(b.updated_at || b.created_at || '') || 0;
+        return bTime - aTime;
+      });
+      setHistoryItems(items);
     } catch (err) {
       console.warn('Failed to load TZ history:', err);
     } finally {
@@ -5301,10 +5321,21 @@ ${hint || '- Используй детальные, проверяемые эк�
         })),
         compliance_score: complianceReport?.score ?? null,
       };
-      const res = await saveTZDocument(payload);
-      if (res.ok) {
-        setCurrentDocId(res.id);
-        showToast(`✅ ТЗ сохранено: ${res.title}`, true);
+      try {
+        const res = await saveTZDocument(payload);
+        if (res.ok) {
+          setCurrentDocId(res.id);
+          showToast(`✅ ТЗ сохранено: ${res.title}`, true);
+          void loadHistory();
+          return;
+        }
+      } catch (remoteErr) {
+        console.warn('Remote TZ save failed, falling back to local history:', remoteErr);
+      }
+      const localRes = await saveTZDocumentLocal(payload);
+      if (localRes.ok) {
+        setCurrentDocId(localRes.id);
+        showToast(`✅ ТЗ сохранено локально: ${localRes.title}`, true);
         void loadHistory();
       }
     } catch (err) {
@@ -5314,7 +5345,12 @@ ${hint || '- Используй детальные, проверяемые эк�
 
   const loadTZ = useCallback(async (docId: string) => {
     try {
-      const res = await getTZDocument(docId);
+      const res = isLocalTZDocumentId(docId)
+        ? await getLocalTZDocument(docId)
+        : await getTZDocument(docId).catch(async (remoteErr) => {
+          console.warn('Remote TZ load failed, trying local history:', remoteErr);
+          return getLocalTZDocument(docId);
+        });
       if (!res.ok || !res.doc) return;
       const doc = res.doc;
       setLawMode((doc.law_mode || '44') as LawMode);
@@ -5346,7 +5382,16 @@ ${hint || '- Используй детальные, проверяемые эк�
 
   const deleteTZ = useCallback(async (docId: string) => {
     try {
-      await deleteTZDocument(docId);
+      if (isLocalTZDocumentId(docId)) {
+        await deleteLocalTZDocument(docId);
+      } else {
+        try {
+          await deleteTZDocument(docId);
+        } catch (remoteErr) {
+          console.warn('Remote TZ delete failed, trying local history:', remoteErr);
+          await deleteLocalTZDocument(docId);
+        }
+      }
       setHistoryItems((prev) => prev.filter((d) => d.id !== docId));
       if (currentDocId === docId) setCurrentDocId(null);
       showToast('✅ ТЗ удалено', true);

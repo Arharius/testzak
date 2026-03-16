@@ -101,14 +101,16 @@ def init_db():
     _auto_migrate()
 
 
-def _auto_migrate():
+def _auto_migrate(target_engine=None, target_database_url=None):
     """Add missing columns to existing tables (safe to run multiple times)."""
     from sqlalchemy import inspect, text
-    insp = inspect(engine)
-    is_sqlite = "sqlite" in DATABASE_URL
+    current_engine = target_engine or engine
+    current_database_url = target_database_url or DATABASE_URL
+    insp = inspect(current_engine)
+    is_sqlite = "sqlite" in current_database_url
     if "users" in insp.get_table_names():
         existing = {c["name"] for c in insp.get_columns("users")}
-        with engine.begin() as conn:
+        with current_engine.begin() as conn:
             if "username" not in existing:
                 # SQLite cannot add UNIQUE columns; add without UNIQUE, then create index
                 if is_sqlite:
@@ -123,3 +125,16 @@ def _auto_migrate():
                 conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
             if "trial_ends_at" not in existing:
                 conn.execute(text("ALTER TABLE users ADD COLUMN trial_ends_at TIMESTAMP"))
+    if "tz_documents" in insp.get_table_names():
+        existing = {c["name"] for c in insp.get_columns("tz_documents")}
+        with current_engine.begin() as conn:
+            if "law_mode" not in existing:
+                conn.execute(text("ALTER TABLE tz_documents ADD COLUMN law_mode VARCHAR DEFAULT '44'"))
+            if "rows_json" not in existing:
+                conn.execute(text("ALTER TABLE tz_documents ADD COLUMN rows_json TEXT"))
+            if "compliance_score" not in existing:
+                conn.execute(text("ALTER TABLE tz_documents ADD COLUMN compliance_score INTEGER"))
+            if "updated_at" not in existing:
+                conn.execute(text("ALTER TABLE tz_documents ADD COLUMN updated_at TIMESTAMP"))
+            if "created_at" not in existing:
+                conn.execute(text("ALTER TABLE tz_documents ADD COLUMN created_at TIMESTAMP"))

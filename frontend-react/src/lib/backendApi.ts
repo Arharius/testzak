@@ -527,6 +527,110 @@ export type TZDocumentFull = {
   updated_at: string | null;
 };
 
+const LOCAL_TZ_DOCS_KEY = 'tz_local_documents_v1';
+const LOCAL_TZ_PREFIX = 'local-';
+
+function readLocalTZDocs(): TZDocumentFull[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(LOCAL_TZ_DOCS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed as TZDocumentFull[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalTZDocs(items: TZDocumentFull[]): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(LOCAL_TZ_DOCS_KEY, JSON.stringify(items.slice(0, 100)));
+}
+
+function sortLocalTZDocs(items: TZDocumentFull[]): TZDocumentFull[] {
+  return [...items].sort((a, b) => {
+    const aTime = Date.parse(a.updated_at || a.created_at || '') || 0;
+    const bTime = Date.parse(b.updated_at || b.created_at || '') || 0;
+    return bTime - aTime;
+  });
+}
+
+function summarizeTZDoc(doc: TZDocumentFull): TZDocumentSummary {
+  return {
+    id: doc.id,
+    title: doc.title,
+    goods_type: doc.goods_type,
+    model: doc.model,
+    law_mode: doc.law_mode,
+    compliance_score: doc.compliance_score,
+    rows_count: Array.isArray(doc.rows) ? doc.rows.length : 0,
+    created_at: doc.created_at,
+    updated_at: doc.updated_at,
+  };
+}
+
+function buildTZTitle(data: { title?: string; rows?: unknown[] }): { title: string; goodsType: string; model: string } {
+  const explicitTitle = String(data.title || '').trim();
+  const first = Array.isArray(data.rows) && typeof data.rows[0] === 'object' && data.rows[0] !== null
+    ? data.rows[0] as Record<string, unknown>
+    : {};
+  const goodsType = String(first.type || '');
+  const model = String(first.model || '');
+  const generated = `${goodsType} — ${model}`.trim().replace(/^—\s*|\s*—$/g, '');
+  return {
+    title: explicitTitle || generated || 'Без названия',
+    goodsType,
+    model,
+  };
+}
+
+export function isLocalTZDocumentId(docId: string): boolean {
+  return String(docId || '').startsWith(LOCAL_TZ_PREFIX);
+}
+
+export async function saveTZDocumentLocal(data: {
+  title?: string;
+  law_mode: string;
+  rows: unknown[];
+  compliance_score?: number | null;
+}): Promise<{ ok: boolean; id: string; title: string; created_at: string }> {
+  const now = new Date().toISOString();
+  const meta = buildTZTitle(data);
+  const doc: TZDocumentFull = {
+    id: `${LOCAL_TZ_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: meta.title,
+    goods_type: meta.goodsType,
+    model: meta.model,
+    law_mode: data.law_mode || '44',
+    compliance_score: data.compliance_score ?? null,
+    rows: Array.isArray(data.rows) ? data.rows as TZDocumentFull['rows'] : [],
+    created_at: now,
+    updated_at: now,
+  };
+  const docs = sortLocalTZDocs([doc, ...readLocalTZDocs()].filter((item, idx, arr) => arr.findIndex((candidate) => candidate.id === item.id) === idx));
+  writeLocalTZDocs(docs);
+  return { ok: true, id: doc.id, title: doc.title, created_at: now };
+}
+
+export async function listLocalTZDocuments(limit = 50, offset = 0): Promise<{ ok: boolean; total: number; items: TZDocumentSummary[] }> {
+  const docs = sortLocalTZDocs(readLocalTZDocs());
+  const sliced = docs.slice(offset, offset + limit).map(summarizeTZDoc);
+  return { ok: true, total: docs.length, items: sliced };
+}
+
+export async function getLocalTZDocument(docId: string): Promise<{ ok: boolean; doc: TZDocumentFull }> {
+  const doc = readLocalTZDocs().find((item) => item.id === docId);
+  if (!doc) throw new Error('Документ не найден');
+  return { ok: true, doc };
+}
+
+export async function deleteLocalTZDocument(docId: string): Promise<{ ok: boolean; deleted: string }> {
+  const docs = readLocalTZDocs();
+  const nextDocs = docs.filter((item) => item.id !== docId);
+  writeLocalTZDocs(nextDocs);
+  return { ok: true, deleted: docId };
+}
+
 export async function saveTZDocument(data: {
   title?: string;
   law_mode: string;

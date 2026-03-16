@@ -2646,6 +2646,16 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             sourceStats.ai += 1;
           } catch (e) {
             const msg = e instanceof Error ? e.message : 'generation_error';
+            // Detect 402 Payment Required — free tier limit reached
+            const is402 = msg.includes('402') || msg.includes('лимит') || msg.includes('Достигнут лимит');
+            if (is402) {
+              showToast('Лимит ТЗ исчерпан. Оформите Pro для безлимитного доступа.', false);
+              window.dispatchEvent(new Event('tz:open-pricing'));
+              next[i] = { ...currentRow, status: 'error', error: 'Лимит бесплатных ТЗ исчерпан' };
+              sourceStats.error += 1;
+              setRows([...next]);
+              break; // Stop generating remaining rows
+            }
             next[i] = { ...currentRow, status: 'error', error: msg };
             sourceStats.error += 1;
           }

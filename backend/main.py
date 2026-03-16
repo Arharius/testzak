@@ -299,22 +299,29 @@ def get_optional_user(
     except HTTPException:
         return None
 
-def require_active(user: User) -> None:
+def require_active(user: User, db=None) -> None:
     """Check that user can generate TZ (not over limit)."""
     if user.role == "admin":
         return  # unlimited
     if user.tz_limit == -1:
         return  # explicitly unlimited (pro)
-    # Check monthly count
+    # Check monthly count — reset on new calendar month
     now = datetime.now(timezone.utc)
     month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
     if hasattr(user, "tz_month_start") and user.tz_month_start:
         ms = user.tz_month_start
-        if hasattr(ms, "replace"):
+        if hasattr(ms, "replace") and ms.tzinfo is None:
             ms = ms.replace(tzinfo=timezone.utc)
         if ms < month_start:
-            # New month — reset
+            # New month — reset counter and persist
             user.tz_count = 0
+            user.tz_month_start = month_start
+            if db:
+                db.commit()
+    elif not user.tz_month_start:
+        user.tz_month_start = month_start
+        if db:
+            db.commit()
     if user.tz_count >= user.tz_limit:
         raise HTTPException(
             status_code=402,
@@ -1406,11 +1413,13 @@ def ai_generate(request: Request, req: AIGenerateRequest, user: Optional[User] =
         if not INTEGRATION_ALLOW_ANON:
             raise HTTPException(status_code=401, detail="Требуется авторизация")
     else:
-        require_active(user)
+        require_active(user, db)
     result = _call_ai(req.provider, req.model, req.messages, req.temperature or 0.3, req.max_tokens or 4096)
-    # Count usage (only for non-admin free users)
+    # Count usage (only for non-admin free users with limits)
     if user and user.role != "admin" and user.tz_limit != -1:
         user.tz_count = (user.tz_count or 0) + 1
+        if not user.tz_month_start:
+            user.tz_month_start = datetime(datetime.now(timezone.utc).year, datetime.now(timezone.utc).month, 1, tzinfo=timezone.utc)
         db.commit()
     return {"ok": True, "data": result}
 
@@ -1537,34 +1546,51 @@ def payment_create(request: Request, req: PaymentCreateRequest, user: User = Dep
     }
 
 @app.post("/api/payment/webhook")
-async def payment_webhook(payload: dict, db: Session = Depends(get_db)):
-    # Verify webhook secret if configured
+async def payment_webhook(request: Request, payload: dict, db: Session = Depends(get_db)):
+    # Verify webhook: check notification secret header (YooKassa sends it as body field or header)
     if YOOKASSA_WEBHOOK_SECRET:
         secret_from_payload = str(payload.get("webhook_secret", "")).strip()
         if not hmac.compare_digest(secret_from_payload, YOOKASSA_WEBHOOK_SECRET):
+            logger.warning("Webhook rejected: invalid secret")
             raise HTTPException(status_code=401, detail="Invalid webhook secret")
 
     event = str(payload.get("event", "")).lower()
     obj = payload.get("object", {}) if isinstance(payload.get("object"), dict) else {}
+    payment_id = str(obj.get("id", "")).strip()
     status = str(obj.get("status", "")).lower()
     metadata = obj.get("metadata", {}) if isinstance(obj.get("metadata"), dict) else {}
 
     if event == "payment.succeeded" and status == "succeeded":
+        # Double-check payment via YooKassa API to prevent forged webhooks
+        if YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY and payment_id:
+            try:
+                auth_str = base64.b64encode(f"{YOOKASSA_SHOP_ID}:{YOOKASSA_SECRET_KEY}".encode()).decode()
+                verify_req = URLRequest(
+                    f"https://api.yookassa.ru/v3/payments/{payment_id}",
+                    headers={"Authorization": f"Basic {auth_str}", "Content-Type": "application/json"},
+                )
+                with urlopen(verify_req, timeout=10) as resp:
+                    real_payment = json.loads(resp.read().decode())
+                if real_payment.get("status") != "succeeded":
+                    logger.warning(f"Webhook payment {payment_id} not confirmed by API (status={real_payment.get('status')})")
+                    return {"ok": True}  # Ignore — not actually paid
+                # Use metadata from verified payment, not from webhook body
+                metadata = real_payment.get("metadata", {}) if isinstance(real_payment.get("metadata"), dict) else metadata
+            except Exception as exc:
+                logger.warning(f"Payment verification failed for {payment_id}: {exc}")
+
         email = str(metadata.get("user_email", "")).lower().strip()
         plan = str(metadata.get("plan", "pro")).strip().lower()
         if email:
             user = db.query(User).filter_by(email=email).first()
             if user:
+                from datetime import timedelta
                 user.role = "pro"
                 user.tz_limit = -1  # unlimited
-                if plan == "annual":
-                    from datetime import timedelta
-                    user.subscription_until = datetime.now(timezone.utc) + timedelta(days=365)
-                else:
-                    from datetime import timedelta
-                    user.subscription_until = datetime.now(timezone.utc) + timedelta(days=31)
+                days = 365 if plan == "annual" else 31
+                user.subscription_until = datetime.now(timezone.utc) + timedelta(days=days)
                 db.commit()
-                logger.info(f"User {email} upgraded to Pro (plan={plan})")
+                logger.info(f"User {email} upgraded to Pro (plan={plan}, payment={payment_id})")
 
     return {"ok": True}
 

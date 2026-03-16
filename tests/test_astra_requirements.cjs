@@ -30,6 +30,31 @@ const checks = [
     needle: 'CAL на каждое устройство или пользователя',
   },
   {
+    name: 'ALD Pro client: host configuration management',
+    haystack: workspace,
+    needle: 'поддержка централизованного применения настроек и конфигураций к рабочим станциям и серверам в домене',
+  },
+  {
+    name: 'ALD Pro client: compatibility with server part',
+    haystack: workspace,
+    needle: 'ALD Pro Server / контроллер домена или эквивалентная серверная часть службы каталогов',
+  },
+  {
+    name: 'ALD Pro server: OU hierarchy management',
+    haystack: workspace,
+    needle: 'Управление организационными единицами (OU)',
+  },
+  {
+    name: 'ALD Pro server: PXE netboot',
+    haystack: workspace,
+    needle: 'поддержка PXE / netboot для сетевого развёртывания рабочих станций и серверов',
+  },
+  {
+    name: 'ALD Pro server: license composition',
+    haystack: workspace,
+    needle: 'серверная лицензия на контроллер домена и клиентские лицензии CAL на управляемые объекты',
+  },
+  {
     name: 'RuBackup: global dedup client and server',
     haystack: workspace + npa,
     needle: 'Глобальная дедупликация на стороне клиента и сервера',

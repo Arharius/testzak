@@ -2641,6 +2641,12 @@ function normalizeSpecName(name: string): string {
     .trim();
 }
 
+function isAldProContext(row: GoodsRow): boolean {
+  if (row.type !== 'ldap') return false;
+  const haystack = normalizeBundleText(`${row.model} ${row.licenseType}`);
+  return /(ald pro|алд про|astra linux directory|astra ald|ред адм|red adm)/.test(haystack);
+}
+
 function upsertSpec(
   specs: SpecItem[],
   spec: SpecItem,
@@ -2656,9 +2662,21 @@ function upsertSpec(
   return [...specs, spec];
 }
 
+function upsertSpecBatch(
+  specs: SpecItem[],
+  entries: Array<{ spec: SpecItem; aliases?: string[] }>,
+): SpecItem[] {
+  let next = [...specs];
+  for (const entry of entries) {
+    next = upsertSpec(next, entry.spec, entry.aliases);
+  }
+  return next;
+}
+
 function adjustSpecsForCommercialContext(row: GoodsRow, specs: SpecItem[]): SpecItem[] {
   const resolved = getResolvedCommercialContext(row);
   let next = [...specs];
+  const isAldPro = isAldProContext(row);
 
   if (row.type === 'ldap') {
     if (resolved.ldapProfile === 'client_device' || resolved.ldapProfile === 'client_user' || resolved.ldapProfile === 'client') {
@@ -2674,61 +2692,124 @@ function adjustSpecsForCommercialContext(row: GoodsRow, specs: SpecItem[]): Spec
         /кластер/i,
         /макс\.\s*количеств[ао]\s*домен/i,
         /поддержк[аи]\s*схем[ыа]\s*каталог/i,
+        /организационн(ых|ые)\s*единиц|иерархи/i,
+        /миграц/i,
       ];
       next = next.filter((spec) => !serverOnlyPatterns.some((pattern) => pattern.test(String(spec.name || ''))));
 
-      next = upsertSpec(next, {
-        group: 'Общие сведения',
-        name: 'Тип программного обеспечения',
-        value: 'клиентская лицензия CAL для управления хостом в домене',
-        unit: 'тип',
-      }, ['Тип программного обеспечения', 'Тип ПО']);
-
-      next = upsertSpec(next, {
-        group: 'Лицензирование',
-        name: 'Тип лицензии',
-        value: resolved.suggestedLicenseType || 'Клиентская часть (CAL)',
-        unit: 'тип',
-      });
-
-      next = upsertSpec(next, {
-        group: 'Лицензирование',
-        name: 'Лицензируемый объект',
-        value: resolved.ldapProfile === 'client_user'
-          ? '1 пользователь'
-          : resolved.ldapProfile === 'client_device'
-            ? '1 устройство'
-            : '1 устройство или 1 пользователь',
-        unit: 'объект',
-      });
-
-      next = upsertSpec(next, {
-        group: 'Функциональные возможности',
-        name: 'Назначение лицензии',
-        value: 'право управления рабочей станцией или сервером через доменные политики и конфигурации хоста',
-        unit: 'назначение',
-      });
-
-      next = upsertSpec(next, {
-        group: 'Совместимость',
-        name: 'Совместимость с серверной частью',
-        value: 'ALD Pro Server / контроллер домена или эквивалентная серверная часть службы каталогов',
-        unit: 'совместимость',
-      });
-
-      next = upsertSpec(next, {
-        group: 'Функциональные возможности',
-        name: 'Применение групповых политик',
-        value: 'централизованное применение доменных политик и конфигураций SaltStack или эквивалентного механизма',
-        unit: 'наличие',
-      });
+      next = upsertSpecBatch(next, [
+        {
+          spec: {
+            group: 'Общие сведения',
+            name: 'Тип программного обеспечения',
+            value: isAldPro
+              ? 'клиентская лицензия CAL ALD Pro для управления хостом в домене'
+              : 'клиентская лицензия CAL для управления хостом в домене',
+            unit: 'тип',
+          },
+          aliases: ['Тип программного обеспечения', 'Тип ПО'],
+        },
+        {
+          spec: {
+            group: 'Лицензирование',
+            name: 'Тип лицензии',
+            value: resolved.suggestedLicenseType || 'Клиентская часть (CAL)',
+            unit: 'тип',
+          },
+          aliases: ['Тип лицензии', 'Тип лицензии / права использования'],
+        },
+        {
+          spec: {
+            group: 'Лицензирование',
+            name: 'Метрика лицензирования',
+            value: resolved.ldapProfile === 'client_user'
+              ? 'CAL на пользователя'
+              : resolved.ldapProfile === 'client_device'
+                ? 'CAL на устройство'
+                : 'CAL на каждое устройство или пользователя',
+            unit: 'метрика',
+          },
+        },
+        {
+          spec: {
+            group: 'Лицензирование',
+            name: 'Лицензируемый объект',
+            value: resolved.ldapProfile === 'client_user'
+              ? '1 пользователь'
+              : resolved.ldapProfile === 'client_device'
+                ? '1 устройство'
+                : '1 устройство или 1 пользователь',
+            unit: 'объект',
+          },
+        },
+        {
+          spec: {
+            group: 'Лицензирование',
+            name: 'Право использования',
+            value: resolved.ldapProfile === 'client_user'
+              ? 'право управления одним пользователем, введённым в домен'
+              : resolved.ldapProfile === 'client_device'
+                ? 'право управления одним устройством, введённым в домен'
+                : 'право управления одним устройством или одним пользователем, введённым в домен',
+            unit: 'право',
+          },
+        },
+        {
+          spec: {
+            group: 'Функциональные возможности',
+            name: 'Назначение лицензии',
+            value: 'право управления рабочей станцией или сервером через доменные политики и конфигурации хоста',
+            unit: 'назначение',
+          },
+        },
+        {
+          spec: {
+            group: 'Функциональные возможности',
+            name: 'Управление конфигурацией хоста',
+            value: 'поддержка централизованного применения настроек и конфигураций к рабочим станциям и серверам в домене',
+            unit: 'наличие',
+          },
+        },
+        {
+          spec: {
+            group: 'Функциональные возможности',
+            name: 'Применение групповых политик',
+            value: 'централизованное применение доменных политик и конфигураций SaltStack или эквивалентного механизма',
+            unit: 'наличие',
+          },
+        },
+        {
+          spec: {
+            group: 'Совместимость',
+            name: 'Совместимость с серверной частью',
+            value: 'ALD Pro Server / контроллер домена или эквивалентная серверная часть службы каталогов',
+            unit: 'совместимость',
+          },
+        },
+        {
+          spec: {
+            group: 'Совместимость',
+            name: 'Поддерживаемые объекты управления',
+            value: 'рабочие станции и серверы, введённые в домен',
+            unit: 'объект',
+          },
+        },
+        {
+          spec: {
+            group: 'Совместимость',
+            name: 'Интеграция с доменной политикой',
+            value: 'совместимость с групповыми политиками, OU-иерархией и механизмами централизованного управления домена',
+            unit: 'наличие',
+          },
+        },
+      ]);
     } else if (resolved.ldapProfile === 'server' || resolved.ldapProfile === 'combined') {
       next = upsertSpec(next, {
         group: 'Лицензирование',
         name: 'Тип лицензии',
         value: resolved.suggestedLicenseType || (resolved.ldapProfile === 'combined' ? 'Серверная часть + CAL' : 'Серверная часть'),
         unit: 'тип',
-      });
+      }, ['Тип лицензии', 'Тип лицензии / права использования']);
 
       next = upsertSpec(next, {
         group: 'Лицензирование',
@@ -2738,6 +2819,112 @@ function adjustSpecsForCommercialContext(row: GoodsRow, specs: SpecItem[]): Spec
           : '1 контроллер домена',
         unit: 'объект',
       });
+
+      if (isAldPro) {
+        next = upsertSpecBatch(next, [
+          {
+            spec: {
+              group: 'Общие сведения',
+              name: 'Тип программного обеспечения',
+              value: 'серверная часть службы каталогов / контроллер домена ALD Pro',
+              unit: 'тип',
+            },
+            aliases: ['Тип программного обеспечения', 'Тип ПО'],
+          },
+          {
+            spec: {
+              group: 'Лицензирование',
+              name: 'Метрика лицензирования',
+              value: resolved.ldapProfile === 'combined'
+                ? 'серверная часть на экземпляр контроллера домена + CAL на устройства или пользователей'
+                : 'серверная часть на экземпляр контроллера домена',
+              unit: 'метрика',
+            },
+          },
+          {
+            spec: {
+              group: 'Лицензирование',
+              name: 'Лицензионный состав',
+              value: resolved.ldapProfile === 'combined'
+                ? 'серверная лицензия на контроллер домена и клиентские лицензии CAL на управляемые объекты'
+                : 'серверная лицензия на контроллер домена',
+              unit: 'состав',
+            },
+          },
+          {
+            spec: {
+              group: 'Функциональные возможности',
+              name: 'Управление организационными единицами (OU)',
+              value: 'поддержка иерархии подразделений и делегирования административных полномочий',
+              unit: 'наличие',
+            },
+          },
+          {
+            spec: {
+              group: 'Функциональные возможности',
+              name: 'Управление сайтами и топологией репликации',
+              value: 'поддержка сайтов, межсайтовых связей и настройки топологии репликации каталога',
+              unit: 'наличие',
+            },
+          },
+          {
+            spec: {
+              group: 'Функциональные возможности',
+              name: 'Групповые политики',
+              value: 'централизованное применение групповых политик и конфигураций на базе SaltStack или эквивалентного механизма',
+              unit: 'наличие',
+            },
+          },
+          {
+            spec: {
+              group: 'Функциональные возможности',
+              name: 'Автоматизированная установка ОС по сети',
+              value: 'поддержка PXE / netboot для сетевого развёртывания рабочих станций и серверов',
+              unit: 'наличие',
+            },
+          },
+          {
+            spec: {
+              group: 'Функциональные возможности',
+              name: 'Миграция из Microsoft Active Directory',
+              value: 'поддержка переноса домена, организационной структуры, пользователей и групп с сохранением структуры объектов',
+              unit: 'наличие',
+            },
+          },
+          {
+            spec: {
+              group: 'Инфраструктура',
+              name: 'Репликация каталога',
+              value: 'multi-master репликация каталога с поддержкой межсайтовой синхронизации',
+              unit: 'тип',
+            },
+          },
+          {
+            spec: {
+              group: 'Инфраструктура',
+              name: 'Интеграция с DHCP / DNS',
+              value: 'интеграция со службами DHCP и DNS, включая обслуживание записей и доменной инфраструктуры',
+              unit: 'наличие',
+            },
+          },
+          {
+            spec: {
+              group: 'Инфраструктура',
+              name: 'Поддержка DNS-зон',
+              value: 'поддержка прямых и обратных зон DNS, необходимых для доменной инфраструктуры',
+              unit: 'наличие',
+            },
+          },
+          {
+            spec: {
+              group: 'Совместимость',
+              name: 'Поддерживаемые серверные ОС',
+              value: 'Astra Linux Special Edition, ALT Linux, РЕД ОС или эквивалентные серверные ОС',
+              unit: 'ОС',
+            },
+          },
+        ]);
+      }
     }
   }
 
@@ -2747,7 +2934,7 @@ function adjustSpecsForCommercialContext(row: GoodsRow, specs: SpecItem[]): Spec
       name: 'Тип лицензии',
       value: resolved.suggestedLicenseType,
       unit: 'тип',
-    });
+    }, ['Тип лицензии', 'Тип лицензии / права использования']);
   }
 
   if (resolved.suggestedTerm) {

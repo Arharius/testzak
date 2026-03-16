@@ -6,9 +6,9 @@
   <title>Генератор ТЗ для госзакупок — 44-ФЗ / 223-ФЗ</title>
 
   <!-- docx.js для генерации DOCX (локальный файл) -->
-  <script src="docx.min.js"></script>
+  <script src="../docx.min.js"></script>
   <!-- html2pdf для PDF (локальный файл — работает без интернета и CDN) -->
-  <script src="html2pdf.bundle.min.js"></script>
+  <script src="../html2pdf.bundle.min.js"></script>
   <script>
     // Локальный fallback: при открытии /legacy/index.html из корня проекта библиотеки лежат на уровень выше.
     (function ensureLegacyLibFallbacks() {
@@ -10579,9 +10579,9 @@ async function downloadDOCX() {
         document.head.appendChild(s);
       });
       try {
-        await tryLoadScript('docx.min.js');
-      } catch (_) {
         await tryLoadScript('../docx.min.js');
+      } catch (_) {
+        await tryLoadScript('docx.min.js');
       }
       if (typeof docx === 'undefined') {
         throw new Error('Библиотека docx не загружена. Проверьте наличие docx.min.js рядом с index.html или в родительской папке.');
@@ -11014,9 +11014,9 @@ async function downloadPDF() {
         document.head.appendChild(s);
       });
       try {
-        await tryLoadScript('html2pdf.bundle.min.js');
-      } catch (_) {
         await tryLoadScript('../html2pdf.bundle.min.js');
+      } catch (_) {
+        await tryLoadScript('html2pdf.bundle.min.js');
       }
       if (typeof html2pdf === 'undefined') {
         throw new Error('Библиотека html2pdf не загружена');

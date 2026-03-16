@@ -3650,19 +3650,28 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     };
   }, [useBackend, useBackendAi, provider, model, apiKey]);
 
-  const MIN_QUALITY_SPECS = 15; // минимум характеристик для принятия результата поиска
+  const getMinimumSearchSpecs = useCallback((row: GoodsRow): number => {
+    const catalogItem = lookupCatalog(row.type);
+    const isUniversal = isUniversalGoodsType(row.type);
+    if (isUniversal) {
+      return catalogItem?.isSoftware ? 14 : 12;
+    }
+    return catalogItem?.isSoftware ? 10 : 8;
+  }, []);
 
   const pickBestCandidate = useCallback((
+    row: GoodsRow,
     internetCandidate: SpecsCandidate | null,
     eisCandidate: SpecsCandidate | null,
     autoPickTopCandidate: boolean,
   ): SpecsCandidate | null => {
     if (!internetCandidate && !eisCandidate) return null;
+    const minQualitySpecs = getMinimumSearchSpecs(row);
     if (!autoPickTopCandidate) {
       const c = eisCandidate ?? internetCandidate;
       // Если результат поиска содержит слишком мало характеристик — отклоняем, пусть сгенерирует ИИ
-      if (c && c.specs.length < MIN_QUALITY_SPECS) {
-        console.warn(`[Quality] Поисковый результат содержит ${c.specs.length} хар-к (мин. ${MIN_QUALITY_SPECS}), переход к ИИ-генерации.`);
+      if (c && c.specs.length < minQualitySpecs) {
+        console.warn(`[Quality] Поисковый результат содержит ${c.specs.length} хар-к (мин. ${minQualitySpecs}), переход к ИИ-генерации.`);
         return null;
       }
       return c;
@@ -3674,12 +3683,12 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     if (eisCount >= internetCount) best = eisCandidate;
     else best = internetCandidate;
     if (!best) best = eisCandidate ?? internetCandidate;
-    if (best && best.specs.length < MIN_QUALITY_SPECS) {
-      console.warn(`[Quality] Лучший поисковый результат: ${best.specs.length} хар-к (мин. ${MIN_QUALITY_SPECS}), переход к ИИ-генерации.`);
+    if (best && best.specs.length < minQualitySpecs) {
+      console.warn(`[Quality] Лучший поисковый результат: ${best.specs.length} хар-к (мин. ${minQualitySpecs}), переход к ИИ-генерации.`);
       return null;
     }
     return best;
-  }, []);
+  }, [getMinimumSearchSpecs]);
 
   const mutation = useMutation({
     mutationFn: async (options?: GenerateOptions) => {
@@ -3744,7 +3753,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                 // игнорируем и пробуем fallback AI ниже
               }
 
-              const picked = pickBestCandidate(internetCandidate, eisCandidate, automationSettings.autoPickTopCandidate);
+              const picked = pickBestCandidate(currentRow, internetCandidate, eisCandidate, automationSettings.autoPickTopCandidate);
               if (picked) {
                 const pickedMeta = normalizeResolvedMeta(currentRow.type, picked.meta);
                 next[i] = { ...currentRow, status: 'done', specs: picked.specs, meta: pickedMeta };

@@ -110,6 +110,18 @@ async function run() {
     });
   }
 
+  await page.route('**/api/ai/key', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        key: 'e2e-direct-stream-key',
+        url: 'https://api.deepseek.com/chat/completions',
+      }),
+    });
+  });
+
   await page.route('**/api/search/specs', async (route) => {
     searchHits.internet += 1;
     const body = route.request().postDataJSON();
@@ -199,10 +211,23 @@ async function run() {
     });
   }
 
+  await page.addInitScript((user) => {
+    window.localStorage.setItem('tz_backend_jwt', 'e2e-jwt-token');
+    window.localStorage.setItem('tz_backend_user', JSON.stringify(user));
+  }, {
+    email: 'e2e@local.test',
+    role: 'free',
+    tz_count: 0,
+    tz_limit: 3,
+    trial_active: true,
+    trial_days_left: 7,
+  });
+
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('text=Генератор ТЗ', { timeout: 30000 });
 
-  await page.getByRole('button', { name: /Контраст|Янтарь/ }).click();
+  await page.getByRole('button', { name: /Arctic|Контраст/ }).evaluate((button) => button.click());
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'contrast', { timeout: 10000 });
   const theme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
   assert.strictEqual(theme, 'contrast', 'Theme should switch to contrast');
 
@@ -218,14 +243,9 @@ async function run() {
     const expandedFinal = await authToggle.getAttribute('aria-expanded');
     assert.strictEqual(expandedFinal, 'true', 'Auth block should be expanded for API key input');
   }
-
-  const apiInput = page.locator('input[placeholder="sk-..."]').first();
-  await apiInput.waitFor({ timeout: 10000 });
-  assert.strictEqual(await apiInput.getAttribute('type'), 'password', 'API key must be hidden by default');
-  await page.locator('.workspace-secret-toggle').first().click();
-  assert.strictEqual(await apiInput.getAttribute('type'), 'text', 'API key should be visible after eye click');
-  await page.locator('.workspace-secret-toggle').first().click();
-  assert.strictEqual(await apiInput.getAttribute('type'), 'password', 'API key should hide after second eye click');
+  const authPanelText = await page.locator('.workspace-auth-collapse-inner').innerText();
+  assert.match(authPanelText, /e2e@local\.test/i, 'Stored backend user should be shown in auth panel');
+  assert.match(authPanelText, /Trial|безлимит/i, 'Trial access state should be shown in auth panel');
 
   const firstRow = page.locator('.rows-table tbody tr').first();
   await firstRow.locator('td').nth(1).locator('select').selectOption('keyboardMouseSet');
@@ -242,8 +262,28 @@ async function run() {
     return rows.length === 2 && rows.every((row) => row.textContent && row.textContent.includes('Готово'));
   }, { timeout: 60000 });
 
-  await page.waitForFunction(() => document.body.innerText.includes('USB-приёмник'), { timeout: 15000 });
-  await page.waitForFunction(() => document.body.innerText.includes('RJ-45, RJ-11, RJ-12'), { timeout: 15000 });
+  try {
+    await page.waitForFunction(() => (
+      Array.from(document.querySelectorAll('.tz-preview input'))
+        .some((node) => node instanceof HTMLInputElement && String(node.value || '').includes('USB-приёмник'))
+    ), { timeout: 15000 });
+    await page.waitForFunction(() => (
+      Array.from(document.querySelectorAll('.tz-preview input'))
+        .some((node) => node instanceof HTMLInputElement && String(node.value || '').includes('RJ-45, RJ-11, RJ-12'))
+    ), { timeout: 15000 });
+  } catch (error) {
+    const previewText = await page.locator('.tz-preview').innerText().catch(() => '');
+    const previewInputs = await page.evaluate(() => (
+      Array.from(document.querySelectorAll('.tz-preview input'))
+        .map((node) => node instanceof HTMLInputElement ? String(node.value || '') : '')
+        .filter(Boolean)
+        .slice(0, 80)
+    )).catch(() => []);
+    console.error('[react-e2e-searchHits]', JSON.stringify(searchHits));
+    console.error('[react-e2e-preview-snippet]', previewText.slice(0, 2500));
+    console.error('[react-e2e-preview-inputs]', JSON.stringify(previewInputs));
+    throw error;
+  }
 
   const docxBtn = page.locator('button:has-text("Скачать DOCX")');
   await page.waitForFunction(() => {

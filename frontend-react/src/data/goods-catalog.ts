@@ -2327,7 +2327,23 @@ export function detectAllGoodsTypes(model: string): Array<{ type: string; name: 
   const escText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const wordBoundaryRe = new RegExp(`(?:^|[\\s,.:;()/\\-])${escText}(?:$|[\\s,.:;()/\\-])`);
 
-  // 1. BRAND_TYPES — словарь мультипродуктовых брендов
+  // 1. TYPE_HINTS — токены конкретных моделей/линеек (ВЫСШИЙ ПРИОРИТЕТ)
+  //    Проверяем первым, чтобы "ProBook" → laptop имел приоритет над "HP" → [pc,laptop,...]
+  for (const hint of TYPE_HINTS) {
+    for (const tok of hint.tokens) {
+      const tn = normalizeText(tok);
+      let tokenMatched = false;
+      if (tn.length <= 3) {
+        const re = new RegExp(`(?:^|\\s|[^а-яa-z])${tn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s|[^а-яa-z])`);
+        tokenMatched = re.test(` ${text} `);
+      } else {
+        tokenMatched = text.includes(tn);
+      }
+      if (tokenMatched) { addType(hint.type); break; }
+    }
+  }
+
+  // 2. BRAND_TYPES — словарь мультипродуктовых брендов
   for (const [brand, types] of Object.entries(BRAND_TYPES)) {
     const bn = normalizeText(brand);
     let brandMatch = false;
@@ -2341,7 +2357,7 @@ export function detectAllGoodsTypes(model: string): Array<{ type: string; name: 
     }
   }
 
-  // 2. Поиск по GOODS_CATALOG (name, placeholder, okpd2name)
+  // 3. Поиск по GOODS_CATALOG (name, placeholder, okpd2name)
   for (const [typeKey, item] of Object.entries(GOODS_CATALOG)) {
     if (seenTypes.has(typeKey)) continue;
 
@@ -2362,22 +2378,6 @@ export function detectAllGoodsTypes(model: string): Array<{ type: string; name: 
     }
 
     if (matched) addType(typeKey);
-  }
-
-  // 3. TYPE_HINTS (токены конкретных моделей)
-  for (const hint of TYPE_HINTS) {
-    if (seenTypes.has(hint.type)) continue;
-    for (const tok of hint.tokens) {
-      const tn = normalizeText(tok);
-      let tokenMatched = false;
-      if (tn.length <= 3) {
-        const re = new RegExp(`(?:^|\\s|[^а-яa-z])${tn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s|[^а-яa-z])`);
-        tokenMatched = re.test(` ${text} `);
-      } else {
-        tokenMatched = text.includes(tn);
-      }
-      if (tokenMatched) { addType(hint.type); break; }
-    }
   }
 
   return results;

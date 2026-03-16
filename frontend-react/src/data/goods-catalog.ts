@@ -2316,7 +2316,7 @@ export function detectAllGoodsTypes(model: string): Array<{ type: string; name: 
   // Убираем служебные слова «лицензия на», «продление», «подписка на» из начала —
   // они не влияют на тип товара, а только мешают детекту.
   // «лицензия ALD PRO» → ищем по «ald pro», а если ничего — добавим «license» вторым.
-  const stripPrefixRe = /^(лицензия на |лицензия |лиценз\. |продление |подписка на |renewal |license )/;
+  const stripPrefixRe = /^(лицензия на |лицензия |лиценз\. |продление |подписка на |renewal |license |техподдержка на |техподдержка |тех\.?\s*поддержка на |тех\.?\s*поддержка |техническая поддержка на |техническая поддержка |тп на |support )/;
   const strippedText = text.replace(stripPrefixRe, '').trim();
   const hadLicensePrefix = strippedText !== text;
   const searchText = strippedText.length >= 2 ? strippedText : text;

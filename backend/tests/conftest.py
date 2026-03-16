@@ -26,14 +26,15 @@ def client():
 @pytest.fixture
 def admin_token(client):
     """Get admin JWT token."""
-    # Create magic link
-    resp = client.post("/api/auth/send-link", json={"email": "admin@test.ru"})
-    assert resp.status_code == 200
-    data = resp.json()
-    magic_link = data.get("magic_link", "")
-    # Extract token from link
-    token = magic_link.split("magic=")[-1] if "magic=" in magic_link else ""
-    # Verify token
-    resp2 = client.get(f"/api/auth/verify?token={token}")
-    assert resp2.status_code == 200
-    return resp2.json()["token"]
+    from auth import create_jwt, get_or_create_user
+    from main import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = get_or_create_user("admin@test.ru", db)
+        user.role = "admin"
+        user.tz_limit = -1
+        db.commit()
+        return create_jwt(user.email, user.role)
+    finally:
+        db.close()

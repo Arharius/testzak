@@ -177,7 +177,11 @@ export function App() {
     setLoginLoading(true);
     setLoginError('');
     try {
-      await sendMagicLink(loginEmail.trim());
+      const res = await sendMagicLink(loginEmail.trim());
+      if (res.magic_link) {
+        window.location.href = res.magic_link;
+        return;
+      }
       setLoginSent(true);
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : 'Ошибка отправки');

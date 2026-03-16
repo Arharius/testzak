@@ -152,7 +152,12 @@ async function apiDelete<T>(path: string, auth = true, timeoutMs = SHORT_TIMEOUT
 
 // ── Auth ────────────────────────────────────────────────────────────────────
 
-export async function sendMagicLink(email: string): Promise<{ ok: boolean; message: string }> {
+export async function sendMagicLink(email: string): Promise<{
+  ok: boolean;
+  message: string;
+  magic_link?: string;
+  smtp_configured?: boolean;
+}> {
   return apiPost('/api/auth/send-link', { email });
 }
 

@@ -1,5 +1,7 @@
 """Tests for TZ Generator API endpoints."""
 import pytest
+from datetime import datetime, timedelta, timezone
+from fastapi import HTTPException
 
 
 class TestHealth:
@@ -93,6 +95,47 @@ class TestAuth:
         resp3 = client.get(f"/api/auth/verify?token={token}")
         assert resp3.status_code == 400
 
+    def test_new_user_gets_trial_with_unlimited_access(self, client):
+        resp = client.post("/api/auth/send-link", json={"email": "trial-user@test.ru"})
+        token = resp.json()["magic_link"].split("magic=")[-1]
+
+        resp2 = client.get(f"/api/auth/verify?token={token}")
+        assert resp2.status_code == 200
+
+        user = resp2.json()["user"]
+        assert user["email"] == "trial-user@test.ru"
+        assert user["role"] == "free"
+        assert user["trial_active"] is True
+        assert user["trial_days_left"] >= 1
+        assert user["tz_limit"] == -1
+
+    def test_expired_trial_falls_back_to_free_limit(self, client):
+        from main import SessionLocal
+        from auth import sync_user_entitlements
+        from database import User
+
+        db = SessionLocal()
+        try:
+            user = User(
+                id="expired-trial-user",
+                email="expired-trial@test.ru",
+                role="free",
+                tz_limit=-1,
+                tz_count=0,
+                trial_ends_at=datetime.now(timezone.utc) - timedelta(days=1),
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+            changed = sync_user_entitlements(user)
+            assert changed is True
+            assert user.tz_limit == 3
+        finally:
+            db.delete(user)
+            db.commit()
+            db.close()
+
 
 class TestSearch:
     def test_search_specs_empty_product(self, client):
@@ -183,3 +226,56 @@ class TestRateLimiting:
                 assert "detail" in resp.json()
                 break
         assert got_429, "Expected 429 from rate limiter but never got one"
+
+
+class TestPayments:
+    def test_payment_webhook_upgrades_user_to_pro(self, client):
+        from auth import create_jwt, get_or_create_user
+        from main import SessionLocal
+
+        db = SessionLocal()
+        try:
+            user = get_or_create_user("paid-user@test.ru", db)
+            jwt = create_jwt(user.email, user.role)
+        finally:
+            db.close()
+
+        webhook = client.post("/api/payment/webhook", json={
+            "event": "payment.succeeded",
+            "object": {
+                "id": "test-payment-001",
+                "status": "succeeded",
+                "metadata": {
+                    "user_email": "paid-user@test.ru",
+                    "plan": "annual",
+                },
+            },
+        })
+        assert webhook.status_code == 200
+        assert webhook.json()["ok"] is True
+
+        me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {jwt}"})
+        assert me.status_code == 200
+        data = me.json()
+        assert data["role"] == "pro"
+        assert data["tz_limit"] == -1
+        assert data["subscription_until"] is not None
+
+    def test_require_active_blocks_user_over_free_limit(self):
+        from main import require_active
+        from database import User
+
+        user = User(
+            id="limit-check-user",
+            email="limit@test.ru",
+            role="free",
+            tz_limit=3,
+            tz_count=3,
+            tz_month_start=datetime.now(timezone.utc),
+            trial_ends_at=datetime.now(timezone.utc) - timedelta(days=1),
+        )
+
+        with pytest.raises(HTTPException) as exc:
+            require_active(user)
+
+        assert exc.value.status_code == 402

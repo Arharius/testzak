@@ -1030,6 +1030,46 @@ def _call_ai(provider: str, model: str, messages: list, temperature: float = 0.3
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"AI error: {str(e)[:400]}")
 
+
+def _call_ai_streaming(provider: str, model: str, messages: list, temperature: float = 0.3, max_tokens: int = 4096):
+    """Stream AI response token by token. Yields SSE data lines."""
+    api_key = _get_api_key(provider)
+    if not api_key:
+        raise HTTPException(status_code=400, detail=f"API ключ {provider} не настроен на сервере")
+    url = _get_ai_url(provider)
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    if provider.strip().lower() == "openrouter":
+        headers["HTTP-Referer"] = "https://arharius.github.io/testzak/"
+        headers["X-Title"] = "TZ Generator"
+
+    body_bytes = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = URLRequest(url, data=body_bytes, headers=headers, method="POST")
+    try:
+        resp = urlopen(req, timeout=AI_TIMEOUT)
+        for line in resp:
+            decoded = line.decode("utf-8", errors="replace").strip()
+            if decoded.startswith("data: "):
+                chunk_str = decoded[6:]
+                if chunk_str == "[DONE]":
+                    break
+                yield chunk_str
+        resp.close()
+    except HTTPError as e:
+        detail = e.read().decode("utf-8", errors="ignore") if hasattr(e, "read") else str(e)
+        yield json.dumps({"error": f"AI error {e.code}: {detail[:400]}"})
+    except Exception as e:
+        yield json.dumps({"error": f"AI error: {str(e)[:400]}"})
+
 # ── ЮKassa helpers ──────────────────────────────────────────────
 PLAN_PRICES = {
     "pro":    {"amount": "1500.00", "currency": "RUB", "label": "Pro (1 месяц)"},
@@ -1422,6 +1462,53 @@ def ai_generate(request: Request, req: AIGenerateRequest, user: Optional[User] =
             user.tz_month_start = datetime(datetime.now(timezone.utc).year, datetime.now(timezone.utc).month, 1, tzinfo=timezone.utc)
         db.commit()
     return {"ok": True, "data": result}
+
+
+@app.post("/api/ai/generate-stream")
+@limiter.limit("20/minute")
+def ai_generate_stream(request: Request, req: AIGenerateRequest, user: Optional[User] = Depends(get_optional_user), db: Session = Depends(get_db)):
+    """Streaming AI generation — keeps connection alive, avoids Railway 60s timeout."""
+    if user is None:
+        if not INTEGRATION_ALLOW_ANON:
+            raise HTTPException(status_code=401, detail="Требуется авторизация")
+    else:
+        require_active(user, db)
+
+    def event_stream():
+        full_content = ""
+        try:
+            for chunk_str in _call_ai_streaming(req.provider, req.model, req.messages, req.temperature or 0.3, req.max_tokens or 4096):
+                try:
+                    chunk = json.loads(chunk_str)
+                except json.JSONDecodeError:
+                    continue
+                if "error" in chunk:
+                    yield f"data: {json.dumps({'error': chunk['error']})}\n\n"
+                    return
+                choices = chunk.get("choices", [])
+                if choices:
+                    delta = choices[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        full_content += content
+                        yield f"data: {json.dumps({'token': content})}\n\n"
+            # Final message with full content
+            yield f"data: {json.dumps({'done': True, 'content': full_content})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)[:400]})}\n\n"
+
+    # Count usage
+    if user and user.role != "admin" and user.tz_limit != -1:
+        user.tz_count = (user.tz_count or 0) + 1
+        if not user.tz_month_start:
+            user.tz_month_start = datetime(datetime.now(timezone.utc).year, datetime.now(timezone.utc).month, 1, tzinfo=timezone.utc)
+        db.commit()
+
+    from starlette.responses import StreamingResponse
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    })
 
 # ── Search: internet specs ─────────────────────────────────────
 @app.post("/api/search/specs")

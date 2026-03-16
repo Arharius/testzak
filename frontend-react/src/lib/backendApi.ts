@@ -185,12 +185,81 @@ export async function generateWithBackend(
   temperature = 0.1,
   maxTokens = 4096,
 ): Promise<string> {
-  const result = await apiPost<{ ok: boolean; data: { choices?: { message?: { content?: string } }[] } }>(
-    '/api/ai/generate',
-    { provider, model, messages, temperature, max_tokens: maxTokens, timeout_sec: 100 },
-    'optional',
-  );
-  return result.data?.choices?.[0]?.message?.content || '';
+  // Use streaming endpoint to avoid Railway 60s timeout
+  try {
+    return await _generateWithBackendStream(provider, model, messages, temperature, maxTokens);
+  } catch {
+    // Fallback to non-streaming if stream fails
+    const result = await apiPost<{ ok: boolean; data: { choices?: { message?: { content?: string } }[] } }>(
+      '/api/ai/generate',
+      { provider, model, messages, temperature, max_tokens: maxTokens, timeout_sec: 100 },
+      'optional',
+    );
+    return result.data?.choices?.[0]?.message?.content || '';
+  }
+}
+
+async function _generateWithBackendStream(
+  provider: string,
+  model: string,
+  messages: { role: string; content: string }[],
+  temperature: number,
+  maxTokens: number,
+): Promise<string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const jwt = typeof localStorage !== 'undefined' ? localStorage.getItem('tz_backend_jwt') : null;
+  if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error('Превышено время ожидания сервера')), DEFAULT_TIMEOUT_MS);
+
+  try {
+    const resp = await fetch(buildApiUrl('/api/ai/generate-stream'), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ provider, model, messages, temperature, max_tokens: maxTokens }),
+      signal: controller.signal,
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      throw new Error(`HTTP ${resp.status}: ${text.slice(0, 200)}`);
+    }
+
+    const reader = resp.body?.getReader();
+    if (!reader) throw new Error('No stream reader');
+
+    const decoder = new TextDecoder();
+    let fullContent = '';
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+        try {
+          const msg = JSON.parse(jsonStr);
+          if (msg.error) throw new Error(msg.error);
+          if (msg.token) fullContent += msg.token;
+          if (msg.done && msg.content) fullContent = msg.content;
+        } catch (e) {
+          if (e instanceof Error && e.message.includes('AI error')) throw e;
+        }
+      }
+    }
+
+    return fullContent;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

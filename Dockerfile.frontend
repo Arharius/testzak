@@ -13,11 +13,11 @@ FROM nginx:1.27-alpine
 WORKDIR /usr/share/nginx/html
 
 COPY nginx.render.conf /etc/nginx/conf.d/default.conf
-# Legacy SPA (корневой index.html перенаправляет на /react/)
-COPY index.html /usr/share/nginx/html/index.html
+# Legacy SPA доступен отдельно по /legacy/index.html
+COPY legacy/index.html /usr/share/nginx/html/legacy/index.html
 COPY docx.min.js /usr/share/nginx/html/docx.min.js
 COPY html2pdf.bundle.min.js /usr/share/nginx/html/html2pdf.bundle.min.js
-# React build копируется в /react/ — соответствует base: '/react/' в vite.config.ts
-COPY --from=react_builder /app/frontend-react/dist /usr/share/nginx/html/react
+# React build обслуживается из корня, а /react/* переписывается на тот же SPA
+COPY --from=react_builder /app/frontend-react/dist /usr/share/nginx/html
 
 EXPOSE 80

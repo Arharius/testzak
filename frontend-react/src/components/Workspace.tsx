@@ -4540,13 +4540,42 @@ ${ldapRoleHint}
 // ── Вспомогательные функции DOCX ─────────────────────────────────────────────
 const FONT = 'Times New Roman';
 const FONT_SIZE = 22; // half-points → 11pt
-const DOCX_SECTION_LEFT_WIDTH = 1100;
-const DOCX_SECTION_RIGHT_WIDTH = 8200;
+const DOCX_PAGE_MARGINS = { top: 1041, right: 1003, bottom: 1539, left: 1129 };
+const DOCX_TEXT_WIDTH = 9768;
+const DOCX_SECTION_LEFT_WIDTH = 1280;
+const DOCX_SECTION_RIGHT_WIDTH = DOCX_TEXT_WIDTH - DOCX_SECTION_LEFT_WIDTH;
 const DOCX_CELL_MARGINS = { top: 60, bottom: 60, left: 80, right: 80 };
 const DOCX_COMPACT_MARGINS = { top: 35, bottom: 35, left: 50, right: 50 };
+const DOCX_SUMMARY_WIDTHS = {
+  commercial: { idx: 420, name: 3180, license: 1750, term: 1100, qty: 720, okpd2: 1400, appendix: 1198 },
+  default: { idx: 420, name: 5250, qty: 900, okpd2: 1550, appendix: 1648 },
+};
 
 function cellShade(fill: string) {
   return { fill, type: ShadingType.CLEAR, color: 'auto' };
+}
+
+function noBorders() {
+  const none = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+  return { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: none };
+}
+
+function docxRuns(text: string, opts: { bold?: boolean; color?: string; size?: number; italics?: boolean } = {}) {
+  const parts = String(text || '').split('\n');
+  return parts.flatMap((part, idx) => {
+    const runs = [
+      new TextRun({
+        text: part,
+        bold: opts.bold ?? false,
+        color: opts.color,
+        italics: opts.italics ?? false,
+        font: FONT,
+        size: opts.size ?? FONT_SIZE,
+      }),
+    ];
+    if (idx < parts.length - 1) runs.push(new TextRun({ break: 1 }));
+    return runs;
+  });
 }
 
 function hCell(
@@ -4560,8 +4589,9 @@ function hCell(
 ) {
   return new TableCell({
     children: [new Paragraph({
-      children: [new TextRun({ text, bold: true, font: FONT, size: opts.size ?? FONT_SIZE, color: 'FFFFFF' })],
+      children: docxRuns(text, { bold: true, color: 'FFFFFF', size: opts.size ?? FONT_SIZE }),
       alignment: AlignmentType.CENTER,
+      keepLines: true,
     })],
     columnSpan: opts.span,
     width: opts.w ? { size: opts.w, type: WidthType.DXA } : undefined,
@@ -4584,8 +4614,9 @@ function dCell(
 ) {
   return new TableCell({
     children: [new Paragraph({
-      children: [new TextRun({ text: text || '—', font: FONT, size: opts.size ?? FONT_SIZE })],
+      children: docxRuns(text || '—', { size: opts.size ?? FONT_SIZE }),
       alignment: opts.align ?? AlignmentType.CENTER,
+      keepLines: true,
     })],
     columnSpan: opts.span,
     width: opts.w ? { size: opts.w, type: WidthType.DXA } : undefined,
@@ -4604,10 +4635,11 @@ function buildDocxSectionTable(
   const rightWidth = widths.right ?? DOCX_SECTION_RIGHT_WIDTH;
   return new Table({
     layout: TableLayoutType.FIXED,
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: DOCX_TEXT_WIDTH, type: WidthType.DXA },
     rows: [
       new TableRow({
         tableHeader: true,
+        cantSplit: true,
         height: { value: 400, rule: HeightRule.ATLEAST },
         children: [
           hCell(headers[0], { w: leftWidth }),
@@ -4615,6 +4647,7 @@ function buildDocxSectionTable(
         ],
       }),
       ...rows.map((row) => new TableRow({
+        cantSplit: true,
         children: [
           dCell(row.label, { w: leftWidth, align: AlignmentType.CENTER }),
           dCell(row.value, { w: rightWidth, align: AlignmentType.LEFT }),
@@ -4646,11 +4679,13 @@ function numText(n: number): string {
 // ── Вспомогательные функции для 3-колоночной таблицы характеристик ────────────
 function specGroupRow3(text: string): TableRow {
   return new TableRow({
+    cantSplit: true,
     children: [new TableCell({
       columnSpan: 3,
       children: [new Paragraph({
-        children: [new TextRun({ text, bold: true, font: FONT, size: FONT_SIZE })],
+        children: docxRuns(text, { bold: true, size: FONT_SIZE }),
         alignment: AlignmentType.CENTER,
+        keepLines: true,
       })],
       shading: cellShade('DBEAFE'),
       borders: allBorders(),
@@ -4662,20 +4697,21 @@ function specGroupRow3(text: string): TableRow {
 function spec3DataRow(name: string, value: string, unit: string, warning?: string): TableRow {
   const valText = value + (warning ? ' ⚠️ ' + warning : '');
   return new TableRow({
+    cantSplit: true,
     children: [
       new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: name, font: FONT, size: FONT_SIZE })] })],
+        children: [new Paragraph({ children: docxRuns(name, { size: FONT_SIZE }), keepLines: true })],
         width: { size: 50, type: WidthType.PERCENTAGE },
         borders: allBorders(),
         margins: DOCX_CELL_MARGINS,
       }),
       new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: valText, font: FONT, size: FONT_SIZE })] })],
+        children: [new Paragraph({ children: docxRuns(valText, { size: FONT_SIZE }), keepLines: true })],
         borders: allBorders(),
         margins: DOCX_CELL_MARGINS,
       }),
       new TableCell({
-        children: [new Paragraph({ children: [new TextRun({ text: unit, font: FONT, size: FONT_SIZE })] })],
+        children: [new Paragraph({ children: docxRuns(unit, { size: FONT_SIZE }), keepLines: true })],
         width: { size: 12, type: WidthType.PERCENTAGE },
         borders: allBorders(),
         margins: DOCX_CELL_MARGINS,
@@ -4701,22 +4737,207 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
   // ── Вспомогательные параграфы ──────────────────────────────────
   // Заголовки разделов: bold, 13pt
   const sectionHead = (text: string, spacingBefore = 200) => new Paragraph({
-    children: [new TextRun({ text, bold: true, font: FONT, size: 26 })],
+    children: docxRuns(text, { bold: true, size: 26 }),
     alignment: AlignmentType.JUSTIFIED,
     spacing: { before: spacingBefore, after: 100 },
+    keepLines: true,
+    keepNext: true,
   });
   // Обычный текст: по ширине
   const regPara = (text: string) => new Paragraph({
-    children: [new TextRun({ text, font: FONT, size: FONT_SIZE })],
+    children: docxRuns(text, { size: FONT_SIZE }),
     alignment: AlignmentType.JUSTIFIED,
     spacing: { after: 80 },
+    keepLines: true,
   });
   // Центрированный текст
   const centerPara = (text: string, opts?: { bold?: boolean; size?: number; spacing?: number }) => new Paragraph({
-    children: [new TextRun({ text, bold: opts?.bold ?? false, font: FONT, size: opts?.size ?? FONT_SIZE })],
+    children: docxRuns(text, { bold: opts?.bold ?? false, size: opts?.size ?? FONT_SIZE }),
     alignment: AlignmentType.CENTER,
     spacing: { before: opts?.spacing ?? 0, after: 80 },
+    keepLines: true,
   });
+
+  const borderlessCell = (paragraphs: Paragraph[], w: number) => new TableCell({
+    width: { size: w, type: WidthType.DXA },
+    borders: noBorders(),
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
+    children: paragraphs,
+    verticalAlign: VerticalAlign.CENTER,
+  });
+
+  const buildApprovalBlock = () => new Table({
+    layout: TableLayoutType.FIXED,
+    width: { size: DOCX_TEXT_WIDTH, type: WidthType.DXA },
+    borders: noBorders(),
+    rows: [
+      new TableRow({
+        cantSplit: true,
+        children: [
+          borderlessCell([new Paragraph({ children: [] })], 5600),
+          borderlessCell([
+            new Paragraph({
+              children: docxRuns('УТВЕРЖДАЮ', { bold: true, size: FONT_SIZE }),
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 40 },
+              keepLines: true,
+              keepNext: true,
+            }),
+            new Paragraph({
+              children: docxRuns('________________________________', { size: FONT_SIZE }),
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 10 },
+              keepLines: true,
+              keepNext: true,
+            }),
+            new Paragraph({
+              children: docxRuns('(должность)', { size: 18, italics: true }),
+              alignment: AlignmentType.RIGHT,
+              spacing: { after: 40 },
+              keepLines: true,
+              keepNext: true,
+            }),
+            new Paragraph({
+              children: docxRuns('_____________ / _______________ /', { size: FONT_SIZE }),
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 40 },
+              keepLines: true,
+              keepNext: true,
+            }),
+            new Paragraph({
+              children: docxRuns(`«___» _______ ${currentYear} г.`, { size: FONT_SIZE }),
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 120 },
+              keepLines: true,
+            }),
+          ], DOCX_TEXT_WIDTH - 5600),
+        ],
+      }),
+    ],
+  });
+
+  const buildSummaryTable = () => {
+    const summaryRows: TableRow[] = [];
+
+    if (showCommercialTerms) {
+      const widths = DOCX_SUMMARY_WIDTHS.commercial;
+      summaryRows.push(new TableRow({
+        tableHeader: true,
+        cantSplit: true,
+        height: { value: 400, rule: HeightRule.ATLEAST },
+        children: [
+          hCell('№', { w: widths.idx, size: 16, margins: DOCX_COMPACT_MARGINS }),
+          hCell('Наименование', { w: widths.name, size: 16, margins: DOCX_COMPACT_MARGINS }),
+          hCell('Тип лицензии', { w: widths.license, size: 16, margins: DOCX_COMPACT_MARGINS }),
+          hCell('Срок\nдействия', { w: widths.term, size: 16, margins: DOCX_COMPACT_MARGINS }),
+          hCell('Кол-\nво', { w: widths.qty, size: 16, margins: DOCX_COMPACT_MARGINS }),
+          hCell('ОКПД2', { w: widths.okpd2, size: 16, margins: DOCX_COMPACT_MARGINS }),
+          hCell('Прил.\n№', { w: widths.appendix, size: 16, margins: DOCX_COMPACT_MARGINS }),
+        ],
+      }));
+
+      doneRows.forEach((row, idx) => {
+        const goods = lookupCatalog(row.type);
+        const commercial = getResolvedCommercialContext(row);
+        summaryRows.push(new TableRow({
+          cantSplit: true,
+          children: [
+            dCell(String(idx + 1), { w: widths.idx, align: AlignmentType.CENTER, size: 16, margins: DOCX_COMPACT_MARGINS }),
+            dCell(`${goods.name}${row.model ? ` (${row.model})` : ''}`, {
+              w: widths.name,
+              align: AlignmentType.LEFT,
+              size: 16,
+              margins: DOCX_COMPACT_MARGINS,
+            }),
+            dCell(getCommercialValue(commercial.suggestedLicenseType), {
+              w: widths.license,
+              align: AlignmentType.LEFT,
+              size: 16,
+              margins: DOCX_COMPACT_MARGINS,
+            }),
+            dCell(getCommercialValue(commercial.suggestedTerm), {
+              w: widths.term,
+              align: AlignmentType.CENTER,
+              size: 16,
+              margins: DOCX_COMPACT_MARGINS,
+            }),
+            dCell(`${row.qty} ${goods.isSoftware ? 'лиц.' : 'шт.'}`, {
+              w: widths.qty,
+              align: AlignmentType.CENTER,
+              size: 16,
+              margins: DOCX_COMPACT_MARGINS,
+            }),
+            dCell(row.meta?.okpd2_code || goods.okpd2 || '—', {
+              w: widths.okpd2,
+              align: AlignmentType.CENTER,
+              size: 16,
+              margins: DOCX_COMPACT_MARGINS,
+            }),
+            dCell(`Прил. ${idx + 1}`, {
+              w: widths.appendix,
+              align: AlignmentType.CENTER,
+              size: 16,
+              margins: DOCX_COMPACT_MARGINS,
+            }),
+          ],
+        }));
+      });
+    } else {
+      const widths = DOCX_SUMMARY_WIDTHS.default;
+      summaryRows.push(new TableRow({
+        tableHeader: true,
+        cantSplit: true,
+        height: { value: 400, rule: HeightRule.ATLEAST },
+        children: [
+          hCell('№', { w: widths.idx, size: 16, margins: DOCX_COMPACT_MARGINS }),
+          hCell('Наименование', { w: widths.name, size: 16, margins: DOCX_COMPACT_MARGINS }),
+          hCell('Кол-\nво', { w: widths.qty, size: 16, margins: DOCX_COMPACT_MARGINS }),
+          hCell('ОКПД2', { w: widths.okpd2, size: 16, margins: DOCX_COMPACT_MARGINS }),
+          hCell('Прил.\n№', { w: widths.appendix, size: 16, margins: DOCX_COMPACT_MARGINS }),
+        ],
+      }));
+
+      doneRows.forEach((row, idx) => {
+        const goods = lookupCatalog(row.type);
+        summaryRows.push(new TableRow({
+          cantSplit: true,
+          children: [
+            dCell(String(idx + 1), { w: widths.idx, align: AlignmentType.CENTER, size: 16, margins: DOCX_COMPACT_MARGINS }),
+            dCell(`${goods.name}${row.model ? ` (${row.model})` : ''}`, {
+              w: widths.name,
+              align: AlignmentType.LEFT,
+              size: 16,
+              margins: DOCX_COMPACT_MARGINS,
+            }),
+            dCell(`${row.qty} ${goods.isSoftware ? 'лиц.' : 'шт.'}`, {
+              w: widths.qty,
+              align: AlignmentType.CENTER,
+              size: 16,
+              margins: DOCX_COMPACT_MARGINS,
+            }),
+            dCell(row.meta?.okpd2_code || goods.okpd2 || '—', {
+              w: widths.okpd2,
+              align: AlignmentType.CENTER,
+              size: 16,
+              margins: DOCX_COMPACT_MARGINS,
+            }),
+            dCell(`Прил. ${idx + 1}`, {
+              w: widths.appendix,
+              align: AlignmentType.CENTER,
+              size: 16,
+              margins: DOCX_COMPACT_MARGINS,
+            }),
+          ],
+        }));
+      });
+    }
+
+    return new Table({
+      layout: TableLayoutType.FIXED,
+      width: { size: DOCX_TEXT_WIDTH, type: WidthType.DXA },
+      rows: summaryRows,
+    });
+  };
 
   // ── Helper: builds spec table rows with product name header ──
   const buildSpecTableWithHeader = (
@@ -4725,11 +4946,13 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
     const rows: TableRow[] = [];
     // Row 0: product name spanning all 3 columns
     rows.push(new TableRow({
+      cantSplit: true,
       children: [new TableCell({
         columnSpan: 3,
         children: [new Paragraph({
-          children: [new TextRun({ text: productName, bold: true, font: FONT, size: FONT_SIZE })],
+          children: docxRuns(productName, { bold: true, size: FONT_SIZE }),
           alignment: AlignmentType.CENTER,
+          keepLines: true,
         })],
         shading: cellShade('F3F4F6'),
         borders: allBorders(),
@@ -4739,6 +4962,7 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
     // Row 1: column headers
     rows.push(new TableRow({
       tableHeader: true,
+      cantSplit: true,
       height: { value: 400, rule: HeightRule.ATLEAST },
       children: [
         hCell('Наименование характеристики', { w: 4500 }),
@@ -4766,27 +4990,7 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
   // ШАПКА: УТВЕРЖДАЮ + название ТЗ
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    // Блок УТВЕРЖДАЮ (выровнен вправо)
-    children.push(new Paragraph({
-      children: [new TextRun({ text: 'УТВЕРЖДАЮ', bold: true, font: FONT, size: FONT_SIZE })],
-      alignment: AlignmentType.RIGHT, spacing: { after: 40 },
-    }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: '________________________________', font: FONT, size: FONT_SIZE })],
-      alignment: AlignmentType.RIGHT, spacing: { after: 40 },
-    }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: '(должность)', font: FONT, size: 18, italics: true, color: '888888' })],
-      alignment: AlignmentType.RIGHT, spacing: { after: 40 },
-    }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: '_____________ / _______________ /', font: FONT, size: FONT_SIZE })],
-      alignment: AlignmentType.RIGHT, spacing: { after: 40 },
-    }));
-    children.push(new Paragraph({
-      children: [new TextRun({ text: `«___» _______ ${currentYear} г.`, font: FONT, size: FONT_SIZE })],
-      alignment: AlignmentType.RIGHT, spacing: { after: 200 },
-    }));
+    children.push(buildApprovalBlock());
 
     // Заголовок ТЗ (по центру, жирный)
     children.push(centerPara('Техническое задание', { bold: true, size: 28 }));
@@ -4803,73 +5007,12 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
     if (!multi) {
       // Для одной позиции отдельная сводная таблица не требуется.
     } else {
-      const summaryRows: TableRow[] = [
-        new TableRow({
-          tableHeader: true,
-          height: { value: 400, rule: HeightRule.ATLEAST },
-          children: [
-            hCell('№', { w: 420, size: 18, margins: DOCX_COMPACT_MARGINS }),
-            hCell('Наименование', { w: showCommercialTerms ? 3200 : 4700, size: 18, margins: DOCX_COMPACT_MARGINS }),
-            ...(showCommercialTerms
-              ? [
-                  hCell('Тип лицензии', { w: 1450, size: 18, margins: DOCX_COMPACT_MARGINS }),
-                  hCell('Срок', { w: 1000, size: 18, margins: DOCX_COMPACT_MARGINS }),
-                ]
-              : []),
-            hCell('Кол-во', { w: showCommercialTerms ? 700 : 850, size: 18, margins: DOCX_COMPACT_MARGINS }),
-            hCell('ОКПД2', { w: showCommercialTerms ? 1250 : 1500, size: 18, margins: DOCX_COMPACT_MARGINS }),
-            hCell('Прил.', { w: showCommercialTerms ? 900 : 1000, size: 18, margins: DOCX_COMPACT_MARGINS }),
-          ],
-        }),
-      ];
-      doneRows.forEach((row, idx) => {
-        const goods = lookupCatalog(row.type);
-        const commercial = getResolvedCommercialContext(row);
-        summaryRows.push(new TableRow({
-          children: [
-            dCell(String(idx + 1), { align: AlignmentType.CENTER, size: 18, margins: DOCX_COMPACT_MARGINS }),
-            dCell(`${goods.name}${row.model ? ` (${row.model})` : ''}`, {
-              align: AlignmentType.LEFT,
-              size: 18,
-              margins: DOCX_COMPACT_MARGINS,
-            }),
-            ...(showCommercialTerms
-              ? [
-                  dCell(getCommercialValue(commercial.suggestedLicenseType), {
-                    align: AlignmentType.LEFT,
-                    size: 18,
-                    margins: DOCX_COMPACT_MARGINS,
-                  }),
-                  dCell(getCommercialValue(commercial.suggestedTerm), {
-                    align: AlignmentType.CENTER,
-                    size: 18,
-                    margins: DOCX_COMPACT_MARGINS,
-                  }),
-                ]
-              : []),
-            dCell(`${row.qty} ${goods.isSoftware ? 'лиц.' : 'шт.'}`, {
-              align: AlignmentType.CENTER,
-              size: 18,
-              margins: DOCX_COMPACT_MARGINS,
-            }),
-            dCell(row.meta?.okpd2_code || goods.okpd2 || '—', {
-              align: AlignmentType.CENTER,
-              size: 18,
-              margins: DOCX_COMPACT_MARGINS,
-            }),
-            dCell(`Прил. ${idx + 1}`, {
-              align: AlignmentType.CENTER,
-              size: 18,
-              margins: DOCX_COMPACT_MARGINS,
-            }),
-          ],
-        }));
-      });
-      children.push(new Table({
-        layout: TableLayoutType.FIXED,
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        rows: summaryRows,
-      }));
+      if (doneRows.length > 5) {
+        children.push(new Paragraph({ children: [], pageBreakBefore: true }));
+      } else {
+        children.push(new Paragraph({ children: [], spacing: { after: 60 } }));
+      }
+      children.push(buildSummaryTable());
     }
   }
 
@@ -4952,7 +5095,7 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
   const doc = new Document({
     styles: { default: { document: { run: { font: FONT, size: FONT_SIZE } } } },
     sections: [{
-      properties: { page: { margin: { top: 1134, bottom: 1134, left: 1100, right: 650 } } },
+      properties: { page: { margin: DOCX_PAGE_MARGINS } },
       children,
     }],
   });
@@ -6134,7 +6277,7 @@ ${hint || '- Используй детальные, проверяемые эк�
 
     const docSections = buildDocumentSectionBundle(done, lawMode);
     const doc = new jsPDF({ unit: 'pt', format: 'a4', putOnlyUsedFonts: true });
-    const margin = 28;
+    const margin = 42;
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const contentWidth = pageWidth - margin * 2;
@@ -6166,6 +6309,18 @@ ${hint || '- Используй детальные, проверяемые эк�
         y += (opts.size ?? 12) + 4;
       }
       y += opts.gap ?? 4;
+    };
+
+    const addRightAlignedBlock = (text: string, width = 220, opts: { bold?: boolean; size?: number; gap?: number } = {}) => {
+      setFont(opts.bold ?? false, opts.size ?? 10);
+      const lines = doc.splitTextToSize(text, width) as string[];
+      const lineHeight = (opts.size ?? 10) + 3;
+      for (const line of lines) {
+        ensureSpace(lineHeight);
+        doc.text(line, pageWidth - margin, y, { align: 'right' });
+        y += lineHeight;
+      }
+      y += opts.gap ?? 3;
     };
 
     const addParagraph = (text: string, opts: { bold?: boolean; size?: number; gap?: number } = {}) => {
@@ -6318,6 +6473,12 @@ ${hint || '- Используй детальные, проверяемые эк�
       y += 10;
     };
 
+    addRightAlignedBlock('УТВЕРЖДАЮ', 180, { bold: true, size: 10.5, gap: 2 });
+    addRightAlignedBlock('________________________________', 200, { size: 10, gap: 1 });
+    addRightAlignedBlock('(должность)', 120, { size: 8.5, gap: 2 });
+    addRightAlignedBlock('_____________ / _______________ /', 220, { size: 10, gap: 2 });
+    addRightAlignedBlock(`«___» _______ ${docSections.currentYear} г.`, 160, { size: 10, gap: 10 });
+
     addCenteredBlock('Техническое задание', { bold: true, size: 16, gap: 4 });
     addCenteredBlock(`на поставку ${docSections.objectName}`, { size: 12, gap: 12 });
 
@@ -6330,10 +6491,11 @@ ${hint || '- Используй детальные, проверяемые эк�
     );
 
     if (docSections.multi) {
+      if (done.length > 5) addPage();
       drawTable(
         docSections.showCommercialTerms
-          ? ['№', 'Наименование', 'Тип лицензии', 'Срок', 'Кол-во', 'ОКПД2', 'Прил.']
-          : ['№', 'Наименование', 'Кол-во', 'ОКПД2', 'Прил.'],
+          ? ['№', 'Наименование', 'Тип лицензии', 'Срок действия', 'Кол-во', 'ОКПД2', 'Прил. №']
+          : ['№', 'Наименование', 'Кол-во', 'ОКПД2', 'Прил. №'],
         done.map((row, idx) => {
           const goods = lookupCatalog(row.type);
           const commercial = getResolvedCommercialContext(row);
@@ -6355,10 +6517,10 @@ ${hint || '- Используй детальные, проверяемые эк�
                 `Прил. ${idx + 1}`,
               ];
         }),
-        docSections.showCommercialTerms ? [0.45, 3.6, 1.55, 1.1, 0.8, 1.25, 0.95] : [0.5, 5.2, 0.9, 1.6, 1.1],
+        docSections.showCommercialTerms ? [0.45, 3.35, 1.75, 1.15, 0.8, 1.45, 1.05] : [0.5, 5.6, 1.0, 1.55, 1.15],
         {
-          fontSize: 8.2,
-          headerSize: 8.5,
+          fontSize: 7.9,
+          headerSize: 8.2,
           align: docSections.showCommercialTerms
             ? ['center', 'left', 'left', 'center', 'center', 'center', 'center']
             : ['center', 'left', 'center', 'center', 'center'],
@@ -6530,6 +6692,15 @@ ${hint || '- Используй детальные, проверяемые эк�
 
     return (
       <div className="tz-preview" style={{ marginTop: 24, fontSize: 12, fontFamily: 'Times New Roman, serif', lineHeight: 1.5, color: '#F5F0E8' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <div style={{ width: 260, textAlign: 'right', color: '#F5F0E8' }}>
+            <div style={{ fontWeight: 700 }}>УТВЕРЖДАЮ</div>
+            <div>________________________________</div>
+            <div style={{ fontSize: 11, fontStyle: 'italic', opacity: 0.8 }}>(должность)</div>
+            <div>_____________ / _______________ /</div>
+            <div>«___» _______ {currentYear} г.</div>
+          </div>
+        </div>
         <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 16, marginBottom: 6, color: '#F5F0E8' }}>ТЕХНИЧЕСКОЕ ЗАДАНИЕ</div>
         <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 14, marginBottom: 12, color: '#FBBF24' }}>на поставку {objectName}</div>
 
@@ -6546,7 +6717,7 @@ ${hint || '- Используй детальные, проверяемые эк�
                   {showCommercialTerms && <th style={{ border: bdr, padding: '4px 8px' }}>Срок действия</th>}
                   <th style={{ border: bdr, padding: '4px 8px' }}>Кол-во</th>
                   <th style={{ border: bdr, padding: '4px 8px' }}>ОКПД2</th>
-                  <th style={{ border: bdr, padding: '4px 8px', width: 100 }}>Приложение</th>
+                  <th style={{ border: bdr, padding: '4px 8px', width: 96 }}>Прил. №</th>
                 </tr>
               </thead>
               <tbody>
@@ -6561,7 +6732,7 @@ ${hint || '- Используй детальные, проверяемые эк�
                       {showCommercialTerms && <td style={tdC}>{getCommercialValue(commercial.suggestedTerm)}</td>}
                       <td style={tdC}>{row.qty} {g.isSoftware ? 'лиценз.' : 'шт.'}</td>
                       <td style={tdC}>{row.meta?.okpd2_code || g.okpd2}</td>
-                      <td style={tdC}>Приложение {idx + 1}</td>
+                      <td style={tdC}>Прил. {idx + 1}</td>
                     </tr>
                   );
                 })}

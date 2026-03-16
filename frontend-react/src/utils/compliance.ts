@@ -27,6 +27,10 @@ type RowForCompliance = {
   id: number;
   type: string;
   status: string;
+  model?: string;
+  licenseType?: string;
+  term?: string;
+  strictMinSpecs?: number;
   specs?: SpecItem[];
 };
 
@@ -35,6 +39,15 @@ const ARTICLE_RE = /\b(артикул|арт\.?|part\s*number|p\/n|pn)\b/i;
 const MODEL_WORD_RE = /\b(модель|model)\b/i;
 const ARTICLE_CODE_RE = /\b[A-ZА-Я]{1,6}-\d{2,8}[A-ZА-Я0-9-]*\b/;
 const OPERATOR_RE = /(>=|<=|>|<)/;
+const STRICT_WEAK_VALUE_RE = /(по типу( товара| программного обеспечения)?|по назначению|в соответствии с технической документацией производителя( и требованиями заказчика)?|по условиям поставки и требованиям заказчика|актуальная поддерживаемая версия по документации производителя|в соответствии с требованиями заказчика|при необходимости|по описанию|по согласованию с заказчиком|типовая конфигурация|конкретное значение|согласно документации|согласно требованиям|или иное по требованию|или иное — по требованию|уточнить при необходимости)/i;
+const GENERIC_NAME_RE = /^(функциональные возможности|технические характеристики|характеристики|параметры|описание|назначение|тип товара)$/i;
+const MEASURABLE_NAME_RE = /(колич|объем|объ[её]м|емкост|[её]мкост|размер|ширин|высот|глубин|толщин|мощност|скорост|пропускн|частот|диагонал|разрешен|памят|яд(ер|ра)|поток|срок|верси|уров|класс|ресурс|масса|вес|длин|время реакции|время решения|порт|сокет|tbw|mtbf|iops)/i;
+const BOOLEAN_ALLOWED_NAME_RE = /(наличие|поддержка|совместим|интеграц|журналир|аудит|веб-интерфейс|api|экспорт|импорт|консоль|кластеризац|резервн|ролевая модель|двухфактор|авторизац|аутентификац|шлюз|мониторинг|оповещени|доставка|доступ|управление|миграц|политик|сервис|средств|защит|шифрован|контроль|блокиров|регистрац|монтаж|развертыван|разв[её]ртыван|интерфейс|подключение|протокол|клиент|агент|диспетчер)/i;
+const SOFTWARE_TYPE_KEYS = new Set([
+  'os', 'office', 'virt', 'vdi', 'dbms', 'erp', 'cad', 'license', 'antivirus', 'edr', 'firewall_sw', 'dlp',
+  'siem', 'crypto', 'waf', 'pam', 'iam', 'pki', 'email', 'vks', 'ecm', 'portal', 'project_sw', 'bpm',
+  'backup_sw', 'itsm', 'monitoring', 'mdm', 'hr', 'gis', 'ldap', 'osSupport', 'supportCert', 'remoteAccessSw',
+]);
 
 // Whitelist: технические стандарты и интерфейсы, которые НЕ являются торговыми марками
 const TECH_STANDARD_WHITELIST = /\b(RJ-?45|RJ-?11|RJ-?12|USB|HDMI|VGA|DVI|DP|DisplayPort|SFP|SFP\+|QSFP|QSFP\+|QSFP28|LC|SC|FC|ST|MTP|MPO|Cat\.?\s*[5-8][eaEA]?|UTP|FTP|STP|S\/FTP|PoE|PoE\+|DDR[2-5]|PCIe|PCI-?E|SATA|SAS|NVMe|M\.2|mSATA|SO-?DIMM|DIMM|ECC|LAN|WAN|IEEE\s*802\.\d+|Wi-?Fi\s*\d*[a-z]?|Bluetooth|BLE|Ethernet|GbE|10GbE|40GbE|100GbE|IPv[46]|TCP|UDP|HTTP[S]?|FTP|SNMP|SSH|SSL|TLS|AES|RSA|SHA|IPS|IDS|RAID|SSD|HDD|NAND|TLC|QLC|MLC|SLC|OLED|IPS|VA|TN|LED|LCD|ГГц|МГц|ГБ|МБ|ТБ|Вт|дБ|лк|кд|Гбит|Мбит)\b/i;
@@ -61,10 +74,205 @@ function addIssue(
   });
 }
 
+function normalizeSpecKey(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isWeakStrictValue(value: string): boolean {
+  const normalized = normalizeSpecKey(value);
+  if (!normalized) return true;
+  if (STRICT_WEAK_VALUE_RE.test(normalized)) return true;
+  return false;
+}
+
+function isConcreteValue(value: string): boolean {
+  const normalized = String(value || '').trim();
+  if (!normalized) return false;
+  if (/\d/.test(normalized)) return true;
+  if (/не менее|не более|до |от |tls|ssl|rbac|ldap|kerberos|smtp|imap|pop3|https|ssh|ceph|lvm|kvm|qemu|rest api|cli|html5|totp|saml|openid|patroni|postgresql|gost|гост|фстэк/i.test(normalized)) {
+    return true;
+  }
+  if (/[;,/]/.test(normalized)) return true;
+  if (normalized.split(/\s+/).length >= 5 && !isWeakStrictValue(normalized)) return true;
+  return false;
+}
+
+function inferSpecStrength(spec: SpecItem): number {
+  const name = String(spec.name || '').trim();
+  const value = String(spec.value || '').trim();
+  const unit = String(spec.unit || '').trim();
+  let score = 0;
+  if (name && !GENERIC_NAME_RE.test(name)) score += 2;
+  if (!isWeakStrictValue(value)) score += 3;
+  if (isConcreteValue(value)) score += 3;
+  if (unit && unit !== '—') score += 1;
+  if (/\d/.test(value)) score += 1;
+  return score;
+}
+
+export function sanitizeProcurementSpecs(row: Pick<RowForCompliance, 'type' | 'model' | 'licenseType' | 'term'>, specs: SpecItem[]): SpecItem[] {
+  const bucket = new Map<string, SpecItem>();
+  const orderedKeys: string[] = [];
+  for (const original of specs) {
+    const name = String(original.name || '').replace(/\s+/g, ' ').trim();
+    const value = String(original.value || '').replace(/\s+/g, ' ').trim();
+    const unit = String(original.unit || '').replace(/\s+/g, ' ').trim();
+    const group = String(original.group || 'Общие сведения').replace(/\s+/g, ' ').trim() || 'Общие сведения';
+    if (!name || !value) continue;
+    if (GENERIC_NAME_RE.test(name) && isWeakStrictValue(value)) continue;
+    const prepared: SpecItem = {
+      ...original,
+      group,
+      name,
+      value,
+      unit: unit || '—',
+    };
+    if (MEASURABLE_NAME_RE.test(name) && !BOOLEAN_ALLOWED_NAME_RE.test(name) && !isConcreteValue(value)) {
+      prepared._warning = 'Требуется более конкретное и проверяемое значение';
+    }
+    const key = `${normalizeSpecKey(group)}::${normalizeSpecKey(name)}`;
+    const prev = bucket.get(key);
+    if (!prev) {
+      bucket.set(key, prepared);
+      orderedKeys.push(key);
+      continue;
+    }
+    if (inferSpecStrength(prepared) > inferSpecStrength(prev)) {
+      bucket.set(key, prepared);
+    }
+  }
+
+  const normalized = orderedKeys.map((key) => bucket.get(key)!).filter(Boolean);
+
+  if (SOFTWARE_TYPE_KEYS.has(row.type)) {
+    const names = new Set(normalized.map((spec) => normalizeSpecKey(String(spec.name || ''))));
+    if (!names.has('тип лицензии') && row.licenseType) {
+      normalized.unshift({
+        group: 'Лицензирование',
+        name: 'Тип лицензии',
+        value: row.licenseType,
+        unit: 'тип',
+      });
+    }
+    if (!names.has('срок действия лицензии') && row.term) {
+      normalized.unshift({
+        group: 'Лицензирование',
+        name: 'Срок действия лицензии',
+        value: row.term,
+        unit: 'срок',
+      });
+    }
+  }
+
+  return normalized;
+}
+
 export function buildAntiFasReport(rows: RowForCompliance[], minScore = 85): ComplianceReport {
   const issues: ComplianceIssue[] = [];
   for (const row of rows) {
     if (row.status !== 'done' || !Array.isArray(row.specs)) continue;
+    const duplicateNames = new Map<string, number>();
+    let weakValues = 0;
+
+    for (const spec of row.specs) {
+      const specName = normalizeSpecKey(String(spec.name || ''));
+      if (specName) {
+        duplicateNames.set(specName, (duplicateNames.get(specName) || 0) + 1);
+      }
+      if (isWeakStrictValue(String(spec.value || ''))) weakValues += 1;
+      if (
+        MEASURABLE_NAME_RE.test(String(spec.name || '')) &&
+        !BOOLEAN_ALLOWED_NAME_RE.test(String(spec.name || '')) &&
+        !isConcreteValue(String(spec.value || ''))
+      ) {
+        addIssue(
+          issues,
+          row,
+          spec,
+          'major',
+          'Непроверяемое или недостаточно конкретное значение характеристики.',
+          'Замените общую формулировку на конкретный измеримый параметр или однозначное условие.'
+        );
+      }
+      if (
+        /\d/.test(String(spec.value || '')) &&
+        (!String(spec.unit || '').trim() || String(spec.unit || '').trim() === '—') &&
+        MEASURABLE_NAME_RE.test(String(spec.name || ''))
+      ) {
+        addIssue(
+          issues,
+          row,
+          spec,
+          'minor',
+          'Числовое значение указано без единицы измерения.',
+          'Укажите единицу измерения характеристики.'
+        );
+      }
+    }
+
+    for (const [name, count] of duplicateNames) {
+      if (count > 1) {
+        addIssue(
+          issues,
+          row,
+          { name, value: String(count), unit: '' },
+          'major',
+          'Обнаружены дублирующиеся характеристики.',
+          'Оставьте одну самую точную формулировку для каждой характеристики.'
+        );
+      }
+    }
+
+    if (typeof row.strictMinSpecs === 'number' && row.specs.length < row.strictMinSpecs) {
+      addIssue(
+        issues,
+        row,
+        { name: 'Количество характеристик', value: String(row.specs.length), unit: 'шт' },
+        'critical',
+        'Недостаточная детализация комплекта характеристик для строгого закупочного шаблона.',
+        `Доведите количество характеристик как минимум до ${row.strictMinSpecs}.`
+      );
+    }
+
+    if (row.specs.length > 0 && weakValues / row.specs.length > 0.2) {
+      addIssue(
+        issues,
+        row,
+        { name: 'Размытые характеристики', value: `${weakValues} из ${row.specs.length}`, unit: 'шт' },
+        'major',
+        'Слишком много размытых или формальных характеристик.',
+        'Замените общие формулировки на конкретные проверяемые параметры.'
+      );
+    }
+
+    if (SOFTWARE_TYPE_KEYS.has(row.type)) {
+      const names = new Set(row.specs.map((spec) => normalizeSpecKey(String(spec.name || ''))));
+      if (!names.has('тип лицензии')) {
+        addIssue(
+          issues,
+          row,
+          { name: 'Тип лицензии', value: row.licenseType || '', unit: '' },
+          'major',
+          'Для программного обеспечения отсутствует явная характеристика типа лицензии.',
+          'Добавьте характеристику «Тип лицензии» с конкретным значением.'
+        );
+      }
+      if (![...names].some((name) => name.includes('срок действия лицензии') || name.includes('срок действия') || name.includes('срок поддержки'))) {
+        addIssue(
+          issues,
+          row,
+          { name: 'Срок действия', value: row.term || '', unit: '' },
+          'major',
+          'Для программного обеспечения отсутствует явная характеристика срока действия лицензии или поддержки.',
+          'Добавьте характеристику срока действия лицензии или сертификата технической поддержки.'
+        );
+      }
+    }
+
     for (const spec of row.specs) {
       const name = String(spec.name || '');
       const value = String(spec.value || '');

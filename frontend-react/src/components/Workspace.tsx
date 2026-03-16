@@ -73,7 +73,7 @@ function getUnifiedNacRegime(key: string): string {
 function getSpecHint(key: string): string | undefined {
   return GENERAL_CATALOG[key]?.specHint;
 }
-import { buildAntiFasReport, type ComplianceReport } from '../utils/compliance';
+import { buildAntiFasReport, sanitizeProcurementSpecs, type ComplianceReport } from '../utils/compliance';
 
 type Provider = 'openrouter' | 'groq' | 'deepseek';
 
@@ -5062,7 +5062,14 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     const seededSpecs = enrichSpecsByCatalogDepth(row, specs, resolvedCommercial);
     const target = getMinimumSpecCount(row, resolvedCommercial);
     const weakSpecs = getWeakSpecEntries(seededSpecs);
-    if (seededSpecs.length >= target && weakSpecs.length === 0) return seededSpecs;
+    if (seededSpecs.length >= target && weakSpecs.length === 0) {
+      return sanitizeProcurementSpecs({
+        type: row.type,
+        model: row.model,
+        licenseType: resolvedCommercial.suggestedLicenseType,
+        term: resolvedCommercial.suggestedTerm,
+      }, seededSpecs);
+    }
 
     try {
       const g = lookupCatalog(row.type);
@@ -5151,9 +5158,19 @@ ${hint || '- Используй детальные, проверяемые эк�
       for (const spec of processedExtra) {
         merged = upsertSpec(merged, spec);
       }
-      return adjustSpecsForCommercialContext(row, merged);
+      return sanitizeProcurementSpecs({
+        type: row.type,
+        model: row.model,
+        licenseType: resolvedCommercial.suggestedLicenseType,
+        term: resolvedCommercial.suggestedTerm,
+      }, adjustSpecsForCommercialContext(row, merged));
     } catch {
-      return seededSpecs;
+      return sanitizeProcurementSpecs({
+        type: row.type,
+        model: row.model,
+        licenseType: resolvedCommercial.suggestedLicenseType,
+        term: resolvedCommercial.suggestedTerm,
+      }, seededSpecs);
     }
   }, [apiKey, lawMode, model, provider, useBackendAi]);
 
@@ -5162,8 +5179,12 @@ ${hint || '- Используй детальные, проверяемые эк�
       sourceRows.map((row) => ({
         id: row.id,
         type: row.type,
+        model: row.model,
+        licenseType: getResolvedCommercialContext(row).suggestedLicenseType,
+        term: getResolvedCommercialContext(row).suggestedTerm,
         status: row.status,
         specs: row.specs,
+        strictMinSpecs: getMinimumSpecCount(row),
       })),
       enterpriseSettings.antiFasMinScore
     );

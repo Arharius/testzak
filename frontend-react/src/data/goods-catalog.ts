@@ -673,7 +673,7 @@ export const GOODS_CATALOG: Record<string, GoodsItem> = {
     okpd2name: 'Программное обеспечение (служба каталогов)',
     ktruFixed: '58.29.11.000-00000005',
     isSoftware: true,
-    placeholder: 'Например: АЛД Про, FreeIPA, OpenLDAP, Samba AD, РЕД АДМ...',
+    placeholder: 'Например: ALD Pro (Серверная часть), ALD Pro (Клиентская часть), FreeIPA, OpenLDAP...',
   },
   // ── Комплектующие ──
   cpu: {

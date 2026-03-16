@@ -2075,8 +2075,8 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['флюс','flux','канифоль','флюс для пайки'], type: 'flux' },
 
   // ── ПО дополнительное ──
-  { tokens: ['техподдержка ос','сертификат техподдержки ос','продление astra','продление ред ос','поддержка astra linux'], type: 'osSupport' },
-  { tokens: ['сертификат техподдержки','продление техподдержки','support certificate','продление подписки по'], type: 'supportCert' },
+  { tokens: ['техподдержка ос','сертификат техподдержки ос','продление astra','продление ред ос','поддержка astra linux','техподдержка astra','техподдержка астра','сертификат астра','сертификат astra'], type: 'osSupport' },
+  { tokens: ['сертификат техподдержки','продление техподдержки','support certificate','продление подписки по','техподдержка ald','техподдержка алд','техподдержка брест','техподдержка termidesk','техподдержка rupost','техподдержка rubackup','техподдержка касперск','техподдержка криптопро'], type: 'supportCert' },
   { tokens: ['удалённый доступ','remote access','rudesktop','anydesk','rustdesk','dameware','удалённое администрирование'], type: 'remoteAccessSw' },
   { tokens: ['crm','crm система','amocrm','мегаплан','creatio','битрикс crm'], type: 'crm' },
   { tokens: ['bi система','аналитическая система','visiology','форсайт','power bi','tableau','отчётность'], type: 'bi' },

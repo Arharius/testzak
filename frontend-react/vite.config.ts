@@ -10,7 +10,7 @@ const base = explicitBase || (isGhPages ? '/testzak/' : '/');
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const backendTarget = (env.VITE_BACKEND_URL || 'https://backend-production-3b942.up.railway.app').replace(/\/$/, '');
+  const backendTarget = (env.VITE_BACKEND_URL || 'https://backend-production-f736.up.railway.app').replace(/\/$/, '');
   const apiProxy = {
     '/api': {
       target: backendTarget,

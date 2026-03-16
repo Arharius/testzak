@@ -39,7 +39,7 @@ function response(statusCode, body, contentType = 'application/json; charset=utf
 }
 
 const FALLBACK_STORE_FILE = '/tmp/tz_netlify_backend_proxy_store.json';
-const DEFAULT_BACKEND_API_BASE_URL = 'https://backend-production-f736.up.railway.app';
+const DEFAULT_BACKEND_API_BASE_URL = 'https://backend-production-3b942.up.railway.app';
 
 function parseJsonBody(event) {
   try {

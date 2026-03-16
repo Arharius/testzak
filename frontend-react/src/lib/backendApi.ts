@@ -193,6 +193,46 @@ export async function generateWithBackend(
   return result.data?.choices?.[0]?.message?.content || '';
 }
 
+/**
+ * AI autodetect: определяет типы товаров через бэкенд-прокси (когда нет клиентского API-ключа).
+ */
+export async function detectBrandTypesViaBackend(
+  provider: string,
+  aiModel: string,
+  brandQuery: string,
+  catalogKeys: string[],
+  catalogLabels: Record<string, string>,
+): Promise<string[]> {
+  const typeList = catalogKeys.map(k => `${k}: ${catalogLabels[k] || k}`).join('\n');
+  const prompt = `Ты эксперт по ИТ-оборудованию и ПО. Пользователь вводит "${brandQuery}".
+Определи, какие ТИПЫ товаров выпускает этот бренд/производитель (или к какому типу относится данный продукт).
+
+Доступные типы:
+${typeList}
+
+Ответь ТОЛЬКО JSON-массивом ключей (без пояснений):
+["key1","key2","key3"]
+
+Если бренд неизвестен или не относится ни к одному типу — верни пустой массив [].
+Верни от 1 до 10 наиболее релевантных типов.`;
+
+  try {
+    const raw = await generateWithBackend(
+      provider, aiModel,
+      [{ role: 'user', content: prompt }],
+      0.0, 256,
+    );
+    const match = raw.match(/\[[\s\S]*?\]/);
+    if (!match) return [];
+    const parsed = JSON.parse(match[0]);
+    if (!Array.isArray(parsed)) return [];
+    const validKeys = new Set(catalogKeys);
+    return parsed.filter((k: unknown) => typeof k === 'string' && validKeys.has(k));
+  } catch {
+    return [];
+  }
+}
+
 // ── Internet search → specs ──────────────────────────────────────────────────
 
 export interface SpecFromSearch {

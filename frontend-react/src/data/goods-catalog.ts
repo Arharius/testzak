@@ -1937,6 +1937,9 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['1с:зуп','1с зуп','добыто hrm','hrm','управление персоналом','hr система'], type: 'hr' },
   { tokens: ['nextgis','панорама гис','гис','геоинформац','mapinfo','qgis'], type: 'gis' },
 
+  // ── ПО: LDAP / Служба каталогов ──
+  { tokens: ['ald pro','алд про','ald','astra linux directory','ред адм','red adm','freeipa','openldap','samba ad','служба каталогов','ldap','active directory','домен контроллер','контроллер домена','брест','brest','astra ald'], type: 'ldap' },
+
   // ── Прочие расходные/периферия ──
   { tokens: ['батарейк','battery','duracell','energizer','gp ultra','lr6','lr03','aa щелоч','aaa щелоч'], type: 'battery' },
   { tokens: ['cr2032','cr2025','cr2016','литиевый элемент','coin cell'], type: 'batteryLithium' },
@@ -2245,8 +2248,14 @@ const BRAND_TYPES: Record<string, string[]> = {
   'solar':        ['dlp','siem','iam'],
   'indeed':       ['pam','iam'],
   // Российское ПО — общее
-  'astra':        ['os'],
-  'астра':        ['os'],
+  'astra':        ['os','ldap','osSupport'],
+  'астра':        ['os','ldap','osSupport'],
+  'ald pro':      ['ldap'],
+  'алд про':      ['ldap'],
+  'ald':          ['ldap'],
+  'алд':          ['ldap'],
+  'брест':        ['firewall_sw','ldap'],
+  'brest':        ['firewall_sw','ldap'],
   'alt linux':    ['os'],
   'ред ос':       ['os'],
   'мойофис':      ['office'],

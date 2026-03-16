@@ -34,6 +34,7 @@ import {
   runEnterpriseAutopilot,
   searchEisSpecs,
   searchInternetSpecs,
+  detectBrandTypesViaBackend,
   saveTZDocument,
   listTZDocuments,
   getTZDocument,
@@ -3461,7 +3462,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                           const labels: Record<string, string> = {};
                           keys.forEach(k => { labels[k] = lookupCatalog(k)?.name ?? k; });
                           try {
-                            const aiTypes = await detectBrandTypesAI(provider, apiKey, model, query, keys, labels);
+                            const aiTypes = (useBackendAi && !apiKey.trim())
+                              ? await detectBrandTypesViaBackend(provider, model, query, keys, labels)
+                              : await detectBrandTypesAI(provider, apiKey, model, query, keys, labels);
                             aiSearchCacheRef.current[query] = aiTypes;
                             if (aiTypes.length > 0) {
                               // Мерджим с локальными результатами

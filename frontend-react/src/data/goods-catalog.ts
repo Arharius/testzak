@@ -1883,7 +1883,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['мойофис','мой офис','р7-офис','r7-офис','libreoffice','microsoft office','office 365','microsoft 365','офисный пакет'], type: 'office' },
 
   // ── ПО: Виртуализация ──
-  { tokens: ['виртуализаци','базис.vcore','zvirt','р-виртуализация','vmware','hyper-v','proxmox','гипервизор'], type: 'virt' },
+  { tokens: ['виртуализаци','базис.vcore','zvirt','р-виртуализация','vmware','hyper-v','proxmox','гипервизор','брест','brest'], type: 'virt' },
 
   // ── ПО: VDI ──
   { tokens: ['termidesk','базис.workplace','rudesktop','vdi','виртуальные рабочие места','виртуальные рабочие столы'], type: 'vdi' },
@@ -1938,7 +1938,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['nextgis','панорама гис','гис','геоинформац','mapinfo','qgis'], type: 'gis' },
 
   // ── ПО: LDAP / Служба каталогов ──
-  { tokens: ['ald pro','алд про','ald','astra linux directory','ред адм','red adm','freeipa','openldap','samba ad','служба каталогов','ldap','active directory','домен контроллер','контроллер домена','брест','brest','astra ald'], type: 'ldap' },
+  { tokens: ['ald pro','алд про','ald','astra linux directory','ред адм','red adm','freeipa','openldap','samba ad','служба каталогов','ldap','active directory','домен контроллер','контроллер домена','astra ald'], type: 'ldap' },
 
   // ── Прочие расходные/периферия ──
   { tokens: ['батарейк','battery','duracell','energizer','gp ultra','lr6','lr03','aa щелоч','aaa щелоч'], type: 'battery' },
@@ -2254,8 +2254,8 @@ const BRAND_TYPES: Record<string, string[]> = {
   'алд про':      ['ldap'],
   'ald':          ['ldap'],
   'алд':          ['ldap'],
-  'брест':        ['firewall_sw','ldap'],
-  'brest':        ['firewall_sw','ldap'],
+  'брест':        ['virt'],
+  'brest':        ['virt'],
   'alt linux':    ['os'],
   'ред ос':       ['os'],
   'мойофис':      ['office'],

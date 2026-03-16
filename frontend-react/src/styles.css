@@ -204,6 +204,7 @@ html[data-theme='contrast'] .orb { opacity: 0.12; }
 .section-delay-2 { animation-delay: 0.16s; }
 .section-delay-3 { animation-delay: 0.24s; }
 .section-delay-4 { animation-delay: 0.32s; }
+.section-delay-5 { animation-delay: 0.4s; }
 
 /* =================================================================
    AUTH RAIL — top right
@@ -674,7 +675,7 @@ html[data-theme='contrast'] .hero-chip {
 .hero-metrics {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-top: 8px;
 }
@@ -703,6 +704,201 @@ html[data-theme='contrast'] .hero-chip {
   color: var(--text);
   font-weight: 700;
   font-size: 14px;
+}
+
+/* =================================================================
+   RUNTIME PANEL
+   ================================================================= */
+.runtime-panel {
+  display: grid;
+  gap: 18px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  padding: 24px;
+  box-shadow: var(--shadow-md), var(--shadow-accent);
+  backdrop-filter: blur(16px);
+}
+
+.runtime-panel-copy h2 {
+  margin: 8px 0 6px;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.runtime-panel-copy p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.runtime-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.runtime-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--input-bg);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.runtime-state--ok {
+  color: var(--green);
+  border-color: rgba(52, 211, 153, 0.26);
+  background: var(--green-soft);
+}
+
+.runtime-state--degraded {
+  color: var(--amber);
+  border-color: rgba(251, 191, 36, 0.24);
+  background: var(--amber-soft);
+}
+
+.runtime-state--error {
+  color: var(--red);
+  border-color: rgba(248, 113, 113, 0.28);
+  background: var(--red-soft);
+}
+
+.runtime-state--neutral {
+  color: var(--text-soft);
+}
+
+.runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.runtime-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--input-bg);
+  min-height: 132px;
+}
+
+.runtime-card strong {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.runtime-card small {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.runtime-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.runtime-card-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+}
+
+.runtime-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-soft);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.runtime-chip--ok {
+  color: var(--green);
+  border-color: rgba(52, 211, 153, 0.24);
+  background: var(--green-soft);
+}
+
+.runtime-chip--degraded {
+  color: var(--amber);
+  border-color: rgba(251, 191, 36, 0.22);
+  background: var(--amber-soft);
+}
+
+.runtime-chip--error {
+  color: var(--red);
+  border-color: rgba(248, 113, 113, 0.26);
+  background: var(--red-soft);
+}
+
+.runtime-chip--neutral {
+  color: var(--text-soft);
+}
+
+.runtime-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.runtime-check {
+  display: inline-grid;
+  gap: 4px;
+  min-width: 180px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--input-bg);
+}
+
+.runtime-check strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.runtime-check em {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
+.runtime-check--ok {
+  border-color: rgba(52, 211, 153, 0.18);
+}
+
+.runtime-check--degraded {
+  border-color: rgba(251, 191, 36, 0.18);
+}
+
+.runtime-check--error {
+  border-color: rgba(248, 113, 113, 0.2);
 }
 
 /* =================================================================
@@ -1262,6 +1458,7 @@ textarea[readonly] {
   .layout { padding: 20px; }
   .sovereign-layout { padding-top: 90px; }
   .hero-metrics { grid-template-columns: 1fr; }
+  .runtime-grid { grid-template-columns: 1fr; }
   .control-grid { grid-template-columns: 1fr; }
   .sov-note { grid-template-columns: 1fr; }
   .auth-rail {

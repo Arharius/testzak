@@ -9,6 +9,8 @@ class TestHealth:
         data = resp.json()
         assert data["status"] == "ok"
         assert "ai_providers" in data
+        assert "readiness" in data
+        assert "version" in data
 
     def test_root_returns_version(self, client):
         resp = client.get("/")
@@ -20,6 +22,17 @@ class TestHealth:
         resp = client.get("/api/v1/ping")
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
+
+    def test_readiness_returns_checks(self, client):
+        resp = client.get("/api/v1/readiness")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "degraded"
+        assert data["ok"] is True
+        assert "checks" in data
+        assert data["checks"]["database"]["status"] == "ok"
+        assert data["checks"]["integration_store"]["status"] == "ok"
+        assert data["checks"]["enterprise"]["status"] in {"ok", "degraded"}
 
 
 class TestAuth:

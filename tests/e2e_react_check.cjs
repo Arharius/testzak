@@ -122,6 +122,72 @@ async function run() {
     });
   });
 
+  await page.route('**/health', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        version: '3.0.0',
+        checked_at: new Date().toISOString(),
+        readiness: 'ready',
+        free_tz_limit: 3,
+        integration_queue: 0,
+        integration_history: 2,
+        integration_enterprise_status: 4,
+        integration_auth_configured: true,
+        integration_allow_anon: false,
+        integration_target_webhook_configured: true,
+        ai_providers: {
+          deepseek: true,
+          groq: false,
+          openrouter: false,
+        },
+        search_module: 'package',
+        yookassa: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/v1/readiness', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        ready: true,
+        status: 'ready',
+        version: '3.0.0',
+        checked_at: new Date().toISOString(),
+        summary: 'all_systems_go',
+        checks: {
+          database: { status: 'ok', detail: 'query_ok', critical: true },
+          integration_store: { status: 'ok', detail: 'queue=0; history=2; enterprise=4', critical: true },
+          security: { status: 'ok', detail: 'jwt_configured_and_anon_disabled', critical: false },
+          email: { status: 'ok', detail: 'smtp_configured', critical: false },
+          ai: { status: 'ok', detail: 'providers=deepseek', critical: false },
+          search: { status: 'ok', detail: 'package', critical: false },
+          payments: { status: 'ok', detail: 'yookassa_configured', critical: false },
+          enterprise: { status: 'ok', detail: 'live_target_configured', critical: false },
+        },
+        free_tz_limit: 3,
+        integration_auth_configured: true,
+        integration_allow_anon: false,
+        integration_target_webhook_configured: true,
+        ai_providers: {
+          deepseek: true,
+          groq: false,
+          openrouter: false,
+        },
+        search_module: 'package',
+        yookassa: true,
+        queue_total: 0,
+        history_total: 2,
+        enterprise_status_total: 4,
+      }),
+    });
+  });
+
   await page.route('**/api/search/specs', async (route) => {
     searchHits.internet += 1;
     const body = route.request().postDataJSON();
@@ -225,11 +291,15 @@ async function run() {
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('text=Генератор ТЗ', { timeout: 30000 });
+  await page.waitForSelector('text=Production ready', { timeout: 30000 });
 
   await page.getByRole('button', { name: /Arctic|Контраст/ }).evaluate((button) => button.click());
   await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'contrast', { timeout: 10000 });
   const theme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
   assert.strictEqual(theme, 'contrast', 'Theme should switch to contrast');
+  const runtimeBlockText = await page.locator('.runtime-panel').innerText();
+  assert.match(runtimeBlockText, /Production ready/i, 'Runtime panel should show readiness summary');
+  assert.match(runtimeBlockText, /deepseek/i, 'Runtime panel should show active AI provider');
 
   const authToggle = page.locator('.workspace-auth-toggle');
   const expandedBefore = await authToggle.getAttribute('aria-expanded');

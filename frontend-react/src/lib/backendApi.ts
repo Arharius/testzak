@@ -359,6 +359,73 @@ export async function searchEisSpecs(query: string, goodsType: string): Promise<
   return result.specs || [];
 }
 
+// ── Runtime health / readiness ─────────────────────────────────────────────
+
+export type BackendHealth = {
+  status: string;
+  version: string;
+  checked_at: string;
+  readiness: 'ready' | 'degraded' | 'not_ready';
+  free_tz_limit: number;
+  integration_queue: number;
+  integration_history: number;
+  integration_enterprise_status: number;
+  integration_auth_configured: boolean;
+  integration_allow_anon: boolean;
+  integration_target_webhook_configured: boolean;
+  ai_providers: {
+    deepseek: boolean;
+    groq: boolean;
+    openrouter: boolean;
+  };
+  search_module: string;
+  yookassa: boolean;
+};
+
+export type BackendReadinessCheck = {
+  status: 'ok' | 'degraded' | 'error';
+  detail: string;
+  critical: boolean;
+  queue_total?: number;
+  history_total?: number;
+  enterprise_status_total?: number;
+  providers?: Record<string, boolean>;
+  simulation_mode_default?: boolean;
+  target_webhook_configured?: boolean;
+};
+
+export type BackendReadiness = {
+  ok: boolean;
+  ready: boolean;
+  status: 'ready' | 'degraded' | 'not_ready';
+  version: string;
+  checked_at: string;
+  summary: string;
+  checks: Record<string, BackendReadinessCheck>;
+  free_tz_limit: number;
+  integration_auth_configured: boolean;
+  integration_allow_anon: boolean;
+  integration_target_webhook_configured: boolean;
+  ai_providers: {
+    deepseek: boolean;
+    groq: boolean;
+    openrouter: boolean;
+  };
+  search_module: string;
+  yookassa: boolean;
+  queue_total: number;
+  history_total: number;
+  enterprise_status_total: number;
+};
+
+export async function getBackendHealth(): Promise<BackendHealth> {
+  return apiGet('/health', false, SHORT_TIMEOUT_MS);
+}
+
+export async function getBackendReadiness(): Promise<BackendReadiness> {
+  return apiGet('/api/v1/readiness', false, SHORT_TIMEOUT_MS);
+}
+
 // ── Payment ──────────────────────────────────────────────────────────────────
 
 export async function createPayment(plan: 'pro' | 'annual'): Promise<{

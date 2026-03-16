@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { AutomationPanel } from './components/AutomationPanel';
 import { EnterprisePanel } from './components/EnterprisePanel';
 import { PlatformPanel } from './components/PlatformPanel';
 import { EventLog } from './components/EventLog';
+import { RuntimeStatusPanel } from './components/RuntimeStatusPanel';
 import { Workspace } from './components/Workspace';
 import { PricingModal } from './components/PricingModal';
 import {
@@ -22,6 +23,8 @@ import {
   setStoredToken,
   clearStoredAuth,
   isBackendApiAvailable,
+  getBackendHealth,
+  getBackendReadiness,
 } from './lib/backendApi';
 import {
   appendAutomationLog,
@@ -124,6 +127,50 @@ export function App() {
       // ignore storage errors
     }
   }, [theme]);
+
+  useEffect(() => {
+    const ignoreNoise = (message: string) => /ResizeObserver|favicon|apple-touch-icon|AbortError/i.test(message);
+    const persistClientRuntimeEvent = (event: string, message: string) => {
+      if (!message || ignoreNoise(message)) return;
+      appendAutomationLog({
+        at: new Date().toISOString(),
+        event,
+        ok: false,
+        note: message.slice(0, 220),
+      });
+    };
+    const onWindowError = (e: ErrorEvent) => {
+      persistClientRuntimeEvent('frontend.runtime_error', e.message || String(e.error || 'window_error'));
+    };
+    const onUnhandledRejection = (e: PromiseRejectionEvent) => {
+      const reason = e.reason instanceof Error ? e.reason.message : String(e.reason || 'unhandled_rejection');
+      persistClientRuntimeEvent('frontend.unhandled_rejection', reason);
+    };
+    window.addEventListener('error', onWindowError);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+    return () => {
+      window.removeEventListener('error', onWindowError);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
+    };
+  }, []);
+
+  const backendHealthQuery = useQuery({
+    queryKey: ['backend-health'],
+    queryFn: getBackendHealth,
+    enabled: backendAvailable,
+    staleTime: 20_000,
+    refetchInterval: 45_000,
+    retry: 1,
+  });
+
+  const backendReadinessQuery = useQuery({
+    queryKey: ['backend-readiness'],
+    queryFn: getBackendReadiness,
+    enabled: backendAvailable,
+    staleTime: 20_000,
+    refetchInterval: 45_000,
+    retry: 1,
+  });
 
   const handleSendLink = async () => {
     if (!loginEmail.trim()) return;
@@ -304,6 +351,18 @@ export function App() {
       title: 'Профессиональная тёмная тема',
       description: 'Минималистичный тёмный интерфейс с чёткими шрифтами и холодными акцентами. Снижает нагрузку на глаза при работе в тёмном окружении.',
     };
+
+  const runtimeLabel = !backendAvailable
+    ? 'Local'
+    : backendReadinessQuery.isPending
+      ? 'Checking'
+      : backendReadinessQuery.isError
+        ? 'Offline'
+        : backendReadinessQuery.data?.status === 'ready'
+          ? 'Ready'
+          : backendReadinessQuery.data?.status === 'degraded'
+            ? 'Degraded'
+            : 'Not ready';
 
   return (
     <main className="layout sovereign-layout">
@@ -540,6 +599,10 @@ export function App() {
             <strong>{backendAvailable ? 'Hybrid' : 'Local'}</strong>
           </div>
           <div className="hero-metric">
+            <span className="hero-metric-label">runtime</span>
+            <strong>{runtimeLabel}</strong>
+          </div>
+          <div className="hero-metric">
             <span className="hero-metric-label">auth</span>
             <strong>{backendUser ? 'Signed In' : 'Guest'}</strong>
           </div>
@@ -550,7 +613,21 @@ export function App() {
         </div>
       </header>
 
-      <section className="sov-note section-fade section-delay-1">
+      <RuntimeStatusPanel
+        backendAvailable={backendAvailable}
+        health={backendHealthQuery.data}
+        readiness={backendReadinessQuery.data}
+        isLoading={backendHealthQuery.isFetching || backendReadinessQuery.isFetching}
+        error={
+          backendReadinessQuery.error instanceof Error
+            ? backendReadinessQuery.error.message
+            : backendHealthQuery.error instanceof Error
+              ? backendHealthQuery.error.message
+              : undefined
+        }
+      />
+
+      <section className="sov-note section-fade section-delay-2">
         <div>
           <div className="micro-label">{themeNote.label}</div>
           <h2>{themeNote.title}</h2>
@@ -563,7 +640,7 @@ export function App() {
         </div>
       </section>
 
-      <div className="section-fade section-delay-2">
+      <div className="section-fade section-delay-3">
         <Workspace
           automationSettings={automationSettings}
           platformSettings={platformSettings}
@@ -572,7 +649,7 @@ export function App() {
         />
       </div>
 
-      <section className="sov-block section-fade section-delay-3">
+      <section className="sov-block section-fade section-delay-4">
         <div className="sov-block-head">
           <div>
             <div className="micro-label">Control Layer</div>

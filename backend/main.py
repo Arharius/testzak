@@ -30,6 +30,7 @@ from fastapi import FastAPI, HTTPException, Depends, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -61,6 +62,9 @@ try:
         authenticate_superadmin,
         is_trial_active,
         trial_days_left,
+        JWT_SECRET,
+        SMTP_USER,
+        SMTP_PASS,
     )
 except ImportError:
     from database import (
@@ -86,6 +90,9 @@ except ImportError:
         authenticate_superadmin,
         is_trial_active,
         trial_days_left,
+        JWT_SECRET,
+        SMTP_USER,
+        SMTP_PASS,
     )
 
 # ── Search module ──────────────────────────────────────────────
@@ -1113,27 +1120,163 @@ def _yookassa_create_payment(amount: str, currency: str, description: str, retur
 
 @app.get("/")
 def root():
-    return {"message": "TZ Generator API", "version": "2.1.0-tz-endpoints"}
+    return {"message": "TZ Generator API", "version": app.version}
 
-@app.get("/health")
-def health():
-    store = load_integration_store()
+def _readiness_check(status: str, detail: str, critical: bool = False, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    payload = {
+        "status": status,
+        "detail": detail,
+        "critical": critical,
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
+def _probe_database() -> dict[str, Any]:
+    db = SessionLocal()
+    try:
+        db.execute(text("SELECT 1"))
+        return _readiness_check("ok", "query_ok", critical=True)
+    except Exception as err:
+        return _readiness_check("error", f"{type(err).__name__}: {str(err)[:180]}", critical=True)
+    finally:
+        db.close()
+
+
+def _probe_integration_store() -> tuple[dict[str, Any], dict[str, Any]]:
+    db = SessionLocal()
+    try:
+        state = _ensure_integration_state(db)
+        queue = _safe_json_list(state.queue_json)
+        history = _safe_json_list(state.history_json)
+        enterprise_status = _safe_json_list(state.enterprise_status_json)
+        counts = {
+            "queue_total": len(queue),
+            "history_total": len(history),
+            "enterprise_status_total": len(enterprise_status),
+        }
+        return _readiness_check(
+            "ok",
+            f"queue={counts['queue_total']}; history={counts['history_total']}; enterprise={counts['enterprise_status_total']}",
+            critical=True,
+            extra=counts,
+        ), counts
+    except Exception as err:
+        return _readiness_check("error", f"{type(err).__name__}: {str(err)[:180]}", critical=True), {
+            "queue_total": 0,
+            "history_total": 0,
+            "enterprise_status_total": 0,
+        }
+    finally:
+        db.close()
+
+
+def _build_readiness_payload() -> dict[str, Any]:
+    ai_providers = {
+        "deepseek": bool(DEEPSEEK_API_KEY),
+        "groq": bool(GROQ_API_KEY),
+        "openrouter": bool(OPENROUTER_API_KEY),
+    }
+    enabled_ai = [name for name, enabled in ai_providers.items() if enabled]
+    db_check = _probe_database()
+    integration_check, integration_counts = _probe_integration_store()
+    checks = {
+        "database": db_check,
+        "integration_store": integration_check,
+        "security": _readiness_check(
+            "ok" if JWT_SECRET != "dev-secret-change-in-prod" and not INTEGRATION_ALLOW_ANON else "degraded",
+            "jwt_configured_and_anon_disabled"
+            if JWT_SECRET != "dev-secret-change-in-prod" and not INTEGRATION_ALLOW_ANON
+            else "default_jwt_secret_or_anonymous_integration_enabled",
+        ),
+        "email": _readiness_check(
+            "ok" if SMTP_USER and SMTP_PASS else "degraded",
+            "smtp_configured" if SMTP_USER and SMTP_PASS else "smtp_not_configured",
+        ),
+        "ai": _readiness_check(
+            "ok" if enabled_ai else "degraded",
+            f"providers={','.join(enabled_ai)}" if enabled_ai else "no_server_side_ai_provider",
+            extra={"providers": ai_providers},
+        ),
+        "search": _readiness_check(
+            "ok" if _search_import_source != "stub" else "degraded",
+            _search_import_source,
+        ),
+        "payments": _readiness_check(
+            "ok" if YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY else "degraded",
+            "yookassa_configured" if YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY else "yookassa_not_configured",
+        ),
+        "enterprise": _readiness_check(
+            "ok" if INTEGRATION_TARGET_WEBHOOK_URL and not ENTERPRISE_SIMULATION_MODE else "degraded",
+            "live_target_configured"
+            if INTEGRATION_TARGET_WEBHOOK_URL and not ENTERPRISE_SIMULATION_MODE
+            else (
+                "simulation_default_enabled"
+                if INTEGRATION_TARGET_WEBHOOK_URL and ENTERPRISE_SIMULATION_MODE
+                else "simulation_only_or_live_target_missing"
+            ),
+            extra={
+                "simulation_mode_default": ENTERPRISE_SIMULATION_MODE,
+                "target_webhook_configured": bool(INTEGRATION_TARGET_WEBHOOK_URL),
+            },
+        ),
+    }
+    critical_failures = [name for name, check in checks.items() if check.get("critical") and check["status"] == "error"]
+    degraded_checks = [name for name, check in checks.items() if check["status"] != "ok"]
+    status = "not_ready" if critical_failures else ("degraded" if degraded_checks else "ready")
     return {
-        "status": "ok",
+        "ok": status != "not_ready",
+        "ready": status == "ready",
+        "status": status,
+        "version": app.version,
+        "checked_at": utc_now(),
+        "summary": "all_systems_go"
+        if status == "ready"
+        else (
+            f"critical_failures={','.join(critical_failures)}"
+            if critical_failures
+            else f"degraded={','.join(degraded_checks)}"
+        ),
+        "checks": checks,
         "free_tz_limit": FREE_TZ_LIMIT,
-        "integration_queue": len(store.get("queue", [])),
-        "integration_history": len(store.get("history", [])),
         "integration_auth_configured": bool(INTEGRATION_API_TOKEN),
         "integration_allow_anon": INTEGRATION_ALLOW_ANON,
         "integration_target_webhook_configured": bool(INTEGRATION_TARGET_WEBHOOK_URL),
-        "ai_providers": {
-            "deepseek":   bool(DEEPSEEK_API_KEY),
-            "groq":       bool(GROQ_API_KEY),
-            "openrouter": bool(OPENROUTER_API_KEY),
-        },
+        "ai_providers": ai_providers,
         "search_module": _search_import_source,
         "yookassa": bool(YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY),
+        **integration_counts,
     }
+
+
+@app.get("/health")
+def health():
+    readiness = _build_readiness_payload()
+    return {
+        "status": "ok",
+        "version": app.version,
+        "checked_at": readiness["checked_at"],
+        "readiness": readiness["status"],
+        "free_tz_limit": readiness["free_tz_limit"],
+        "integration_queue": readiness["queue_total"],
+        "integration_history": readiness["history_total"],
+        "integration_enterprise_status": readiness["enterprise_status_total"],
+        "integration_auth_configured": readiness["integration_auth_configured"],
+        "integration_allow_anon": readiness["integration_allow_anon"],
+        "integration_target_webhook_configured": readiness["integration_target_webhook_configured"],
+        "ai_providers": readiness["ai_providers"],
+        "search_module": readiness["search_module"],
+        "yookassa": readiness["yookassa"],
+    }
+
+
+@app.get("/readiness")
+@app.get("/api/v1/readiness")
+def readiness():
+    payload = _build_readiness_payload()
+    status_code = 200 if payload["status"] in {"ready", "degraded"} else 503
+    return JSONResponse(status_code=status_code, content=payload)
 
 
 @app.get("/api/v1/ping")

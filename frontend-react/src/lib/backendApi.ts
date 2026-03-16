@@ -442,7 +442,15 @@ export type TZDocumentFull = {
   model: string;
   law_mode: string;
   compliance_score: number | null;
-  rows: Array<{ type: string; model: string; qty: number; specs: unknown[]; meta: Record<string, string> }>;
+  rows: Array<{
+    type: string;
+    model: string;
+    licenseType?: string;
+    term?: string;
+    qty: number;
+    specs: unknown[];
+    meta: Record<string, string>;
+  }>;
   created_at: string | null;
   updated_at: string | null;
 };

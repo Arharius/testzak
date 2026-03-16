@@ -430,7 +430,7 @@ export const GOODS_CATALOG: Record<string, GoodsItem> = {
     okpd2name: 'Программное обеспечение (виртуализация)',
     ktruFixed: '58.29.11.000-00000005',
     isSoftware: true,
-    placeholder: 'Например: Базис.vCore, zVirt, Р-Виртуализация, VMware vSphere...',
+    placeholder: 'Например: Брест, Базис.vCore, zVirt, Р-Виртуализация, VMware vSphere...',
   },
   vdi: {
     name: 'VDI / платформа виртуальных рабочих мест',
@@ -568,7 +568,7 @@ export const GOODS_CATALOG: Record<string, GoodsItem> = {
     okpd2name: 'Программное обеспечение прикладное (почта)',
     ktruFixed: '58.29.11.000-00000005',
     isSoftware: true,
-    placeholder: 'Например: РуПост, Communigate Pro, Mailion, Zimbra...',
+    placeholder: 'Например: РуПост, RuPost, Communigate Pro, Mailion, Zimbra...',
   },
   vks: {
     name: 'Система видеоконференцсвязи (ВКС) / мессенджер',
@@ -1500,7 +1500,7 @@ export const GOODS_CATALOG: Record<string, GoodsItem> = {
     name: 'Сертификат техподдержки ПО / продление подписки',
     okpd2: '62.02.30.000',
     okpd2name: 'Услуги по технической поддержке информационных технологий',
-    placeholder: 'Например: Продление техподдержки RuBackup / Termidesk / Kaspersky...',
+    placeholder: 'Например: Продление техподдержки ALD Pro / RuBackup / Termidesk / RuPost / Брест...',
     isSoftware: true,
   },
   remoteAccessSw: {
@@ -2099,22 +2099,86 @@ function normalizeText(s: string): string {
     .trim();
 }
 
+const DETECT_PREFIX_RE = /^(лицензия на |лицензия |лиценз\. |продление |подписка на |renewal |license |техподдержка на |техподдержка |тех\.?\s*поддержка на |тех\.?\s*поддержка |техническая поддержка на |техническая поддержка |тп на |support )/;
+const SUPPORT_CONTEXT_RE = /(сертификат\s+техподдержки|сертификат\s+поддержки|техподдержк|тех\.?\s*поддержк|техническ(?:ая|ое)\s+поддержк|support|сопровождени|продление\s+поддержки|продление\s+техподдержки)/;
+const ASTRA_PRODUCT_RULES: Array<{ productType: string; supportType: string; tokens: string[] }> = [
+  {
+    productType: 'ldap',
+    supportType: 'supportCert',
+    tokens: ['ald pro', 'алд про', 'astra linux directory', 'astra ald', 'ред адм', 'red adm'],
+  },
+  {
+    productType: 'backup_sw',
+    supportType: 'supportCert',
+    tokens: ['rubackup', 'ru backup', 'рубэкап', 'ру бэкап', 'кибер бэкап', 'кибербэкап'],
+  },
+  {
+    productType: 'vdi',
+    supportType: 'supportCert',
+    tokens: ['termidesk', 'термидеск', 'термидеск'],
+  },
+  {
+    productType: 'email',
+    supportType: 'supportCert',
+    tokens: ['rupost', 'ru post', 'рупост', 'ру пост'],
+  },
+  {
+    productType: 'virt',
+    supportType: 'supportCert',
+    tokens: ['брест', 'brest'],
+  },
+  {
+    productType: 'os',
+    supportType: 'osSupport',
+    tokens: ['astra linux', 'astra linux se', 'astra linux special edition', 'astra linus', 'астра linux', 'астра линукс'],
+  },
+];
+
+function getAstraSuitePriorityTypes(text: string, effectiveText: string): string[] {
+  const hasSupportContext = SUPPORT_CONTEXT_RE.test(text);
+  const haystacks = [effectiveText, text].filter(Boolean);
+  for (const haystack of haystacks) {
+    for (const rule of ASTRA_PRODUCT_RULES) {
+      if (rule.tokens.some((token) => haystack.includes(token))) {
+        if (hasSupportContext) {
+          return rule.supportType === rule.productType ? [rule.supportType] : [rule.supportType, rule.productType];
+        }
+        return [rule.productType];
+      }
+    }
+  }
+  return hasSupportContext ? ['supportCert'] : [];
+}
+
 export function detectGoodsType(model: string, fallback: string): string {
   const text = normalizeText(model);
   if (text.length < 2) return fallback;
+
+  // Strip license/support prefixes (same as detectAllGoodsTypes)
+  const searchText = text.replace(DETECT_PREFIX_RE, '').trim();
+  const effectiveText = searchText.length >= 2 ? searchText : text;
+  const suitePriorityTypes = getAstraSuitePriorityTypes(text, effectiveText);
+  if (suitePriorityTypes.length > 0) {
+    return suitePriorityTypes[0];
+  }
 
   // Точные совпадения коротких токенов (до 4 символов) требуют границ слова
   for (const hint of TYPE_HINTS) {
     for (const t of hint.tokens) {
       const tn = normalizeText(t);
       if (tn.length <= 3) {
-        // Для коротких токенов (ups, nas, ssd, hdd, ram и т.д.) - проверяем границу слова
         const re = new RegExp(`(?:^|\\s|[^а-яa-z])${tn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s|[^а-яa-z])`);
-        if (re.test(` ${text} `)) return hint.type;
+        if (re.test(` ${effectiveText} `)) return hint.type;
       } else {
-        if (text.includes(tn)) return hint.type;
+        if (effectiveText.includes(tn)) return hint.type;
       }
     }
+  }
+
+  // Если ввод достаточно длинный и ничего не нашли — переключаем на otherGoods,
+  // чтобы AI сам определил тип и характеристики (вместо оставления "pc" по умолчанию)
+  if (effectiveText.length >= 4 && fallback === 'pc') {
+    return 'otherGoods';
   }
   return fallback;
 }
@@ -2316,8 +2380,7 @@ export function detectAllGoodsTypes(model: string): Array<{ type: string; name: 
   // Убираем служебные слова «лицензия на», «продление», «подписка на» из начала —
   // они не влияют на тип товара, а только мешают детекту.
   // «лицензия ALD PRO» → ищем по «ald pro», а если ничего — добавим «license» вторым.
-  const stripPrefixRe = /^(лицензия на |лицензия |лиценз\. |продление |подписка на |renewal |license |техподдержка на |техподдержка |тех\.?\s*поддержка на |тех\.?\s*поддержка |техническая поддержка на |техническая поддержка |тп на |support )/;
-  const strippedText = text.replace(stripPrefixRe, '').trim();
+  const strippedText = text.replace(DETECT_PREFIX_RE, '').trim();
   const hadLicensePrefix = strippedText !== text;
   const searchText = strippedText.length >= 2 ? strippedText : text;
 
@@ -2329,6 +2392,10 @@ export function detectAllGoodsTypes(model: string): Array<{ type: string; name: 
     seenTypes.add(t);
     results.push({ type: t, name: GOODS_CATALOG[t].name, okpd2: GOODS_CATALOG[t].okpd2 });
   };
+
+  for (const priorityType of getAstraSuitePriorityTypes(text, searchText)) {
+    addType(priorityType);
+  }
 
   // Для коротких запросов (2-3 символа) — проверяем по границам слова
   const shortQuery = searchText.length <= 3;

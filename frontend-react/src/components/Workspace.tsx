@@ -78,6 +78,8 @@ interface GoodsRow {
   id: number;
   type: string;
   model: string;
+  licenseType: string;
+  term: string;
   qty: number;
   status: 'idle' | 'loading' | 'done' | 'error';
   error?: string;
@@ -106,6 +108,104 @@ const PROCUREMENT_METHOD_LABELS: Record<string, string> = {
   proposal_request: 'Запрос предложений',
   single_supplier: 'Единственный поставщик',
 };
+
+const ASTRA_BUNDLE_TYPES = new Set(['os', 'ldap', 'virt', 'vdi', 'email', 'backup_sw', 'osSupport', 'supportCert']);
+const ASTRA_CORE_TYPES = new Set(['os', 'ldap', 'virt', 'vdi', 'email', 'backup_sw']);
+const ASTRA_KEYWORDS_RE = /(astra|астра|ald|алд|termidesk|термидеск|rupost|рупост|rubackup|бэкап|брест|brest)/i;
+
+function normalizeBundleText(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isAstraBundleRow(row: GoodsRow): boolean {
+  if (!ASTRA_BUNDLE_TYPES.has(row.type)) return false;
+  if (row.type === 'osSupport' || row.type === 'supportCert') {
+    return row.model.trim().length === 0 || ASTRA_KEYWORDS_RE.test(normalizeBundleText(row.model));
+  }
+  return ASTRA_KEYWORDS_RE.test(normalizeBundleText(row.model));
+}
+
+function isAstraBundleProcurement(rows: GoodsRow[]): boolean {
+  const doneRows = rows.filter((row) => row.status === 'done' && row.specs);
+  if (doneRows.length < 2) return false;
+  if (doneRows.some((row) => !lookupCatalog(row.type)?.isSoftware)) return false;
+  if (!doneRows.some((row) => ASTRA_CORE_TYPES.has(row.type))) return false;
+  return doneRows.every((row) => isAstraBundleRow(row));
+}
+
+function getProcurementObjectName(rows: GoodsRow[]): string {
+  if (isAstraBundleProcurement(rows)) {
+    return 'программного обеспечения и сертификатов технической поддержки экосистемы Astra';
+  }
+  if (rows.length > 1) {
+    return `комплекта товаров (${rows.length} позиций)`;
+  }
+  return lookupCatalog(rows[0]?.type ?? 'pc').name.toLowerCase();
+}
+
+function getProcurementIntro(rows: GoodsRow[]): string {
+  if (isAstraBundleProcurement(rows)) {
+    return 'Поставка лицензий на программное обеспечение и сертификатов на техническую поддержку для формирования импортонезависимой ИТ-инфраструктуры на базе решений ГК «Астра».';
+  }
+  if (rows.length > 1) {
+    return `Наименование объекта поставки: комплект товаров (${rows.length} позиций) (далее — Товар).`;
+  }
+  return `Наименование объекта поставки: ${lookupCatalog(rows[0]?.type ?? 'pc').name} (далее — Товар).`;
+}
+
+function getAstraBundleRequirementTexts(): string[] {
+  return [
+    'Все поставляемое программное обеспечение должно быть включено в Единый реестр российских программ для ЭВМ и баз данных (реестр Минцифры России).',
+    'Программные компоненты, для которых применима сертификация по требованиям безопасности информации, должны иметь действующие сертификаты ФСТЭК России в актуальной редакции на дату поставки.',
+    'Все поставляемые компоненты должны быть совместимы между собой на уровне нативной интеграции внутри экосистемы Astra.',
+    'Поставщик обязан обеспечить передачу лицензий и сертификатов технической поддержки в составе, достаточном для развёртывания единой импортонезависимой инфраструктуры Заказчика.',
+  ];
+}
+
+function getLicenseTypePlaceholder(row: GoodsRow): string {
+  if (row.type === 'supportCert' || row.type === 'osSupport') {
+    return 'Стандарт / Привилегированная';
+  }
+  if (row.type === 'ldap') {
+    return 'Серверная / CAL / срочная';
+  }
+  if (row.type === 'virt') {
+    return 'Бессрочная / на сокет';
+  }
+  if (row.type === 'vdi') {
+    return 'Подписка / конкурентная';
+  }
+  if (lookupCatalog(row.type)?.isSoftware) {
+    return 'Бессрочная / срочная / подписка';
+  }
+  return 'Если применимо';
+}
+
+function getTermPlaceholder(row: GoodsRow): string {
+  if (row.type === 'supportCert' || row.type === 'osSupport') {
+    return '12 / 24 / 36 мес.';
+  }
+  if (lookupCatalog(row.type)?.isSoftware) {
+    return '12 / 24 / 36 мес. / бессрочно';
+  }
+  return 'Если применимо';
+}
+
+function getCommercialValue(value: string): string {
+  return value.trim() || '—';
+}
+
+function hasCommercialFields(row: GoodsRow): boolean {
+  return Boolean(row.licenseType.trim() || row.term.trim());
+}
+
+function shouldShowCommercialTerms(rows: GoodsRow[]): boolean {
+  return rows.some((row) => lookupCatalog(row.type)?.isSoftware || hasCommercialFields(row));
+}
 
 // ── РАСШИРЕННЫЕ specHints (уровень детализации ЕИС) ──
 // Для ПО: 25-50 параметров, для оборудования: 15-30 параметров
@@ -501,6 +601,7 @@ const specHintsMap: Record<string, string> = {
       '- Тип ОС (десктопная/серверная)',
       '- Редакция / вариант поставки',
       '- Версия / номер релиза',
+      '- Исполнение / уровень защищённости (например, «Воронеж» / «Смоленск» или эквивалент)',
       '- Поддерживаемые аппаратные платформы (x86_64, ARM, Эльбрус или эквивалент)',
       '- Тип ядра (монолитное/гибридное, версия ядра)',
       '- Разрядность (64-бит)',
@@ -522,6 +623,7 @@ const specHintsMap: Record<string, string> = {
       '- Замкнутая программная среда',
       '- Маркировка документов по уровню конфиденциальности',
       '- Изоляция процессов и пользователей',
+      '- Очистка оперативной памяти и временных данных при завершении защищённых сессий',
       '- Аудит событий безопасности (журналирование)',
       '- Встроенный межсетевой экран (netfilter/iptables или эквивалент)',
       '- Средства антивирусной защиты (интеграция или встроенные)',
@@ -543,6 +645,7 @@ const specHintsMap: Record<string, string> = {
       '--- ГРУППА: Совместимость ---',
       '- Совместимость с отечественными средствами ЭП (КриптоПро CSP или эквивалент)',
       '- Совместимость с офисными пакетами из реестра Минцифры',
+      '- Совместимость с экосистемой Astra (ALD Pro, Брест, Termidesk, RuPost, RuBackup или эквивалентными решениями)',
       '- Поддержка печати (CUPS, сетевая печать)',
       '- Поддержка сканирования (SANE или эквивалент)',
       '- Поддержка мультимедиа (аудио, видео)',
@@ -734,6 +837,7 @@ const specHintsMap: Record<string, string> = {
       '--- ГРУППА: Общие сведения ---',
       '- Наименование и версия платформы VDI',
       '- Тип решения (VDI / терминальный доступ / гибридное)',
+      '- Вариант поставки (индивидуальные ВМ / терминальный режим)',
       '--- ГРУППА: Функциональные возможности ---',
       '- Количество виртуальных рабочих мест (лицензий)',
       '- Типы рабочих мест (персистентные / непереистентные)',
@@ -753,9 +857,11 @@ const specHintsMap: Record<string, string> = {
       '- Политики подключения',
       '--- ГРУППА: Совместимость ---',
       '- Поддерживаемые гипервизоры',
+      '- Совместимость с платформой виртуализации Брест или эквивалентной',
       '- Поддерживаемые гостевые ОС (Windows, российские Linux-ОС или эквивалентные)',
       '- Поддерживаемые клиентские ОС (тонкие клиенты, Linux, Windows)',
       '- Поддерживаемые клиентские устройства (ПК, ноутбук, тонкий клиент, мобильные)',
+      '- Работа через веб-браузер (HTML5) без установки толстого клиента',
       '--- ГРУППА: Безопасность ---',
       '- Шифрование каналов связи (TLS)',
       '- Двухфакторная аутентификация',
@@ -789,6 +895,7 @@ const specHintsMap: Record<string, string> = {
       '- Отказоустойчивость (Fault Tolerance)',
       '--- ГРУППА: Хранение данных ---',
       '- Поддерживаемые хранилища (локальные, NFS, iSCSI, FC, Ceph или эквивалент)',
+      '- Управление хранилищами LVM / Ceph или эквивалентными',
       '- Распределённое хранилище (SDS)',
       '- Тонкое выделение дисков (Thin Provisioning)',
       '--- ГРУППА: Сетевые возможности ---',
@@ -807,6 +914,7 @@ const specHintsMap: Record<string, string> = {
       '- Наличие в Едином реестре российского ПО Минцифры России',
       '- Сертификат ФСТЭК России (если применимо)',
       '- Тип лицензии (по сокетам / по серверам / подписка)',
+      '- Лицензирование по количеству физических процессоров (сокетов) на серверах виртуализации',
       '- Срок технической поддержки (мес)',
       '- Документация на русском языке',
     ].join('\n'),
@@ -885,6 +993,7 @@ const specHintsMap: Record<string, string> = {
       '- Двухфакторная аутентификация',
       '--- ГРУППА: Интеграция ---',
       '- Интеграция со службой каталогов (AD, LDAP, FreeIPA или эквивалент)',
+      '- Интеграция с ALD Pro / LDAP-каталогом или эквивалентной службой каталогов',
       '- Интеграция с ВКС',
       '- API для интеграции',
       '--- ГРУППА: Совместимость ---',
@@ -894,6 +1003,7 @@ const specHintsMap: Record<string, string> = {
       '--- ГРУППА: Сертификация и лицензирование ---',
       '- Наличие в Едином реестре российского ПО Минцифры России',
       '- Тип лицензии (по ящикам / по серверу / подписка)',
+      '- Лицензирование по количеству почтовых ящиков (пользователей)',
       '- Срок технической поддержки (мес)',
       '- Документация на русском языке',
     ].join('\n'),
@@ -951,6 +1061,7 @@ const specHintsMap: Record<string, string> = {
       '- Файлы и каталоги',
       '- Образы дисков (bare-metal)',
       '- Виртуальные машины (KVM, VMware, Hyper-V или эквивалент)',
+      '- Виртуальные машины на платформе Брест без установки агентов (agentless), если такой режим поддерживается',
       '- Базы данных (PostgreSQL, MySQL, MS SQL, Oracle или эквивалент)',
       '- Приложения (1С, Exchange, SharePoint или эквивалент)',
       '- Контейнеры',
@@ -967,6 +1078,7 @@ const specHintsMap: Record<string, string> = {
       '- Верификация резервных копий',
       '- Гранулярное восстановление (отдельные файлы, объекты)',
       '- Мгновенное восстановление ВМ (Instant Recovery)',
+      '- Состав поставки (серверная часть и агенты для БД / приложений)',
       '--- ГРУППА: Управление ---',
       '- Веб-консоль управления',
       '- Мониторинг заданий',
@@ -1387,10 +1499,12 @@ const specHintsMap: Record<string, string> = {
       '- Макс. количество учётных записей (не менее)',
       '- Макс. количество доменов',
       '- Групповые политики (количество встроенных шаблонов)',
+      '- Иерархия подразделений / организационных единиц (OU)',
       '- Делегирование административных полномочий',
       '- Управление паролями (политики сложности, истечение, блокировка)',
       '- Двухфакторная аутентификация (поддержка)',
       '- Аутентификация через смарт-карты / токены',
+      '- Автоматизированная установка ОС по сети (PXE / netboot или эквивалент)',
       '--- ГРУППА: Инфраструктура ---',
       '- Репликация каталога (multi-master)',
       '- Отказоустойчивость (кластеризация)',
@@ -1411,6 +1525,7 @@ const specHintsMap: Record<string, string> = {
       '--- ГРУППА: Лицензирование ---',
       '- Наличие в Едином реестре российского ПО Минцифры',
       '- Тип лицензии (по серверам / по пользователям)',
+      '- Лицензионный состав (серверная лицензия + CAL / управляемые объекты)',
       '- Срок технической поддержки (мес)',
       '- Обновления (включены в поддержку)',
       '- Документация на русском языке',
@@ -1482,6 +1597,7 @@ const specHintsMap: Record<string, string> = {
       '- Наличие ПО в Едином реестре российского ПО Минцифры',
       '- Действующий сертификат ФСТЭК (номер / уровень доверия)',
       '- Поддержание сертификата ФСТЭК в период действия поддержки',
+      '- Поддержка экосистемной совместимости с ALD Pro, Брест, Termidesk, RuPost, RuBackup',
     ].join('\n'),
 
     supportCert: [
@@ -1489,6 +1605,7 @@ const specHintsMap: Record<string, string> = {
       '- Наименование ПО, к которому приобретается поддержка',
       '- Версия / редакция ПО (не ниже)',
       '- Количество сертификатов техподдержки (шт)',
+      '- Продукт экосистемы Astra (ALD Pro / Брест / Termidesk / RuPost / RuBackup или эквивалент)',
       '--- ГРУППА: Условия техподдержки ---',
       '- Уровень техподдержки (Стандартная / Расширенная / Привилегированная / Platinum)',
       '- Срок действия сертификата (12 / 24 / 36 мес)',
@@ -1915,6 +2032,12 @@ function buildPrompt(row: GoodsRow, lawMode: LawMode): { system: string; user: s
   const law = lawMode === '223' ? '223-ФЗ' : '44-ФЗ';
   const isSW = !!g.isSoftware;
   const isUniversal = row.type === 'otherGoods';
+  const explicitLicenseType = row.licenseType.trim();
+  const explicitTerm = row.term.trim();
+  const explicitCommercialTermsBlock = [
+    explicitLicenseType ? `- Тип лицензии / сертификата: ${explicitLicenseType}` : '',
+    explicitTerm ? `- Срок действия / технической поддержки: ${explicitTerm}` : '',
+  ].filter(Boolean).join('\n');
 
   // ── Единый SYSTEM-промпт для всех типов ──
   const systemPrompt = `Ты — ведущий эксперт по формированию технических заданий для государственных закупок РФ (${law}).
@@ -1944,6 +2067,7 @@ function buildPrompt(row: GoodsRow, lawMode: LawMode): { system: string; user: s
       system: systemPrompt,
       user: `Пользователь хочет закупить товар. Описание: "${row.model}"
 Количество: ${row.qty} шт.
+${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n` : ''}
 
 ТВОЯ ЗАДАЧА:
 1. Определить правильный код ОКПД2 (до 3 знаков после точки минимум)
@@ -1976,8 +2100,10 @@ function buildPrompt(row: GoodsRow, lawMode: LawMode): { system: string; user: s
 
   // ── Определение контекста «лицензия» / «техподдержка» в описании модели ──
   const modelLower = row.model.toLowerCase().replace(/ё/g, 'е');
-  const isLicenseContext = /лицензи[яию]|license|подписк[аи]/i.test(modelLower);
-  const isSupportContext = /техподдержк|тех[\.\s]*поддержк|support|сопровождени/i.test(modelLower);
+  const isLicenseContext = Boolean(explicitLicenseType) || /лицензи[яию]|license|подписк[аи]/i.test(modelLower);
+  const isSupportContext = row.type === 'supportCert'
+    || row.type === 'osSupport'
+    || /техподдержк|тех[\.\s]*поддержк|support|сопровождени/i.test(modelLower);
 
   // Дополнительные подсказки для контекста лицензии / техподдержки
   const licenseContextHint = isLicenseContext ? `
@@ -2031,6 +2157,7 @@ function buildPrompt(row: GoodsRow, lawMode: LawMode): { system: string; user: s
 Тип товара: ${goodsName}
 Модель/описание (для ориентира — НЕ копировать марку/модель в ответ): ${row.model}
 Количество: ${row.qty} шт.
+${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n- Отрази эти параметры в итоговых характеристиках без изменения их смысла.\n` : ''}
 ОКПД2: ${okpd2}${ktru ? '\nКТРУ: ' + ktru : ''}
 
 ${isSW ? `Национальный режим — ПО (ПП РФ № 1875 + ПП РФ № 1236):
@@ -2234,6 +2361,20 @@ function hCell(text: string, opts: { span?: number; w?: number } = {}) {
   });
 }
 
+function dCell(text: string, opts: { span?: number; w?: number; align?: typeof AlignmentType[keyof typeof AlignmentType] } = {}) {
+  return new TableCell({
+    children: [new Paragraph({
+      children: [new TextRun({ text: text || '—', font: FONT, size: FONT_SIZE })],
+      alignment: opts.align ?? AlignmentType.CENTER,
+    })],
+    columnSpan: opts.span,
+    width: opts.w ? { size: opts.w, type: WidthType.DXA } : undefined,
+    verticalAlign: VerticalAlign.CENTER,
+    borders: allBorders(),
+    margins: { top: 60, bottom: 60, left: 80, right: 80 },
+  });
+}
+
 
 function allBorders() {
   const b = { style: BorderStyle.SINGLE, size: 4, color: 'A0AEC0' };
@@ -2332,6 +2473,10 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
   const multi = doneRows.length > 1;
   const hasHW = doneRows.some((r) => !(lookupCatalog(r.type)?.isSoftware));
   const hasSW = doneRows.some((r) => !!(lookupCatalog(r.type)?.isSoftware));
+  const astraBundle = isAstraBundleProcurement(doneRows);
+  const showCommercialTerms = shouldShowCommercialTerms(doneRows);
+  const objectName = getProcurementObjectName(doneRows);
+  const introText = getProcurementIntro(doneRows);
 
   // Сбор уникальных нацрежимов
   const regimes = new Set(doneRows.map((r) => {
@@ -2386,9 +2531,6 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
   // ШАПКА: УТВЕРЖДАЮ + название ТЗ
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    const row0 = doneRows[0]; const g0 = lookupCatalog(row0.type);
-    const objectName = multi ? `комплекта товаров (${doneRows.length} позиций)` : g0.name.toLowerCase();
-
     // Блок УТВЕРЖДАЮ (выровнен вправо)
     children.push(new Paragraph({
       children: [new TextRun({ text: 'УТВЕРЖДАЮ', bold: true, font: FONT, size: FONT_SIZE })],
@@ -2423,12 +2565,53 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
   {
     const row0 = doneRows[0]; const g0 = lookupCatalog(row0.type);
     children.push(sectionHead('1. Наименование, Заказчик, Исполнитель, сроки выполнения', 0));
-    children.push(numPara('1.1', `Наименование объекта поставки: ${multi ? `комплект товаров (${doneRows.length} позиций)` : g0.name} (далее — Товар).`));
+    children.push(numPara('1.1', introText));
     children.push(numPara('1.2', 'Заказчик: _______________________________________________'));
     children.push(numPara('1.3', 'Исполнитель: определяется по результатам закупочных процедур.'));
     children.push(numPara('1.4', `Сроки выполнения: не позднее 60 календарных дней с даты заключения ${contractWord}.`));
     if (!multi) {
       children.push(numPara('1.5', `Требования к количеству поставляемого Товара: ${doneRows[0].qty} (${numText(doneRows[0].qty)}) ${g0.isSoftware ? 'лицензий' : 'штук'}.`));
+      if (showCommercialTerms && row0.licenseType.trim()) {
+        children.push(numPara('1.6', `Тип лицензии / сертификата технической поддержки: ${row0.licenseType.trim()}.`));
+      }
+      if (showCommercialTerms && row0.term.trim()) {
+        children.push(numPara(row0.licenseType.trim() ? '1.7' : '1.6', `Срок действия лицензии / поддержки: ${row0.term.trim()}.`));
+      }
+    } else {
+      children.push(numPara('1.5', 'Перечень поставляемого Товара и сопутствующих параметров приведён в таблице ниже.'));
+      const summaryRows: TableRow[] = [
+        new TableRow({
+          tableHeader: true,
+          height: { value: 400, rule: HeightRule.ATLEAST },
+          children: [
+            hCell('№', { w: 500 }),
+            hCell('Наименование', { w: 3000 }),
+            ...(showCommercialTerms ? [hCell('Тип лицензии', { w: 1900 }), hCell('Срок действия', { w: 1700 })] : []),
+            hCell('Кол-во', { w: 900 }),
+            hCell('ОКПД2', { w: 1500 }),
+            hCell('Приложение', { w: 1100 }),
+          ],
+        }),
+      ];
+      doneRows.forEach((row, idx) => {
+        const goods = lookupCatalog(row.type);
+        summaryRows.push(new TableRow({
+          children: [
+            dCell(String(idx + 1), { align: AlignmentType.CENTER }),
+            dCell(`${goods.name}${row.model ? ` (${row.model})` : ''}`, { align: AlignmentType.LEFT }),
+            ...(showCommercialTerms
+              ? [
+                  dCell(getCommercialValue(row.licenseType), { align: AlignmentType.LEFT }),
+                  dCell(getCommercialValue(row.term), { align: AlignmentType.LEFT }),
+                ]
+              : []),
+            dCell(`${row.qty} ${goods.isSoftware ? 'лиценз.' : 'шт.'}`, { align: AlignmentType.CENTER }),
+            dCell(row.meta?.okpd2_code || goods.okpd2 || '—', { align: AlignmentType.CENTER }),
+            dCell(`Приложение ${idx + 1}`, { align: AlignmentType.CENTER }),
+          ],
+        }));
+      });
+      children.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: summaryRows }));
     }
   }
 
@@ -2452,6 +2635,9 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
     pNum++;
 
     const qualityTexts: string[] = [];
+    if (astraBundle) {
+      qualityTexts.push(...getAstraBundleRequirementTexts());
+    }
     if (hasHW) {
       qualityTexts.push(
         'Поставляемый Товар должен быть полнофункциональным и не лимитированным по сроку использования (не быть демонстрационным).',
@@ -2574,11 +2760,15 @@ async function buildDocx(rows: GoodsRow[], lawMode: LawMode): Promise<Blob> {
       const nacRegime = row.meta?.nac_regime || getUnifiedNacRegime(row.type);
       const specs = row.specs ?? [];
       const productName = `${g.name}${row.model ? ' (' + row.model + ')' : ''}`;
+      const commercialCaption = [row.licenseType.trim(), row.term.trim()].filter(Boolean).join(' / ');
 
       children.push(new Paragraph({ pageBreakBefore: true, children: [] }));
       children.push(centerPara(multi ? `Приложение № ${i + 1}` : 'Приложение № 1', { bold: true, size: 24 }));
       children.push(new Paragraph({ children: [], spacing: { after: 40 } }));
       children.push(centerPara(`Спецификация ${g.name.toLowerCase()}`, { size: FONT_SIZE }));
+      if (commercialCaption) {
+        children.push(centerPara(commercialCaption, { size: 20, spacing: 0 }));
+      }
       children.push(new Paragraph({ children: [], spacing: { after: 100 } }));
 
       // Таблица характеристик с заголовком-названием товара
@@ -2624,7 +2814,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [model] = useState('deepseek-chat');
   const [authPanelOpen, setAuthPanelOpen] = useState<boolean>(() => !useBackend);
   void _setProvider; // keep setter for future admin panel
-  const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', model: '', qty: 1, status: 'idle' }]);
+  const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', model: '', licenseType: '', term: '', qty: 1, status: 'idle' }]);
   const [docxReady, setDocxReady] = useState(false);
   const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
 
@@ -2813,6 +3003,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         rows: doneRows.map((r) => ({
           type: r.type,
           model: r.model,
+          licenseType: r.licenseType,
+          term: r.term,
           qty: r.qty,
           specs: r.specs ?? [],
           meta: r.meta ?? {},
@@ -2840,6 +3032,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         id: Date.now() + idx,
         type: r.type || 'pc',
         model: r.model || '',
+        licenseType: r.licenseType || '',
+        term: r.term || '',
         qty: r.qty || 1,
         status: 'done' as const,
         specs: (r.specs as SpecItem[]) ?? [],
@@ -2879,6 +3073,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     items: sourceRows.map((r) => ({
       type: r.type,
       model: NON_BRAND_LABEL,
+      licenseType: r.licenseType || '',
+      term: r.term || '',
       qty: r.qty,
       status: r.status,
       okpd2: r.meta?.okpd2_code || lookupCatalog(r.type)?.okpd2 || '',
@@ -2923,6 +3119,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       items: sourceRows.map((r) => ({
         type: r.type,
         model: NON_BRAND_LABEL,
+        licenseType: r.licenseType || '',
+        term: r.term || '',
         qty: r.qty,
         okpd2: r.meta?.okpd2_code || lookupCatalog(r.type)?.okpd2 || '',
         ktru: r.meta?.ktru_code || lookupCatalog(r.type)?.ktruFixed || '',
@@ -3398,7 +3596,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   }, [mutation.isPending, mutation.mutate]);
 
   const addRow = () => {
-    setRows((prev) => [...prev, { id: Date.now(), type: 'pc', model: '', qty: 1, status: 'idle' }]);
+    setRows((prev) => [...prev, { id: Date.now(), type: 'pc', model: '', licenseType: '', term: '', qty: 1, status: 'idle' }]);
   };
 
   // ── Подтянуть реальные характеристики товара ────────────────────────────────
@@ -3577,7 +3775,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
     for (const row of rows.filter((r) => r.status === 'done' && r.specs)) {
       const g = lookupCatalog(row.type);
-      addLine(`\n=== ${g.name} (${row.qty} шт.) ===`, true);
+      addLine(`\n=== ${g.name} (${row.qty} ${g.isSoftware ? 'лиценз.' : 'шт.'}) ===`, true);
+      if (row.licenseType.trim()) addLine(`Тип лицензии / сертификата: ${row.licenseType.trim()}`);
+      if (row.term.trim()) addLine(`Срок действия / поддержки: ${row.term.trim()}`);
 
       // Раздел 2
       addLine('\n2. Требования к качеству и безопасности', true);
@@ -3623,6 +3823,10 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     const multi = done.length > 1;
     const hasHW = done.some((r) => !(lookupCatalog(r.type)?.isSoftware));
     const hasSW = done.some((r) => !!(lookupCatalog(r.type)?.isSoftware));
+    const astraBundle = isAstraBundleProcurement(done);
+    const showCommercialTerms = shouldShowCommercialTerms(done);
+    const objectName = getProcurementObjectName(done);
+    const introText = getProcurementIntro(done);
 
     // Сбор уникальных нацрежимов
     const regimes = new Set(done.map((r) => {
@@ -3701,10 +3905,12 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
     return (
       <div className="tz-preview" style={{ marginTop: 24, fontSize: 12, fontFamily: 'Times New Roman, serif', lineHeight: 1.5, color: '#F5F0E8' }}>
+        <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 16, marginBottom: 6, color: '#F5F0E8' }}>ТЕХНИЧЕСКОЕ ЗАДАНИЕ</div>
+        <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 14, marginBottom: 12, color: '#FBBF24' }}>на поставку {objectName}</div>
 
         {/* === ШАПКА: Наименование, Заказчик, Исполнитель === */}
         <div style={{ ...boldStyle, fontSize: 13 }}>Наименование, Заказчик, Исполнитель, сроки и адрес поставки</div>
-        <p style={pStyle}>Наименование объекта поставки: {multi ? `комплект товаров (${done.length} позиций)` : (lookupCatalog(done[0].type)?.name ?? '').toLowerCase()}.</p>
+        <p style={pStyle}>{introText}</p>
         <p style={pStyle}>Заказчик: </p>
         <p style={pStyle}>Исполнитель: определяется по результатам закупочных процедур.</p>
 
@@ -3718,6 +3924,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                 <tr style={{ background: '#2A3444', color: '#F5F0E8' }}>
                   <th style={{ border: bdr, padding: '4px 8px', width: 30 }}>№</th>
                   <th style={{ border: bdr, padding: '4px 8px' }}>Наименование</th>
+                  {showCommercialTerms && <th style={{ border: bdr, padding: '4px 8px' }}>Тип лицензии</th>}
+                  {showCommercialTerms && <th style={{ border: bdr, padding: '4px 8px' }}>Срок действия</th>}
                   <th style={{ border: bdr, padding: '4px 8px' }}>Кол-во</th>
                   <th style={{ border: bdr, padding: '4px 8px' }}>ОКПД2</th>
                   <th style={{ border: bdr, padding: '4px 8px', width: 100 }}>Приложение</th>
@@ -3730,6 +3938,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                     <tr key={row.id}>
                       <td style={tdC}>{idx + 1}</td>
                       <td style={tdC}>{g.name}{row.model ? ` (${row.model})` : ''}</td>
+                      {showCommercialTerms && <td style={tdC}>{getCommercialValue(row.licenseType)}</td>}
+                      {showCommercialTerms && <td style={tdC}>{getCommercialValue(row.term)}</td>}
                       <td style={tdC}>{row.qty} {g.isSoftware ? 'лиценз.' : 'шт.'}</td>
                       <td style={tdC}>{row.meta?.okpd2_code || g.okpd2}</td>
                       <td style={tdC}>Приложение {idx + 1}</td>
@@ -3740,10 +3950,14 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             </table>
           </>
         ) : (
-          <p style={pStyle}>{(lookupCatalog(done[0].type)?.isSoftware)
+          <>
+            <p style={pStyle}>{(lookupCatalog(done[0].type)?.isSoftware)
             ? `Требования к количеству поставляемого Товара: ${done[0].qty} (${numText(done[0].qty)}) лицензий.`
             : `Требования к количеству поставляемого Товара: ${done[0].qty} (${numText(done[0].qty)}) штук.`}
-          </p>
+            </p>
+            {done[0].licenseType.trim() && <p style={pStyle}>Тип лицензии / сертификата технической поддержки: {done[0].licenseType.trim()}.</p>}
+            {done[0].term.trim() && <p style={pStyle}>Срок действия лицензии / поддержки: {done[0].term.trim()}.</p>}
+          </>
         )}
 
         {/* Требования к качеству → таблица характеристик (одна позиция — прямо здесь) */}
@@ -3770,6 +3984,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         )}
         {hasSW && (
           <>
+            {astraBundle && getAstraBundleRequirementTexts().map((text, idx) => (
+              <p key={`astra-bundle-req-${idx}`} style={pStyle}>{text}</p>
+            ))}
             <p style={pStyle}>Поставляемое программное обеспечение должно быть лицензионно чистым. Поставщик гарантирует правомерность использования ПО.</p>
             <p style={pStyle}>ПО должно быть полнофункциональным, не лимитированным по сроку использования и не быть демонстрационным.</p>
             <p style={pStyle}>Право использования ПО передаётся Заказчику на основании лицензионного договора (сублицензионного соглашения) в соответствии с частью IV ГК РФ.</p>
@@ -3848,6 +4065,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 14, color: '#FBBF24', marginBottom: 4 }}>Приложение {idx + 1}</div>
               <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#F5F0E8' }}>
                 {g.name}{row.model ? ` (${row.model})` : ''} — {row.qty} {isSW ? 'лиценз.' : 'шт.'}
+                {[row.licenseType.trim(), row.term.trim()].filter(Boolean).length > 0
+                  ? ` / ${[row.licenseType.trim(), row.term.trim()].filter(Boolean).join(' / ')}`
+                  : ''}
               </div>
               <p style={{ ...pStyle, fontWeight: 600 }}>Требования к качеству поставляемого Товара:</p>
               {renderSpecsTable(row, specs, isSW, nacRegime)}
@@ -3966,6 +4186,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               <th>#</th>
               <th>Тип товара</th>
               <th>Модель / описание</th>
+              <th>Тип лицензии</th>
+              <th>Срок действия</th>
               <th>Кол-во</th>
               <th>Статус</th>
               <th></th>
@@ -4112,6 +4334,26 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                   />
                   {/* Дропдаун типов рендерится отдельно через fixed-portal ниже */}
                 </td>
+                <td>
+                  <input
+                    value={row.licenseType}
+                    placeholder={getLicenseTypePlaceholder(row)}
+                    onChange={(e) => {
+                      const licenseType = e.target.value;
+                      setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, licenseType } : x)));
+                    }}
+                  />
+                </td>
+                <td>
+                  <input
+                    value={row.term}
+                    placeholder={getTermPlaceholder(row)}
+                    onChange={(e) => {
+                      const term = e.target.value;
+                      setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, term } : x)));
+                    }}
+                  />
+                </td>
                 <td className="qty-cell">
                   <input
                     type="number"
@@ -4155,7 +4397,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               {/* ── Inline spec editor ── */}
               {editingRowId === row.id && row.specs && (
                 <tr key={`edit-${row.id}`}>
-                  <td colSpan={6} style={{ padding: 0 }}>
+                  <td colSpan={8} style={{ padding: 0 }}>
                     <div className="spec-editor" style={{ background: '#141824', border: '1px solid #2A3444', borderRadius: 0, padding: '12px 16px', margin: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                         <strong style={{ color: '#FBBF24', fontSize: 13 }}>✏️ Редактирование характеристик — {lookupCatalog(row.type)?.name ?? row.type}</strong>

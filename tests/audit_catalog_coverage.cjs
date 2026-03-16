@@ -40,10 +40,10 @@ function evalCatalog(filePath, exportNames) {
   return eval(wrapped); // eslint-disable-line no-eval
 }
 
-function extractSpecHintKeys(workspaceSource) {
-  const match = workspaceSource.match(/const specHintsMap: Record<string, string> = \{([\s\S]*?)\n\};/);
+function extractMapKeys(workspaceSource, mapName) {
+  const match = workspaceSource.match(new RegExp(`const ${mapName}: Record<string, string> = \\{([\\s\\S]*?)\\n\\};`));
   if (!match) {
-    throw new Error('specHintsMap block not found in Workspace.tsx');
+    throw new Error(`${mapName} block not found in Workspace.tsx`);
   }
   const block = match[1];
   const keys = new Set();
@@ -64,14 +64,16 @@ function main() {
   const { GOODS_CATALOG } = evalCatalog(goodsPath, ['GOODS_CATALOG']);
   const { GENERAL_CATALOG } = evalCatalog(generalPath, ['GENERAL_CATALOG']);
   const workspaceSource = fs.readFileSync(workspacePath, 'utf8');
-  const specHintKeys = extractSpecHintKeys(workspaceSource);
+  const specHintKeys = extractMapKeys(workspaceSource, 'specHintsMap');
+  const supplementalSpecHintKeys = extractMapKeys(workspaceSource, 'supplementalSpecHintsMap');
+  const allSpecHintKeys = new Set([...specHintKeys, ...supplementalSpecHintKeys]);
 
   const goodsKeys = Object.keys(GOODS_CATALOG);
   const generalKeys = Object.keys(GENERAL_CATALOG);
 
   const goodsWithHardTemplate = goodsKeys.filter((key) => Array.isArray(GOODS_CATALOG[key]?.hardTemplate) && GOODS_CATALOG[key].hardTemplate.length > 0);
-  const goodsWithSpecHint = goodsKeys.filter((key) => specHintKeys.has(key));
-  const goodsFallbackOnly = goodsKeys.filter((key) => !specHintKeys.has(key) && !goodsWithHardTemplate.includes(key));
+  const goodsWithSpecHint = goodsKeys.filter((key) => allSpecHintKeys.has(key));
+  const goodsFallbackOnly = goodsKeys.filter((key) => !allSpecHintKeys.has(key) && !goodsWithHardTemplate.includes(key));
 
   const generalWithSpecHint = generalKeys.filter((key) => String(GENERAL_CATALOG[key]?.specHint || '').trim().length > 0);
   const generalMissingSpecHint = generalKeys.filter((key) => !String(GENERAL_CATALOG[key]?.specHint || '').trim());

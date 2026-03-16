@@ -2182,6 +2182,419 @@ const specHintsMap: Record<string, string> = {
     faceplate: '- Кол-во портов (1/2/3)\n- Тип разъёмов (Keystone RJ-45 / оптический)\n- Монтаж (в стену / на DIN-рейку)\n- Материал (пластик)\n- Цвет\n- Маркировка',
 };
 
+const toolSetHint = [
+  '- Назначение набора (универсальный / монтажный / сетевой / сервисный)',
+  '- Количество предметов (не менее, шт)',
+  '- Состав набора (отвертки, биты, торцевые головки, пассатижи, стриппер или эквивалент)',
+  '- Материал рабочей части (CrV / S2 / инструментальная сталь или эквивалент)',
+  '- Материал рукояток (двухкомпонентные / диэлектрические)',
+  '- Наличие кейса / органайзера',
+  '- Масса набора (не более, кг)',
+  '- Гарантия производителя (мес)',
+].join('\n');
+
+const serviceElectronicsHint = [
+  '- Назначение и тип изделия',
+  '- Совместимость / поддерживаемые операции',
+  '- Материал рабочей части / корпуса',
+  '- Защитные свойства (ESD / антистатическое исполнение / термостойкость)',
+  '- Габариты (мм), масса (не более, г)',
+  '- Комплект поставки',
+  '- Гарантия производителя (мес)',
+].join('\n');
+
+const keyboardMouseSetHint = [
+  '- Состав комплекта (клавиатура и компьютерная мышь)',
+  '- Тип подключения (проводное USB / беспроводное RF 2,4 ГГц / Bluetooth)',
+  '- Раскладка клавиатуры (русская и латинская, заводская маркировка)',
+  '- Количество клавиш клавиатуры (не менее, шт)',
+  '- Тип клавишного механизма',
+  '- Наличие цифрового блока',
+  '- Тип сенсора мыши (оптический / лазерный)',
+  '- Разрешение сенсора мыши (не менее, dpi)',
+  '- Количество кнопок мыши (не менее, шт)',
+  '- Беспроводной приёмник / кабель подключения',
+  '- Длина кабеля или время автономной работы',
+  '- Совместимость с ОС (или эквивалентными)',
+  '- Цвет исполнения',
+  '- Гарантия производителя (мес)',
+].join('\n');
+
+const cableTesterHint = [
+  '- Тип устройства (LAN-тестер / кабельный тестер)',
+  '- Поддерживаемые типы кабелей (витая пара, телефонный кабель, коаксиальный или эквивалент)',
+  '- Поддерживаемые категории кабелей (Cat5e / Cat6 / Cat6A)',
+  '- Поддерживаемые разъёмы (RJ-45, RJ-11, RJ-12, BNC или эквивалент)',
+  '- Функции тестирования (обрыв, короткое замыкание, перепутанные пары, split pair, экранирование)',
+  '- Дальность тестирования (не менее, м)',
+  '- Тип индикации (LED / LCD)',
+  '- Наличие удалённого модуля',
+  '- Питание (батареи / аккумулятор)',
+  '- Комплектность (основной блок, remote unit, батареи, чехол, документация)',
+].join('\n');
+
+const mobileAccessoryHint = [
+  '- Назначение изделия',
+  '- Совместимая диагональ / форм-фактор устройства',
+  '- Материал корпуса / поверхности / крепления',
+  '- Допустимая нагрузка (не менее, кг) или размеры совместимого устройства',
+  '- Способ крепления / фиксации',
+  '- Регулировки / эргономика (угол наклона, длина ремня, размеры карманов или эквивалент)',
+  '- Цвет исполнения',
+  '- Габариты (мм), масса (не более, г)',
+  '- Гарантия производителя (мес)',
+].join('\n');
+
+const securePeripheralHint = [
+  '- Назначение изделия',
+  '- Интерфейс подключения (USB-A / USB-C / Bluetooth или эквивалент)',
+  '- Поддерживаемые стандарты / форматы данных / типы носителей',
+  '- Наличие аппаратной криптографической поддержки / защищённого исполнения (при применимости)',
+  '- Совместимость с ОС и прикладным ПО (или эквивалентными)',
+  '- Наличие драйверов / SDK / middleware',
+  '- Габариты (мм), масса (не более, г)',
+  '- Комплект поставки',
+  '- Гарантия производителя (мес)',
+].join('\n');
+
+const collaborationDisplayHint = [
+  '- Назначение и тип устройства',
+  '- Диагональ / поле обзора / рабочая область',
+  '- Разрешение видео / изображения (не менее)',
+  '- Яркость / контрастность / частота кадров / угол обзора (по типу изделия)',
+  '- Поддерживаемые интерфейсы (HDMI, DisplayPort, USB, LAN, Wi‑Fi или эквивалент)',
+  '- Встроенные динамики / микрофоны / сенсорный ввод (при наличии)',
+  '- Поддержка крепления / монтажа и комплект поставки',
+  '- Совместимость с ОС и ВКС-платформами (или эквивалентными)',
+  '- Потребляемая мощность (не более, Вт)',
+  '- Габариты (мм), масса (не более, кг)',
+].join('\n');
+
+const telephonyHint = [
+  '- Тип устройства (IP-телефон / шлюз / контроллер / модем)',
+  '- Поддерживаемые протоколы (SIP, RTP, SRTP, MGCP, LTE Cat или эквивалент)',
+  '- Количество линий / каналов / SIM-слотов / абонентов (по типу изделия)',
+  '- Поддерживаемые кодеки / частотные диапазоны / стандарты связи',
+  '- Интерфейсы подключения (Ethernet, USB, FXS/FXO, RJ-11, консольный порт или эквивалент)',
+  '- Питание (PoE / внешний адаптер / 12В DC или эквивалент)',
+  '- Функции безопасности и управления (VLAN, VPN, QoS, веб-консоль, TR-069 или эквивалент)',
+  '- Совместимость с АТС / платформами телефонии / операторами',
+  '- Габариты (мм), масса (не более, кг)',
+].join('\n');
+
+const networkTransceiverHint = [
+  '- Тип изделия (SFP / SFP+ / DAC / инжектор / сплиттер / сетевой адаптер)',
+  '- Скорость передачи данных (не менее, Мбит/с или Гбит/с)',
+  '- Тип портов / разъёмов (RJ-45, SFP, USB, PCIe, DC jack или эквивалент)',
+  '- Дальность передачи / длина кабеля (не менее, м)',
+  '- Поддержка PoE / стандартов 802.3af/at/bt / Auto-Negotiation (при применимости)',
+  '- Поддерживаемая среда передачи (медь, одномод, многомод, twinax)',
+  '- Совместимость с оборудованием / чипсетами / ОС (или эквивалентными)',
+  '- Потребляемая мощность (не более, Вт)',
+  '- Рабочая температура',
+].join('\n');
+
+const copperPassiveHint = [
+  '- Тип изделия (коннектор / keystone-модуль / розетка / coupler)',
+  '- Категория СКС (Cat5e / Cat6 / Cat6A)',
+  '- Экранирование (UTP / FTP / STP)',
+  '- Тип разъёма / конфигурация контактов (RJ-45 8P8C или эквивалент)',
+  '- Совместимый проводник (одножильный / многожильный, AWG)',
+  '- Материал контактов и покрытие',
+  '- Тип монтажа (обжим / punch-down / tool-less / настенный)',
+  '- Материал корпуса',
+  '- Цвет / маркировка / комплектация',
+].join('\n');
+
+const fiberPassiveHint = [
+  '- Тип изделия (патч-корд / пигтейл / панель / сплайс-кассета)',
+  '- Тип волокна (SM OS2 / MM OM3/OM4 или эквивалент)',
+  '- Тип коннекторов (LC / SC / FC / ST, UPC/APC)',
+  '- Количество волокон / портов / адаптеров (не менее)',
+  '- Длина кабеля / ёмкость кассеты / высота панели',
+  '- Тип полировки и цветовая маркировка',
+  '- Материал оболочки / корпуса, класс пожарной безопасности',
+  '- Совместимость с типоразмерами стоек и кроссов',
+  '- Комплект поставки',
+].join('\n');
+
+const storageAccessoryHint = [
+  '- Тип изделия (внешний SSD/HDD, карта памяти, кардридер, привод, кассета или аксессуар)',
+  '- Ёмкость / поддерживаемый объём (не менее, ГБ/ТБ)',
+  '- Интерфейс подключения (USB 3.2, Type-C, SATA, SD, microSD, SAS, LTO или эквивалент)',
+  '- Скорость чтения / записи или скорость передачи данных (не менее)',
+  '- Поддерживаемые форматы носителей / типы карт / поколения лент',
+  '- Совместимость с ОС и оборудованием (или эквивалентными)',
+  '- Материал корпуса / наличие защитного кейса',
+  '- Габариты (мм), масса (не более, г)',
+  '- Гарантия производителя (мес)',
+].join('\n');
+
+const adapterCableHint = [
+  '- Тип изделия и назначение',
+  '- Тип входных и выходных разъёмов',
+  '- Поддерживаемые стандарты / версии интерфейса',
+  '- Максимальная длина линии / длина кабеля (не менее, м)',
+  '- Максимальное поддерживаемое разрешение / пропускная способность / ток (по типу изделия)',
+  '- Материал проводника и экранирование',
+  '- Поддержка питания по шине / внешний адаптер (при необходимости)',
+  '- Совместимость с оборудованием и ОС (или эквивалентными)',
+  '- Комплект поставки',
+].join('\n');
+
+const rackAccessoryHint = [
+  '- Тип изделия (полка / шкаф / органайзер / заглушка / комплект крепежа / рельсы)',
+  '- Совместимый стандарт монтажа (19", 10", глубина стойки, U)',
+  '- Материал корпуса / металла и толщина',
+  '- Допустимая нагрузка (не менее, кг)',
+  '- Тип крепления и регулировка по глубине / высоте',
+  '- Покрытие и цвет (RAL)',
+  '- Наличие крепежа / заземления / кабельных колец / роликов (по типу изделия)',
+  '- Габариты (мм), масса (не более, кг)',
+].join('\n');
+
+const printerConsumableHint = [
+  '- Тип расходного материала / узла',
+  '- Совместимость с моделями печатающих устройств (через «или эквивалент»)',
+  '- Цвет / тип печати / назначение',
+  '- Ресурс (не менее, стр.) или объём / масса',
+  '- Оригинальный / совместимый / восстановленный статус',
+  '- Упаковка и защитная маркировка',
+  '- Условия хранения / срок годности',
+].join('\n');
+
+const electricalConsumableHint = [
+  '- Тип изделия и назначение',
+  '- Размер / длина / диаметр / сечение',
+  '- Материал основы / проводника / изоляции',
+  '- Рабочее напряжение / температурный диапазон',
+  '- Цвет исполнения',
+  '- Класс горючести / термоусадка / клеевой слой (при применимости)',
+  '- Количество в упаковке',
+].join('\n');
+
+const pcComponentHint = [
+  '- Тип комплектующего и назначение',
+  '- Интерфейс подключения / совместимый слот / разъём',
+  '- Основные технические параметры по типу изделия',
+  '- Совместимость с платформами, ОС и серверным/клиентским оборудованием (или эквивалентными)',
+  '- Поддерживаемые стандарты / версии интерфейса',
+  '- Потребляемая мощность / тепловыделение (при применимости)',
+  '- Комплект поставки',
+  '- Гарантия производителя (мес)',
+].join('\n');
+
+const remoteAccessSoftwareHint = [
+  '--- ГРУППА: Общие сведения ---',
+  '- Наименование и версия ПО удалённого доступа',
+  '- Тип решения (удалённая поддержка / защищённый доступ / remote desktop gateway)',
+  '--- ГРУППА: Функциональные возможности ---',
+  '- Поддерживаемые протоколы доступа (RDP, VNC, SSH, HTTPS или эквивалент)',
+  '- Количество одновременных сессий / операторов / администрируемых узлов (не менее)',
+  '- Передача файлов, буфер обмена, печать и перенаправление USB (при наличии)',
+  '- Запись сессий и журналирование действий',
+  '- Ролевая модель доступа и разграничение прав',
+  '- Двухфакторная аутентификация',
+  '- Веб-консоль администратора / thick client',
+  '--- ГРУППА: Совместимость ---',
+  '- Поддерживаемые серверные и клиентские ОС (или эквивалентные)',
+  '- Интеграция со службой каталогов (AD, LDAP, FreeIPA или эквивалент)',
+  '- Наличие в Едином реестре российского ПО Минцифры',
+  '- Тип лицензии (по операторам / по узлам / подписка)',
+  '- Срок технической поддержки (мес)',
+].join('\n');
+
+const genericHardwareHint = [
+  '- Тип изделия и функциональное назначение',
+  '- Основные технические параметры и рабочие характеристики',
+  '- Совместимость с оборудованием / ОС / стандартами (или эквивалентными)',
+  '- Интерфейсы, разъёмы, крепление или способ монтажа',
+  '- Материал корпуса / класс защиты / цвет',
+  '- Габариты (мм), масса (не более, кг)',
+  '- Комплект поставки',
+  '- Гарантия производителя (мес)',
+].join('\n');
+
+const genericCableHint = [
+  '- Тип кабеля / переходника и назначение',
+  '- Типы разъёмов на концах',
+  '- Длина (не менее, м)',
+  '- Поддерживаемый стандарт / версия интерфейса',
+  '- Материал проводника, экранирование, оболочка',
+  '- Пропускная способность / допустимый ток / максимальное разрешение (по типу изделия)',
+  '- Цвет и маркировка',
+].join('\n');
+
+const genericConsumableHint = [
+  '- Тип расходного материала',
+  '- Назначение / совместимость',
+  '- Объём / масса / размер / количество в упаковке',
+  '- Состав / материал',
+  '- Срок годности / условия хранения',
+  '- Упаковка и маркировка',
+].join('\n');
+
+const genericSoftwareHint = [
+  '--- ГРУППА: Общие сведения ---',
+  '- Наименование, версия и редакция ПО',
+  '- Функциональное назначение продукта',
+  '--- ГРУППА: Функциональность ---',
+  '- Ключевые функциональные модули и сценарии использования',
+  '- Веб-интерфейс / thick client / mobile client (при наличии)',
+  '- API и механизмы интеграции',
+  '- Ролевая модель доступа и аудит действий',
+  '--- ГРУППА: Совместимость ---',
+  '- Поддерживаемые ОС, СУБД, браузеры и аппаратные платформы (или эквивалентные)',
+  '- Интеграция со службой каталогов / корпоративными системами',
+  '--- ГРУППА: Лицензирование ---',
+  '- Наличие в Едином реестре российского ПО Минцифры',
+  '- Тип лицензии (по пользователям / серверу / подписка)',
+  '- Срок технической поддержки (мес)',
+  '- Документация на русском языке',
+].join('\n');
+
+const supplementalSpecHintsMap: Record<string, string> = {
+  toolSet: toolSetHint,
+  precisionScrewdriver: serviceElectronicsHint,
+  desolderPump: serviceElectronicsHint,
+  antistaticWristStrap: serviceElectronicsHint,
+  antistaticMat: serviceElectronicsHint,
+  keyboardMouseSet: keyboardMouseSetHint,
+  cableTester: cableTesterHint,
+  dockingStation: [
+    '- Тип изделия (USB-C / Thunderbolt / универсальная док-станция)',
+    '- Поддерживаемые видеовыходы (HDMI, DisplayPort, VGA), количество мониторов',
+    '- Разрешение подключаемых мониторов (не менее)',
+    '- Порты USB (тип, количество, скорость)',
+    '- Сетевой интерфейс Ethernet (скорость)',
+    '- Наличие кардридера, аудиоразъёма, Power Delivery',
+    '- Совместимость с ОС и моделями ноутбуков (или эквивалентными)',
+    '- Мощность питания PD (не менее, Вт)',
+    '- Габариты (мм), масса (не более, г)',
+  ].join('\n'),
+  smartCardReader: securePeripheralHint,
+  usbToken: securePeripheralHint,
+  signaturePad: securePeripheralHint,
+  graphicsTablet: securePeripheralHint,
+  barcodeScanner: [
+    '- Тип сканера (ручной / настольный / беспроводной)',
+    '- Поддерживаемые форматы кодов (1D / 2D / QR / DataMatrix)',
+    '- Дальность считывания (не менее, мм)',
+    '- Интерфейс подключения (USB / Bluetooth / RF 2,4 ГГц)',
+    '- Устойчивость к падениям / класс защиты IP',
+    '- Скорость декодирования и индикация считывания',
+    '- Совместимость с ОС и учётными системами',
+    '- Комплект поставки и гарантия',
+  ].join('\n'),
+  labelPrinter: [
+    '- Тип печати (термо / термотрансферная)',
+    '- Ширина печати (не менее, мм)',
+    '- Разрешение печати (не менее, dpi)',
+    '- Скорость печати (не менее, мм/с)',
+    '- Поддерживаемые размеры этикеток и втулки',
+    '- Интерфейсы подключения (USB, Ethernet, Wi‑Fi, RS-232 или эквивалент)',
+    '- Поддержка языков печати (ZPL, EPL, TSPL или эквивалент)',
+    '- Ресурс печатающей головки и совместимые расходные материалы',
+  ].join('\n'),
+  receiptPrinter: [
+    '- Тип печати (термопечать)',
+    '- Ширина чековой ленты (57/80 мм)',
+    '- Скорость печати (не менее, мм/с)',
+    '- Разрешение печати (не менее, dpi)',
+    '- Наличие автоотреза',
+    '- Интерфейсы подключения (USB, Ethernet, Bluetooth, Wi‑Fi, RS-232 или эквивалент)',
+    '- Поддержка команд ESC/POS или эквивалент',
+    '- Ресурс термоголовки и автоотреза',
+  ].join('\n'),
+  monitorArm: mobileAccessoryHint,
+  laptopBag: mobileAccessoryHint,
+  laptopStand: mobileAccessoryHint,
+  mousePad: mobileAccessoryHint,
+  presentationClicker: mobileAccessoryHint,
+  privacyFilter: mobileAccessoryHint,
+  laptopLock: mobileAccessoryHint,
+  touchMonitor: collaborationDisplayHint,
+  conferenceCamera: collaborationDisplayHint,
+  documentCamera: collaborationDisplayHint,
+  projectorScreen: collaborationDisplayHint,
+  tvPanel: collaborationDisplayHint,
+  ipPhone: telephonyHint,
+  voipGateway: telephonyHint,
+  wifiController: telephonyHint,
+  lteModem: telephonyHint,
+  consoleServer: telephonyHint,
+  sfpModule: networkTransceiverHint,
+  sfpDac: networkTransceiverHint,
+  poeInjector: networkTransceiverHint,
+  poeSplitter: networkTransceiverHint,
+  networkAdapter: networkTransceiverHint,
+  rj45Connector: copperPassiveHint,
+  keystoneJack: copperPassiveHint,
+  networkSocket: copperPassiveHint,
+  rj45Coupler: copperPassiveHint,
+  fiberPatchCord: fiberPassiveHint,
+  fiberPigtail: fiberPassiveHint,
+  fiberPatchPanel: fiberPassiveHint,
+  spliceTray: fiberPassiveHint,
+  extSsd: storageAccessoryHint,
+  extHdd: storageAccessoryHint,
+  memoryCard: storageAccessoryHint,
+  cardReader: storageAccessoryHint,
+  opticalDrive: storageAccessoryHint,
+  ltoTape: storageAccessoryHint,
+  ltoCleaningCartridge: storageAccessoryHint,
+  discCase: storageAccessoryHint,
+  discSleeve: storageAccessoryHint,
+  audioCable: adapterCableHint,
+  serialCable: adapterCableHint,
+  consoleCable: adapterCableHint,
+  hdmiSplitter: adapterCableHint,
+  hdmiSwitcher: adapterCableHint,
+  usbExtender: adapterCableHint,
+  kvmExtender: adapterCableHint,
+  usbAdapter: adapterCableHint,
+  videoAdapter: adapterCableHint,
+  surgeProtector: adapterCableHint,
+  extensionCord: adapterCableHint,
+  plugAdapter: adapterCableHint,
+  rackShelf: rackAccessoryHint,
+  wallCabinet: rackAccessoryHint,
+  cableManagerRack: rackAccessoryHint,
+  blankPanel: rackAccessoryHint,
+  cageNutSet: rackAccessoryHint,
+  serverRailKit: rackAccessoryHint,
+  inkCartridge: printerConsumableHint,
+  thermalPaper: printerConsumableHint,
+  fuserUnit: printerConsumableHint,
+  transferBelt: printerConsumableHint,
+  wasteToner: printerConsumableHint,
+  developerUnit: printerConsumableHint,
+  maintenanceKitPrinter: printerConsumableHint,
+  printHead: printerConsumableHint,
+  electricalTape: electricalConsumableHint,
+  heatShrinkTube: electricalConsumableHint,
+  solderWire: electricalConsumableHint,
+  cableTie: electricalConsumableHint,
+  cableChannel: electricalConsumableHint,
+  pcCase: pcComponentHint,
+  caseFan: pcComponentHint,
+  tpmModule: pcComponentHint,
+  soundCard: pcComponentHint,
+  captureCard: pcComponentHint,
+  raidController: pcComponentHint,
+  hbaAdapter: pcComponentHint,
+  upsBattery: pcComponentHint,
+  remoteAccessSw: remoteAccessSoftwareHint,
+  miscHardware: genericHardwareHint,
+  miscCable: genericCableHint,
+  miscConsumable: genericConsumableHint,
+  miscSoftware: genericSoftwareHint,
+};
+
+function getDetailedSpecHint(type: string): string {
+  return specHintsMap[type] ?? supplementalSpecHintsMap[type] ?? '';
+}
+
 // ── Промпты по типу товара ────────────────────────────────────────────────────
 function getLdapRoleHint(profile: LdapLicenseProfile, effectiveLicenseType: string): string {
   if (profile === 'server') {
@@ -2472,7 +2885,7 @@ ${explicitCommercialTermsBlock ? `Коммерческие параметры и
   const generalHint = getSpecHint(row.type);
   let hint = generalHint
     ? generalHint.split(',').map(s => `- ${s.trim()}`).join('\n')
-    : (specHintsMap[row.type]
+    : (getDetailedSpecHint(row.type)
       ?? (isSW ? '- Наименование и версия ПО\n- Тип лицензии (бессрочная/подписка/SaaS)\n- Количество лицензий\n- Срок действия лицензии\n- Функциональные возможности (подробно, не менее 10 пунктов)\n- Поддерживаемые ОС (с указанием «или эквивалентные»)\n- Совместимость с другими системами\n- Средства безопасности (аутентификация, шифрование, аудит)\n- Централизованное управление\n- Масштабируемость\n- API/интеграции\n- Наличие в Едином реестре российского ПО Минцифры России\n- Сертификат ФСТЭК России (если применимо)\n- Документация на русском языке\n- Срок технической поддержки\n- Обновления (частота, способ доставки)\n- Требования к серверу/клиенту (RAM, CPU, HDD)'
                : '- Наименование и тип изделия\n- Назначение / область применения\n- Материал (при наличии)\n- Основные технические параметры (конкретные числа: размеры, мощность, ёмкость, скорость, частота)\n- Совместимость (с каким оборудованием — через «или эквивалент»)\n- Интерфейсы подключения (при наличии)\n- Стандарты и нормативы (ГОСТ, класс защиты, IP-рейтинг — при применимости)\n- Комплектация\n- Цвет / внешний вид (при значимости)\n- Габаритные размеры (ШxГxВ, мм)\n- Масса (не более, кг или г)\n- Гарантия производителя (мес)\n- Упаковка'));
 
@@ -2577,7 +2990,7 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   const isSW = !!g.isSoftware;
   const resolvedCommercial = getResolvedCommercialContext(row);
-  const hint = specHintsMap[row.type] ?? '';
+  const hint = getDetailedSpecHint(row.type);
   const ldapRoleHint = row.type === 'ldap'
     ? getLdapRoleHint(resolvedCommercial.ldapProfile, resolvedCommercial.suggestedLicenseType)
     : '';
@@ -2677,7 +3090,7 @@ function buildEisStylePrompt(row: GoodsRow, g: GoodsItem, eisContext: string): s
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   const isSW = !!g.isSoftware;
   const resolvedCommercial = getResolvedCommercialContext(row);
-  const hint = specHintsMap[row.type] ?? '';
+  const hint = getDetailedSpecHint(row.type);
   const ldapRoleHint = row.type === 'ldap'
     ? getLdapRoleHint(resolvedCommercial.ldapProfile, resolvedCommercial.suggestedLicenseType)
     : '';

@@ -146,6 +146,8 @@ ENTERPRISE_SIMULATION_MODE = os.getenv("ENTERPRISE_SIMULATION_MODE", "1").strip(
 _cors_raw = os.getenv("CORS_ALLOW_ORIGINS", "")
 CORS_ORIGINS = [s.strip() for s in _cors_raw.split(",") if s.strip()] if _cors_raw else [
     "https://tz-generator.onrender.com",
+    "https://tz-generator-frontend.onrender.com",
+    "https://tz-generator-frontend-new.onrender.com",
     "https://arharius.github.io",
     "http://localhost:5173",
     "http://localhost:5174",

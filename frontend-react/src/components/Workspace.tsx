@@ -189,6 +189,34 @@ function getLicenseTypePlaceholder(row: GoodsRow): string {
   return 'Если применимо';
 }
 
+function getLicenseTypeOptions(row: GoodsRow): string[] {
+  if (row.type === 'ldap') {
+    return [
+      'Серверная часть',
+      'Клиентская часть (CAL)',
+      'CAL на устройство',
+      'CAL на пользователя',
+      'Серверная часть + CAL',
+    ];
+  }
+  if (row.type === 'supportCert' || row.type === 'osSupport') {
+    return ['Стандарт', 'Привилегированная'];
+  }
+  if (row.type === 'vdi') {
+    return ['Конкурентные пользователи (CCU)', 'Именованные пользователи'];
+  }
+  if (row.type === 'virt') {
+    return ['На физический процессор (socket)'];
+  }
+  if (row.type === 'email') {
+    return ['На почтовый ящик / пользователя'];
+  }
+  if (row.type === 'backup_sw') {
+    return ['По объему данных (ТБ)', 'Серверная часть + агенты'];
+  }
+  return [];
+}
+
 function getTermPlaceholder(row: GoodsRow): string {
   if (row.type === 'supportCert' || row.type === 'osSupport') {
     return '12 / 24 / 36 мес.';
@@ -2595,6 +2623,31 @@ function getDetailedSpecHint(type: string): string {
   return specHintsMap[type] ?? supplementalSpecHintsMap[type] ?? '';
 }
 
+function getMinimumSpecCount(row: GoodsRow, resolvedCommercial = getResolvedCommercialContext(row)): number {
+  const g = lookupCatalog(row.type);
+  const isSW = !!g.isSoftware;
+  const modelLower = String(row.model || '').toLowerCase().replace(/ё/g, 'е');
+  const isLicenseContext = Boolean(resolvedCommercial.suggestedLicenseType) || /лицензи[яию]|license|подписк[аи]/i.test(modelLower);
+  const isSupportContext = row.type === 'supportCert'
+    || row.type === 'osSupport'
+    || /техподдержк|тех[\.\s]*поддержк|support|сопровождени/i.test(modelLower);
+
+  if (row.type === 'ldap' && (
+    resolvedCommercial.ldapProfile === 'client_device'
+    || resolvedCommercial.ldapProfile === 'client_user'
+    || resolvedCommercial.ldapProfile === 'client'
+  )) {
+    return 24;
+  }
+  if (row.type === 'os' && isAstraLinuxContext(row)) {
+    return 35;
+  }
+  if (isLicenseContext || isSupportContext) {
+    return 35;
+  }
+  return isSW ? 35 : 25;
+}
+
 // ── Промпты по типу товара ────────────────────────────────────────────────────
 function getLdapRoleHint(profile: LdapLicenseProfile, effectiveLicenseType: string): string {
   if (profile === 'server') {
@@ -2647,6 +2700,12 @@ function isAldProContext(row: GoodsRow): boolean {
   return /(ald pro|алд про|astra linux directory|astra ald|ред адм|red adm)/.test(haystack);
 }
 
+function isAstraLinuxContext(row: GoodsRow): boolean {
+  if (row.type !== 'os') return false;
+  const haystack = normalizeBundleText(`${row.model} ${row.licenseType}`);
+  return /(astra linux|астра линукс|астра linux|special edition|smolensk|voronezh|смоленск|воронеж)/.test(haystack);
+}
+
 function upsertSpec(
   specs: SpecItem[],
   spec: SpecItem,
@@ -2677,6 +2736,62 @@ function adjustSpecsForCommercialContext(row: GoodsRow, specs: SpecItem[]): Spec
   const resolved = getResolvedCommercialContext(row);
   let next = [...specs];
   const isAldPro = isAldProContext(row);
+  const isAstraLinux = isAstraLinuxContext(row);
+
+  if (isAstraLinux) {
+    next = upsertSpecBatch(next, [
+      { spec: { group: 'Общие сведения', name: 'Тип операционной системы', value: 'защищённая многопользовательская операционная система общего назначения', unit: 'тип' } },
+      { spec: { group: 'Общие сведения', name: 'Редакция / вариант поставки', value: 'Special Edition для серверов и рабочих станций', unit: 'редакция' } },
+      { spec: { group: 'Общие сведения', name: 'Версия / номер релиза', value: 'не ниже 1.8', unit: 'версия' } },
+      { spec: { group: 'Общие сведения', name: 'Исполнение / уровень защищённости', value: 'редакция с усиленными встроенными средствами защиты информации', unit: 'уровень' } },
+      { spec: { group: 'Ядро и платформы', name: 'Поддерживаемые аппаратные платформы', value: 'x86_64', unit: 'платформа' } },
+      { spec: { group: 'Ядро и платформы', name: 'Разрядность', value: '64-бит', unit: 'разрядность' } },
+      { spec: { group: 'Ядро и платформы', name: 'Версия ядра Linux', value: 'не ниже 6.1', unit: 'версия' } },
+      { spec: { group: 'Ядро и платформы', name: 'Тип ядра', value: 'монолитное', unit: 'тип' } },
+      { spec: { group: 'Файловые системы', name: 'Поддерживаемые локальные файловые системы', value: 'ext4, XFS, Btrfs или эквивалентные', unit: 'ФС' } },
+      { spec: { group: 'Файловые системы', name: 'Поддержка сетевых файловых систем', value: 'NFS, CIFS/SMB или эквивалентные', unit: 'ФС' } },
+      { spec: { group: 'Файловые системы', name: 'Поддержка LVM', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Файловые системы', name: 'Поддержка шифрования разделов', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Интерфейс пользователя', name: 'Графическая оболочка', value: 'наличие графического пользовательского интерфейса для рабочих мест', unit: 'наличие' } },
+      { spec: { group: 'Интерфейс пользователя', name: 'Файловый менеджер', value: 'наличие графического файлового менеджера', unit: 'наличие' } },
+      { spec: { group: 'Интерфейс пользователя', name: 'Поддержка нескольких мониторов', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Интерфейс пользователя', name: 'Поддержка HiDPI-дисплеев', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Средства безопасности', name: 'Мандатное управление доступом (MAC)', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Средства безопасности', name: 'Дискреционный контроль доступа (DAC)', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Средства безопасности', name: 'Замкнутая программная среда', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Средства безопасности', name: 'Контроль целостности загрузки и исполняемых файлов', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Средства безопасности', name: 'Маркировка объектов по уровням конфиденциальности', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Средства безопасности', name: 'Изоляция процессов и пользователей', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Средства безопасности', name: 'Очистка оперативной памяти и временных данных', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Средства безопасности', name: 'Журналирование событий безопасности', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Средства безопасности', name: 'Встроенный межсетевой экран', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Сетевые возможности', name: 'Поддержка сетевых протоколов', value: 'TCP/IP, IPv4, IPv6', unit: 'протокол' } },
+      { spec: { group: 'Сетевые возможности', name: 'Поддержка VPN', value: 'IPsec, OpenVPN, WireGuard или эквивалентные', unit: 'VPN' } },
+      { spec: { group: 'Сетевые возможности', name: 'Доменная аутентификация', value: 'поддержка LDAP, Kerberos и интеграции со службой каталогов ALD Pro или эквивалентной', unit: 'наличие' } },
+      { spec: { group: 'Сетевые возможности', name: 'Поддержка DHCP-клиента', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Сетевые возможности', name: 'Поддержка DNS-клиента', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Администрирование', name: 'Удалённое администрирование', value: 'SSH', unit: 'протокол' } },
+      { spec: { group: 'Администрирование', name: 'Система управления пакетами', value: 'apt/dpkg или эквивалентная', unit: 'тип' } },
+      { spec: { group: 'Администрирование', name: 'Средства централизованного обновления', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Администрирование', name: 'Средства централизованного администрирования', value: 'поддержка сценариев автоматизации и централизованного управления конфигурацией', unit: 'наличие' } },
+      { spec: { group: 'Администрирование', name: 'Средства резервного копирования пользовательских настроек', value: 'наличие встроенных или штатно поддерживаемых средств', unit: 'наличие' } },
+      { spec: { group: 'Виртуализация и контейнеры', name: 'Поддержка виртуализации', value: 'KVM, QEMU или эквивалентные средства', unit: 'наличие' } },
+      { spec: { group: 'Виртуализация и контейнеры', name: 'Поддержка контейнеризации', value: 'LXC, Docker или эквивалентные средства', unit: 'наличие' } },
+      { spec: { group: 'Совместимость', name: 'Совместимость с отечественными СКЗИ', value: 'поддержка средств электронной подписи и криптографической защиты, включая КриптоПро CSP или эквивалентные', unit: 'совместимость' } },
+      { spec: { group: 'Совместимость', name: 'Совместимость с офисными пакетами из реестра Минцифры', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Совместимость', name: 'Совместимость с экосистемой Astra', value: 'ALD Pro, Брест, Termidesk, RuPost, RuBackup или эквивалентные решения', unit: 'совместимость' } },
+      { spec: { group: 'Совместимость', name: 'Поддержка печати', value: 'CUPS или эквивалентная подсистема печати', unit: 'наличие' } },
+      { spec: { group: 'Совместимость', name: 'Поддержка сканирования', value: 'SANE или эквивалентная подсистема', unit: 'наличие' } },
+      { spec: { group: 'Совместимость', name: 'Поддержка веб-браузеров', value: 'совместимость с Яндекс.Браузером, Chromium или эквивалентными браузерами', unit: 'совместимость' } },
+      { spec: { group: 'Сертификация и лицензирование', name: 'Наличие в Едином реестре российского ПО Минцифры России', value: 'наличие', unit: 'наличие' } },
+      { spec: { group: 'Сертификация и лицензирование', name: 'Сертификат ФСТЭК России', value: 'наличие действующего сертификата ФСТЭК России для применения в ГИС, ИСПДн и иных защищаемых системах', unit: 'наличие' } },
+      { spec: { group: 'Сертификация и лицензирование', name: 'Тип лицензии', value: resolved.suggestedLicenseType || 'бессрочная', unit: 'тип' }, aliases: ['Тип лицензии', 'Тип лицензии / права использования'] },
+      { spec: { group: 'Сертификация и лицензирование', name: 'Количество лицензий', value: `не менее ${row.qty}`, unit: 'шт' } },
+      { spec: { group: 'Сертификация и лицензирование', name: 'Срок технической поддержки', value: resolved.suggestedTerm || 'не менее 12', unit: 'мес' } },
+      { spec: { group: 'Сертификация и лицензирование', name: 'Носитель поставки', value: 'электронная поставка', unit: 'тип' } },
+      { spec: { group: 'Сертификация и лицензирование', name: 'Документация на русском языке', value: 'руководство пользователя и руководство администратора в электронном виде', unit: 'наличие' } },
+    ]);
+  }
 
   if (row.type === 'ldap') {
     if (resolved.ldapProfile === 'client_device' || resolved.ldapProfile === 'client_user' || resolved.ldapProfile === 'client') {
@@ -3099,9 +3214,7 @@ ${explicitCommercialTermsBlock ? `Коммерческие параметры и
     ].join('\n');
   }
 
-  const minSpecs = row.type === 'ldap' && (resolvedCommercial.ldapProfile === 'client_device' || resolvedCommercial.ldapProfile === 'client_user' || resolvedCommercial.ldapProfile === 'client')
-    ? 18
-    : (isLicenseContext || isSupportContext) ? 30 : (isSW ? 25 : 20);
+  const minSpecs = getMinimumSpecCount(row, resolvedCommercial);
 
   return {
     system: systemPrompt,
@@ -3865,6 +3978,84 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     complianceReport?.blocked
   );
 
+  const expandSpecsToMinimum = useCallback(async (
+    row: GoodsRow,
+    specs: SpecItem[],
+    meta?: Record<string, string>,
+  ): Promise<SpecItem[]> => {
+    const resolvedCommercial = getResolvedCommercialContext(row);
+    const target = getMinimumSpecCount(row, resolvedCommercial);
+    if (specs.length >= target) return specs;
+
+    try {
+      const g = lookupCatalog(row.type);
+      const { system } = buildPrompt(row, lawMode);
+      const missing = Math.max(1, target - specs.length);
+      const currentJson = JSON.stringify(
+        specs.map((spec) => ({
+          group: spec.group || '',
+          name: spec.name || '',
+          value: spec.value || '',
+          unit: spec.unit || '—',
+        })),
+        null,
+        2,
+      );
+
+      const user = `Уже есть набор технических характеристик для закупки по ${lawMode === '223' ? '223-ФЗ' : '44-ФЗ'}.
+
+Тип товара: ${g.name}
+Модель/описание: ${row.model}
+Текущих характеристик: ${specs.length}
+Требуемый минимум: ${target}
+Нужно добавить минимум ${missing} НОВЫХ уникальных характеристик.
+
+Текущие характеристики:
+${currentJson}
+
+ТРЕБОВАНИЯ:
+- Не повторяй существующие характеристики по имени
+- Не меняй существующие характеристики
+- Добавь только недостающие, более глубокие и проверяемые характеристики
+- Используй конкретные значения и непустые units
+- Сфокусируйся на реальных эксплуатационных, функциональных, совместимых, лицензионных и защитных параметрах
+
+Ответ СТРОГО в JSON без пояснений:
+{
+  "meta": {
+    "okpd2_code": "${meta?.okpd2_code || g.okpd2}",
+    "okpd2_name": "${meta?.okpd2_name || g.okpd2name}",
+    "ktru_code": "${meta?.ktru_code || g.ktruFixed || ''}",
+    "nac_regime": "${meta?.nac_regime || getUnifiedNacRegime(row.type)}",
+    "law175_status": "${meta?.law175_status || 'exempt'}",
+    "law175_basis": "${meta?.law175_basis || ''}"
+  },
+  "specs": [
+    {"group":"Дополнительные характеристики","name":"Наименование новой характеристики","value":"конкретное значение","unit":"тип"}
+  ]
+}`;
+
+      const messages = [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ];
+
+      const raw = useBackendAi
+        ? await generateWithBackend(provider, model, messages, 0.1, 4096)
+        : await generateItemSpecsMessages(provider, apiKey, model, messages);
+
+      const { specs: extraSpecs } = parseAiResponse(raw);
+      const processedExtra = postProcessSpecs(extraSpecs);
+      let merged = [...specs];
+      for (const spec of processedExtra) {
+        merged = upsertSpec(merged, spec);
+      }
+      return adjustSpecsForCommercialContext(row, merged);
+    } catch {
+      return specs;
+    }
+  }, [apiKey, lawMode, model, provider, useBackendAi]);
+
   const runComplianceGate = useCallback((sourceRows: GoodsRow[]): ComplianceReport => {
     const report = buildAntiFasReport(
       sourceRows.map((row) => ({
@@ -4150,9 +4341,14 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             row,
             backendSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' })),
           );
+          const enrichedSpecs = await expandSpecsToMinimum(row, mappedSpecs, {
+            okpd2_code: g.okpd2,
+            okpd2_name: g.okpd2name,
+            ktru_code: g.ktruFixed ?? '',
+          });
           return {
             source: 'internet',
-            specs: mappedSpecs,
+            specs: enrichedSpecs,
             meta: normalizeResolvedMeta(row.type, {
               okpd2_code: g.okpd2,
               okpd2_name: g.okpd2name,
@@ -4175,17 +4371,18 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     }
     const { meta, specs } = parseAiResponse(raw);
     const processed = adjustSpecsForCommercialContext(row, postProcessSpecs(specs));
+    const enriched = await expandSpecsToMinimum(row, processed, meta);
     // Reject candidate if most spec values are placeholders like "не указан"
-    if (!hasRealSpecValues(processed)) {
+    if (!hasRealSpecValues(enriched)) {
       console.warn('[autopilot] Internet AI candidate rejected: mostly placeholder values');
       return null;
     }
     return {
       source: 'internet',
-      specs: processed,
+      specs: enriched,
       meta: normalizeResolvedMeta(row.type, meta),
     };
-  }, [useBackend, useBackendAi, provider, model, apiKey]);
+  }, [useBackend, useBackendAi, provider, model, apiKey, expandSpecsToMinimum]);
 
   const fetchEisCandidateForRow = useCallback(async (row: GoodsRow): Promise<SpecsCandidate | null> => {
     if (!row.model.trim()) return null;
@@ -4201,9 +4398,14 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             row,
             eisSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' })),
           );
+          const enrichedSpecs = await expandSpecsToMinimum(row, mappedSpecs, {
+            okpd2_code: g.okpd2,
+            okpd2_name: g.okpd2name,
+            ktru_code: g.ktruFixed ?? '',
+          });
           return {
             source: 'eis',
-            specs: mappedSpecs,
+            specs: enrichedSpecs,
             meta: normalizeResolvedMeta(row.type, {
               okpd2_code: g.okpd2,
               okpd2_name: g.okpd2name,
@@ -4238,17 +4440,18 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     }
     const { meta, specs } = parseAiResponse(raw);
     const processed = adjustSpecsForCommercialContext(row, postProcessSpecs(specs));
+    const enriched = await expandSpecsToMinimum(row, processed, meta);
     // Reject candidate if most spec values are placeholders like "не указан"
-    if (!hasRealSpecValues(processed)) {
+    if (!hasRealSpecValues(enriched)) {
       console.warn('[autopilot] EIS AI candidate rejected: mostly placeholder values');
       return null;
     }
     return {
       source: 'eis',
-      specs: processed,
+      specs: enriched,
       meta: normalizeResolvedMeta(row.type, meta),
     };
-  }, [useBackend, useBackendAi, provider, model, apiKey]);
+  }, [useBackend, useBackendAi, provider, model, apiKey, expandSpecsToMinimum]);
 
   const getMinimumSearchSpecs = useCallback((row: GoodsRow): number => {
     const catalogItem = lookupCatalog(row.type);
@@ -4330,7 +4533,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               ktru_code: g.ktruFixed ?? '',
               nac_regime: 'pp616',
             };
-            next[i] = { ...currentRow, status: 'done', specs, meta };
+            const enrichedSpecs = await expandSpecsToMinimum(currentRow, adjustSpecsForCommercialContext(currentRow, specs), meta);
+            next[i] = { ...currentRow, status: 'done', specs: enrichedSpecs, meta };
             sourceStats.template += 1;
             setRows([...next]);
             continue;
@@ -4404,8 +4608,10 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
             const { meta, specs } = parseAiResponse(raw!);
             const processed = postProcessSpecs(specs);
             const validatedMeta = normalizeResolvedMeta(currentRow.type, meta);
+            const adjustedSpecs = adjustSpecsForCommercialContext(currentRow, processed);
+            const enrichedSpecs = await expandSpecsToMinimum(currentRow, adjustedSpecs, validatedMeta);
 
-            next[i] = { ...currentRow, status: 'done', specs: adjustSpecsForCommercialContext(currentRow, processed), meta: validatedMeta };
+            next[i] = { ...currentRow, status: 'done', specs: enrichedSpecs, meta: validatedMeta };
             sourceStats.ai += 1;
           } catch (e) {
             const msg = e instanceof Error ? e.message : 'generation_error';
@@ -5303,14 +5509,37 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
                   {/* Дропдаун типов рендерится отдельно через fixed-portal ниже */}
                 </td>
                 <td>
-                  <input
-                    value={row.licenseType}
-                    placeholder={getLicenseTypePlaceholder(row)}
-                    onChange={(e) => {
-                      const licenseType = e.target.value;
-                      setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, licenseType, licenseTypeAuto: false } : x)));
-                    }}
-                  />
+                  {(() => {
+                    const options = getLicenseTypeOptions(row);
+                    if (options.length > 0) {
+                      return (
+                        <select
+                          value={row.licenseType}
+                          onChange={(e) => {
+                            const licenseType = e.target.value;
+                            setRows((prev) => prev.map((x) => (
+                              x.id === row.id ? { ...x, licenseType, licenseTypeAuto: false } : x
+                            )));
+                          }}
+                        >
+                          <option value="">{getLicenseTypePlaceholder(row)}</option>
+                          {options.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      );
+                    }
+                    return (
+                      <input
+                        value={row.licenseType}
+                        placeholder={getLicenseTypePlaceholder(row)}
+                        onChange={(e) => {
+                          const licenseType = e.target.value;
+                          setRows((prev) => prev.map((x) => (x.id === row.id ? { ...x, licenseType, licenseTypeAuto: false } : x)));
+                        }}
+                      />
+                    );
+                  })()}
                 </td>
                 <td>
                   <input

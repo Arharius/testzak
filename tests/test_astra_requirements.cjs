@@ -55,6 +55,31 @@ const checks = [
     needle: 'серверная лицензия на контроллер домена и клиентские лицензии CAL на управляемые объекты',
   },
   {
+    name: 'Astra Linux: kernel version 6.1+',
+    haystack: workspace,
+    needle: 'Версия ядра Linux',
+  },
+  {
+    name: 'Astra Linux: mandatory access control',
+    haystack: workspace,
+    needle: 'Мандатное управление доступом (MAC)',
+  },
+  {
+    name: 'Astra Linux: memory clearing',
+    haystack: workspace,
+    needle: 'Очистка оперативной памяти и временных данных',
+  },
+  {
+    name: 'Astra Linux: ecosystem compatibility',
+    haystack: workspace,
+    needle: 'Совместимость с экосистемой Astra',
+  },
+  {
+    name: 'Astra Linux: minimum 35 specs rule',
+    haystack: workspace,
+    needle: '? 35',
+  },
+  {
     name: 'RuBackup: global dedup client and server',
     haystack: workspace + npa,
     needle: 'Глобальная дедупликация на стороне клиента и сервера',

@@ -1,4 +1,5 @@
 from pathlib import Path
+from search import _get_astra_fast_specs
 
 
 SEARCH_PY = Path(__file__).resolve().parents[1] / "search.py"
@@ -26,3 +27,12 @@ def test_search_scoring_prefers_procurement_and_registry_sources():
     assert '"zakupki.gov.ru": 45' in source
     assert '"rostender.info": 32' in source
     assert '"gisp.gov.ru": 26' in source
+
+
+def test_astra_fast_specs_cover_core_stack():
+    assert len(_get_astra_fast_specs("ldap", "ald pro")) >= 20
+    assert len(_get_astra_fast_specs("os", "astra linux special edition")) >= 30
+    assert len(_get_astra_fast_specs("email", "rupost")) >= 25
+    assert len(_get_astra_fast_specs("backup_sw", "rubackup")) >= 25
+    assert len(_get_astra_fast_specs("virt", "брест")) >= 25
+    assert len(_get_astra_fast_specs("vdi", "termidesk")) >= 25

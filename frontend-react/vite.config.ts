@@ -28,6 +28,23 @@ export default defineConfig(({ mode }) => {
   return {
     base,
     plugins: [react()],
+    build: {
+      chunkSizeWarningLimit: 700,
+      rollupOptions: {
+        output: {
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return;
+            if (id.includes('/docx') || id.includes('/jspdf') || id.includes('/file-saver')) {
+              return 'export-vendor';
+            }
+            if (id.includes('/@tanstack/')) {
+              return 'query-vendor';
+            }
+            return 'vendor';
+          },
+        },
+      },
+    },
     server: {
       host: '0.0.0.0',
       port: 5174,

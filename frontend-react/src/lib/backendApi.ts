@@ -185,11 +185,13 @@ export async function generateWithBackend(
   temperature = 0.1,
   maxTokens = 4096,
 ): Promise<string> {
-  // Use streaming endpoint to avoid Railway 60s timeout
+  // Strategy: get API key from backend (auth + usage counting), then stream directly from browser
+  // This avoids Railway's 60s HTTP timeout
   try {
-    return await _generateWithBackendStream(provider, model, messages, temperature, maxTokens);
-  } catch {
-    // Fallback to non-streaming if stream fails
+    return await _generateWithDirectStream(provider, model, messages, temperature, maxTokens);
+  } catch (streamErr) {
+    console.warn('[AI] Direct stream failed, falling back to proxy:', streamErr);
+    // Fallback to non-streaming proxy (may timeout for long prompts)
     const result = await apiPost<{ ok: boolean; data: { choices?: { message?: { content?: string } }[] } }>(
       '/api/ai/generate',
       { provider, model, messages, temperature, max_tokens: maxTokens, timeout_sec: 100 },
@@ -199,31 +201,58 @@ export async function generateWithBackend(
   }
 }
 
-async function _generateWithBackendStream(
+/**
+ * Get server-side API key, then stream AI response directly from browser to AI provider.
+ * Avoids Railway 60s timeout completely.
+ */
+async function _generateWithDirectStream(
   provider: string,
   model: string,
   messages: { role: string; content: string }[],
   temperature: number,
   maxTokens: number,
 ): Promise<string> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const jwt = typeof localStorage !== 'undefined' ? localStorage.getItem('tz_backend_jwt') : null;
-  if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
+  // Step 1: Get API key from backend (also checks auth + counts usage)
+  const keyResp = await apiPost<{ ok: boolean; key: string; url: string }>(
+    '/api/ai/key',
+    { provider },
+    'optional',
+    SHORT_TIMEOUT_MS,
+  );
+  if (!keyResp.key || !keyResp.url) {
+    throw new Error('Не удалось получить API-ключ от сервера');
+  }
 
+  // Step 2: Stream directly from browser to AI provider
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('Превышено время ожидания сервера')), DEFAULT_TIMEOUT_MS);
 
+  const aiHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${keyResp.key}`,
+  };
+  if (provider.toLowerCase() === 'openrouter') {
+    aiHeaders['HTTP-Referer'] = 'https://tz-generator.onrender.com';
+    aiHeaders['X-Title'] = 'TZ Generator';
+  }
+
   try {
-    const resp = await fetch(buildApiUrl('/api/ai/generate-stream'), {
+    const resp = await fetch(keyResp.url, {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ provider, model, messages, temperature, max_tokens: maxTokens }),
+      headers: aiHeaders,
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+        stream: true,
+      }),
       signal: controller.signal,
     });
 
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
-      throw new Error(`HTTP ${resp.status}: ${text.slice(0, 200)}`);
+      throw new Error(`AI HTTP ${resp.status}: ${text.slice(0, 300)}`);
     }
 
     const reader = resp.body?.getReader();
@@ -242,16 +271,16 @@ async function _generateWithBackendStream(
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const jsonStr = line.slice(6).trim();
-        if (!jsonStr) continue;
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+        const jsonStr = trimmed.slice(6);
+        if (jsonStr === '[DONE]') break;
         try {
-          const msg = JSON.parse(jsonStr);
-          if (msg.error) throw new Error(msg.error);
-          if (msg.token) fullContent += msg.token;
-          if (msg.done && msg.content) fullContent = msg.content;
-        } catch (e) {
-          if (e instanceof Error && e.message.includes('AI error')) throw e;
+          const chunk = JSON.parse(jsonStr);
+          const delta = chunk.choices?.[0]?.delta?.content;
+          if (delta) fullContent += delta;
+        } catch {
+          // skip malformed chunk
         }
       }
     }

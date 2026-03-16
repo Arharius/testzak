@@ -1510,6 +1510,30 @@ def ai_generate_stream(request: Request, req: AIGenerateRequest, user: Optional[
         "X-Accel-Buffering": "no",
     })
 
+
+class AIKeyRequest(BaseModel):
+    provider: str
+
+@app.post("/api/ai/key")
+@limiter.limit("30/minute")
+def ai_get_key(request: Request, req: AIKeyRequest, user: Optional[User] = Depends(get_optional_user), db: Session = Depends(get_db)):
+    """Return server-side API key for authorized users to make direct streaming calls from browser.
+    This avoids Railway's 60s HTTP timeout by letting the browser stream directly from AI provider."""
+    if user is None:
+        if not INTEGRATION_ALLOW_ANON:
+            raise HTTPException(status_code=401, detail="Требуется авторизация")
+    else:
+        require_active(user, db)
+    api_key = _get_api_key(req.provider)
+    url = _get_ai_url(req.provider)
+    # Count usage
+    if user and user.role != "admin" and user.tz_limit != -1:
+        user.tz_count = (user.tz_count or 0) + 1
+        if not user.tz_month_start:
+            user.tz_month_start = datetime(datetime.now(timezone.utc).year, datetime.now(timezone.utc).month, 1, tzinfo=timezone.utc)
+        db.commit()
+    return {"ok": True, "key": api_key, "url": url}
+
 # ── Search: internet specs ─────────────────────────────────────
 @app.post("/api/search/specs")
 @limiter.limit("15/minute")

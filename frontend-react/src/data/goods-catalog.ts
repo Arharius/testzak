@@ -1758,6 +1758,9 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
     'acer v24','acer v27','acer ka24',
   ], type: 'monitor' },
 
+  // ── Некаталожные устройства, похожие по токенам на офисную технику ──
+  { tokens: ['3d принтер','3d-printer','3d printer','3д принтер','аддитивный принтер'], type: 'otherGoods' },
+
   // ── Принтеры ──
   { tokens: ['принтер','printer','xerox b2','hp laser','laserjet','pantum p','ricoh sp','brother hl','canon lbp','kyocera ecosys p'], type: 'printer' },
 

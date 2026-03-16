@@ -40,6 +40,7 @@ import {
   getTZDocument,
   deleteTZDocument,
   isLoggedIn,
+  type SpecFromSearch,
   type TZDocumentSummary,
 } from '../lib/backendApi';
 import { appendAutomationLog, appendImmutableAudit } from '../lib/storage';
@@ -205,6 +206,96 @@ function hasCommercialFields(row: GoodsRow): boolean {
 
 function shouldShowCommercialTerms(rows: GoodsRow[]): boolean {
   return rows.some((row) => lookupCatalog(row.type)?.isSoftware || hasCommercialFields(row));
+}
+
+function isUniversalGoodsType(type: string): boolean {
+  return type === 'otherGoods';
+}
+
+function normalizeResolvedMeta(rowType: string, meta: Record<string, string> = {}): Record<string, string> {
+  const next = { ...meta };
+  if (isUniversalGoodsType(rowType)) {
+    if (!['pp878', 'pp1236', 'pp616', 'none'].includes(String(next.nac_regime || ''))) {
+      next.nac_regime = 'none';
+    }
+    if (next.okpd2_code === '00.00.00.000') delete next.okpd2_code;
+    if (next.okpd2_name === 'ОКПД2 определяется автоматически по описанию товара') delete next.okpd2_name;
+    if (next.ktru_code === '00.00.00.000') delete next.ktru_code;
+    return next;
+  }
+
+  const catalogEntry = lookupCatalog(rowType);
+  const correctRegime = getUnifiedNacRegime(rowType);
+  if (!next.nac_regime || next.nac_regime !== correctRegime) {
+    next.nac_regime = correctRegime;
+  }
+  if (catalogEntry?.okpd2) {
+    next.okpd2_code = catalogEntry.okpd2;
+    if (catalogEntry.okpd2name) next.okpd2_name = catalogEntry.okpd2name;
+  }
+  if (catalogEntry?.ktruFixed && !next.ktru_code) {
+    next.ktru_code = catalogEntry.ktruFixed;
+  }
+  return next;
+}
+
+function buildSearchSpecsContext(specs: SpecFromSearch[]): string {
+  return specs
+    .slice(0, 40)
+    .map((spec, idx) => {
+      const unit = spec.unit && spec.unit !== '—' ? ` (${spec.unit})` : '';
+      return `${idx + 1}. ${spec.name}: ${spec.value}${unit}`;
+    })
+    .join('\n')
+    .slice(0, 4000);
+}
+
+function buildUniversalSearchPrompt(row: GoodsRow, sourceLabel: string, contextText = ''): string {
+  const trimmedContext = contextText.trim().slice(0, 5000);
+  const contextBlock = trimmedContext
+    ? `\nКонтекст найденных характеристик (${sourceLabel}):\n---\n${trimmedContext}\n---\n`
+    : `\nКонтекст ${sourceLabel} недоступен. Используй описание товара и отраслевые знания о типичных характеристиках этого класса изделий.\n`;
+  const explicitCommercialTermsBlock = [
+    row.licenseType.trim() ? `- Тип лицензии / сертификата: ${row.licenseType.trim()}` : '',
+    row.term.trim() ? `- Срок действия / технической поддержки: ${row.term.trim()}` : '',
+  ].filter(Boolean).join('\n');
+
+  return `Ты — ведущий эксперт по формированию технических заданий для государственных закупок РФ (44-ФЗ/223-ФЗ).
+Товар отсутствует в каталоге типовых позиций. Нужно определить его класс, ОКПД2, применимый нацрежим и полный набор характеристик для ТЗ.
+
+Исходное описание товара: "${row.model}"
+Количество: ${row.qty} шт.
+${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n` : ''}${contextBlock}
+ТВОЯ ЗАДАЧА:
+1. Определить тип товара и его назначение
+2. Определить корректный ОКПД2 и полное наименование ОКПД2
+3. Определить КТРУ (если применимо, иначе пустая строка)
+4. Определить нацрежим: "pp878", "pp1236", "pp616" или "none"
+5. Сформировать ПОДРОБНЫЙ перечень характеристик для ТЗ
+
+ТРЕБОВАНИЯ К ХАРАКТЕРИСТИКАМ:
+- Не менее 20 характеристик для оборудования и не менее 25 для ПО
+- Максимально детально, как в реальных ТЗ ЕИС
+- Без торговых марок, производителей, артикулов и точных моделей
+- Числовые значения через «не менее» / «не более»
+- Поле "unit" заполнять всегда: мм, кг, Вт, шт, мес, тип, наличие, — и т.д.
+- Если источник дал мало данных — дострой типовыми параметрами именно для этого класса товаров
+
+Ответ СТРОГО в JSON без markdown и пояснений:
+{
+  "meta": {
+    "okpd2_code": "XX.XX.XX.XXX",
+    "okpd2_name": "Полное название ОКПД2",
+    "ktru_code": "",
+    "nac_regime": "pp616",
+    "law175_status": "exempt",
+    "law175_basis": ""
+  },
+  "specs": [
+    {"group":"Общие сведения","name":"Тип изделия","value":"конкретный тип товара","unit":"тип"},
+    {"group":"Технические характеристики","name":"Ключевой параметр","value":"не менее 1","unit":"шт"}
+  ]
+}`;
 }
 
 // ── РАСШИРЕННЫЕ specHints (уровень детализации ЕИС) ──
@@ -2218,6 +2309,9 @@ function hasRealSpecValues(specs: SpecItem[]): boolean {
 
 // ── Промпт: поиск реальных характеристик конкретной модели через ИИ ───────────
 function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
+  if (isUniversalGoodsType(row.type)) {
+    return buildUniversalSearchPrompt(row, 'интернет-поиск');
+  }
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   const isSW = !!g.isSoftware;
   const hint = specHintsMap[row.type] ?? '';
@@ -2310,6 +2404,9 @@ async function fetchEisContext(g: GoodsItem, searchQuery: string, signal: AbortS
 
 // ── Промпт: генерация ТЗ в стиле реальных закупок ЕИС ────────────────────────
 function buildEisStylePrompt(row: GoodsRow, g: GoodsItem, eisContext: string): string {
+  if (isUniversalGoodsType(row.type)) {
+    return buildUniversalSearchPrompt(row, 'ЕИС / закупочные площадки', eisContext);
+  }
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   const isSW = !!g.isSoftware;
   const hint = specHintsMap[row.type] ?? '';
@@ -3150,24 +3247,30 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const fetchInternetCandidateForRow = useCallback(async (row: GoodsRow): Promise<SpecsCandidate | null> => {
     if (!row.model.trim()) return null;
     const g = lookupCatalog(row.type);
+    const isUniversal = isUniversalGoodsType(row.type);
+    let universalContext = '';
 
     if (useBackend) {
       const backendSpecs = await searchInternetSpecs(row.model.trim(), row.type);
       if (backendSpecs.length > 0) {
-        return {
-          source: 'internet',
-          specs: backendSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' })),
-          meta: {
-            okpd2_code: g.okpd2,
-            okpd2_name: g.okpd2name,
-            ktru_code: g.ktruFixed ?? '',
-            nac_regime: 'pp878',
-          },
-        };
+        if (!isUniversal) {
+          return {
+            source: 'internet',
+            specs: backendSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' })),
+            meta: normalizeResolvedMeta(row.type, {
+              okpd2_code: g.okpd2,
+              okpd2_name: g.okpd2name,
+              ktru_code: g.ktruFixed ?? '',
+            }),
+          };
+        }
+        universalContext = buildSearchSpecsContext(backendSpecs);
       }
     }
 
-    const prompt = buildSpecSearchPrompt(row, g);
+    const prompt = isUniversal && universalContext
+      ? buildUniversalSearchPrompt(row, 'интернет-поиск', universalContext)
+      : buildSpecSearchPrompt(row, g);
     let raw: string;
     if (useBackendAi) {
       raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 4096);
@@ -3184,27 +3287,31 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     return {
       source: 'internet',
       specs: processed,
-      meta,
+      meta: normalizeResolvedMeta(row.type, meta),
     };
   }, [useBackend, useBackendAi, provider, model, apiKey]);
 
   const fetchEisCandidateForRow = useCallback(async (row: GoodsRow): Promise<SpecsCandidate | null> => {
     if (!row.model.trim()) return null;
     const g = lookupCatalog(row.type);
+    const isUniversal = isUniversalGoodsType(row.type);
+    let universalContext = '';
 
     if (useBackend) {
       const eisSpecs = await searchEisSpecs(row.model.trim(), row.type);
       if (eisSpecs.length > 0) {
-        return {
-          source: 'eis',
-          specs: eisSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' })),
-          meta: {
-            okpd2_code: g.okpd2,
-            okpd2_name: g.okpd2name,
-            ktru_code: g.ktruFixed ?? '',
-            nac_regime: 'pp878',
-          },
-        };
+        if (!isUniversal) {
+          return {
+            source: 'eis',
+            specs: eisSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' })),
+            meta: normalizeResolvedMeta(row.type, {
+              okpd2_code: g.okpd2,
+              okpd2_name: g.okpd2name,
+              ktru_code: g.ktruFixed ?? '',
+            }),
+          };
+        }
+        universalContext = buildSearchSpecsContext(eisSpecs);
       }
     }
 
@@ -3220,7 +3327,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     } catch {
       // proxy недоступен
     }
-    const prompt = buildEisStylePrompt(row, g, eisContext);
+    const prompt = isUniversal && universalContext
+      ? buildUniversalSearchPrompt(row, 'ЕИС / закупочные площадки', `${universalContext}${eisContext ? `\n\n${eisContext}` : ''}`)
+      : buildEisStylePrompt(row, g, eisContext);
     let raw: string;
     if (useBackendAi) {
       raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 4096);
@@ -3237,7 +3346,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     return {
       source: 'eis',
       specs: processed,
-      meta,
+      meta: normalizeResolvedMeta(row.type, meta),
     };
   }, [useBackend, useBackendAi, provider, model, apiKey]);
 
@@ -3288,8 +3397,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
       const next = [...rows];
       const sourceStats = { template: 0, internet: 0, eis: 0, ai: 0, error: 0 };
+      const hasUniversalRows = next.some((row) => isUniversalGoodsType(row.type));
 
-      if (autopilotEnabled) {
+      if (autopilotEnabled || hasUniversalRows) {
         setInternetSearching(true);
         setEisSearching(true);
       }
@@ -3318,7 +3428,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           }
 
           try {
-            if (autopilotEnabled) {
+            const shouldSearchBeforeGenerate = autopilotEnabled || isUniversalGoodsType(currentRow.type);
+            if (shouldSearchBeforeGenerate) {
               let internetCandidate: SpecsCandidate | null = null;
               let eisCandidate: SpecsCandidate | null = null;
 
@@ -3335,20 +3446,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
               const picked = pickBestCandidate(internetCandidate, eisCandidate, automationSettings.autoPickTopCandidate);
               if (picked) {
-                // Валидация нацрежима и ОКПД2 для результатов поиска
-                const catEntry = lookupCatalog(currentRow.type);
-                const regime = getUnifiedNacRegime(currentRow.type);
-                const pickedMeta = { ...picked.meta };
-                if (!pickedMeta.nac_regime || pickedMeta.nac_regime !== regime) {
-                  pickedMeta.nac_regime = regime;
-                }
-                if (catEntry?.okpd2) {
-                  pickedMeta.okpd2_code = catEntry.okpd2;
-                  if (catEntry.okpd2name) pickedMeta.okpd2_name = catEntry.okpd2name;
-                }
-                if (catEntry?.ktruFixed && !pickedMeta.ktru_code) {
-                  pickedMeta.ktru_code = catEntry.ktruFixed;
-                }
+                const pickedMeta = normalizeResolvedMeta(currentRow.type, picked.meta);
                 next[i] = { ...currentRow, status: 'done', specs: picked.specs, meta: pickedMeta };
                 if (picked.source === 'internet') sourceStats.internet += 1;
                 else sourceStats.eis += 1;
@@ -3396,43 +3494,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
             const { meta, specs } = parseAiResponse(raw!);
             const processed = postProcessSpecs(specs);
-
-            // ── Валидация нацрежима и ОКПД2 по каталогу (ПП 1875) ──
-            const catalogEntry = lookupCatalog(currentRow.type);
-            const correctRegime = getUnifiedNacRegime(currentRow.type);
-            const validatedMeta = { ...meta };
-
-            // Если ИИ вернул неверный нацрежим — переопределяем по каталогу
-            if (validatedMeta.nac_regime && validatedMeta.nac_regime !== correctRegime) {
-              console.warn(
-                `[ПП 1875] ИИ вернул нацрежим "${validatedMeta.nac_regime}" для ${currentRow.type}, ` +
-                `но по каталогу должен быть "${correctRegime}". Исправлено.`
-              );
-              validatedMeta.nac_regime = correctRegime;
-            }
-            // Если ИИ не вернул нацрежим — устанавливаем из каталога
-            if (!validatedMeta.nac_regime) {
-              validatedMeta.nac_regime = correctRegime;
-            }
-
-            // Если ОКПД2 из каталога есть — используем его (ИИ может ошибиться)
-            if (catalogEntry?.okpd2) {
-              if (validatedMeta.okpd2_code && validatedMeta.okpd2_code !== catalogEntry.okpd2) {
-                console.warn(
-                  `[ОКПД2] ИИ вернул "${validatedMeta.okpd2_code}" для ${currentRow.type}, ` +
-                  `но по каталогу "${catalogEntry.okpd2}". Исправлено.`
-                );
-              }
-              validatedMeta.okpd2_code = catalogEntry.okpd2;
-              if (catalogEntry.okpd2name) {
-                validatedMeta.okpd2_name = catalogEntry.okpd2name;
-              }
-            }
-
-            // КТРУ из каталога (если есть фиксированный)
-            if (catalogEntry?.ktruFixed && !validatedMeta.ktru_code) {
-              validatedMeta.ktru_code = catalogEntry.ktruFixed;
-            }
+            const validatedMeta = normalizeResolvedMeta(currentRow.type, meta);
 
             next[i] = { ...currentRow, status: 'done', specs: processed, meta: validatedMeta };
             sourceStats.ai += 1;
@@ -3578,7 +3640,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           showToast('❌ Не удалось сформировать ТЗ', false);
         }
       } finally {
-        if (autopilotEnabled) {
+        if (autopilotEnabled || hasUniversalRows) {
           setInternetSearching(false);
           setEisSearching(false);
         }
@@ -3621,7 +3683,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         if (!candidate || candidate.specs.length === 0) {
           throw new Error('характеристики не найдены');
         }
-        next[i] = { ...next[i], status: 'done', specs: candidate.specs, meta: candidate.meta };
+        next[i] = { ...next[i], status: 'done', specs: candidate.specs, meta: normalizeResolvedMeta(next[i].type, candidate.meta) };
       } catch (e) {
         next[i] = { ...next[i], status: 'error', error: e instanceof Error ? e.message : 'error' };
       }
@@ -3669,20 +3731,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         if (!candidate || candidate.specs.length === 0) {
           throw new Error('данные ЕИС не найдены');
         }
-        // Валидация нацрежима и ОКПД2 по каталогу (ПП 1875)
-        const catEis = lookupCatalog(next[i].type);
-        const regimeEis = getUnifiedNacRegime(next[i].type);
-        const eisMeta = { ...candidate.meta };
-        if (!eisMeta.nac_regime || eisMeta.nac_regime !== regimeEis) {
-          eisMeta.nac_regime = regimeEis;
-        }
-        if (catEis?.okpd2) {
-          eisMeta.okpd2_code = catEis.okpd2;
-          if (catEis.okpd2name) eisMeta.okpd2_name = catEis.okpd2name;
-        }
-        if (catEis?.ktruFixed && !eisMeta.ktru_code) {
-          eisMeta.ktru_code = catEis.ktruFixed;
-        }
+        const eisMeta = normalizeResolvedMeta(next[i].type, candidate.meta);
         next[i] = { ...next[i], status: 'done', specs: candidate.specs, meta: eisMeta };
       } catch (e) {
         next[i] = { ...next[i], status: 'error', error: e instanceof Error ? e.message : 'error' };

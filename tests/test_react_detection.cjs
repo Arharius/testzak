@@ -100,6 +100,9 @@ const testCases = [
   { input: 'рупост', expected: 'email', mode: 'exact' },
   { input: 'Astra Linux', expected: 'os', mode: 'exact' },
   { input: 'astra linus', expected: 'os', mode: 'exact' },
+  { input: 'тепловизор', expected: 'otherGoods', mode: 'exact', fallback: 'pc' },
+  { input: 'осциллограф цифровой', expected: 'otherGoods', mode: 'exact', fallback: 'pc' },
+  { input: '3D-принтер', expected: 'otherGoods', mode: 'exact', fallback: 'pc' },
   { input: 'Техническая поддержка', expected: 'supportCert', mode: 'exact' },
   { input: 'Техническая поддержка ALD Pro', expected: 'supportCert', mode: 'exact' },
   { input: 'Техническая поддержка RuBackup', expected: 'supportCert', mode: 'exact' },
@@ -124,7 +127,7 @@ let passed = 0;
 let failed = 0;
 
 for (const tc of testCases) {
-  const singleResult = detectGoodsType(tc.input, '__none__');
+  const singleResult = detectGoodsType(tc.input, tc.fallback || '__none__');
   const allResults = detectAllGoodsTypes(tc.input);
   const allTypes = allResults.map(r => r.type);
 

@@ -3062,12 +3062,38 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
               { role: 'system', content: sysMsg },
               { role: 'user', content: userMsg },
             ];
-            if (useBackendAi) {
-              raw = await generateWithBackend(provider, model, messages, 0.1, 4096);
-            } else {
-              raw = await generateItemSpecsMessages(provider, apiKey, model, messages);
+
+            // Retry logic: при таймауте или сетевой ошибке — повторяем до 2 раз
+            const MAX_RETRIES = 2;
+            let lastError: Error | null = null;
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+              try {
+                if (attempt > 0) {
+                  next[i] = { ...next[i], status: 'loading', error: `Повтор ${attempt}/${MAX_RETRIES}...` };
+                  setRows([...next]);
+                }
+                if (useBackendAi) {
+                  raw = await generateWithBackend(provider, model, messages, 0.1, 4096);
+                } else {
+                  raw = await generateItemSpecsMessages(provider, apiKey, model, messages);
+                }
+                lastError = null;
+                break; // Success
+              } catch (retryErr) {
+                lastError = retryErr instanceof Error ? retryErr : new Error(String(retryErr));
+                const isTimeout = lastError.message.includes('Превышено время') || lastError.message.includes('timeout') || lastError.message.includes('aborted') || lastError.message.includes('network');
+                const is5xx = /50[0-9]/.test(lastError.message);
+                if ((isTimeout || is5xx) && attempt < MAX_RETRIES) {
+                  console.warn(`[AI retry] attempt ${attempt + 1} failed: ${lastError.message}, retrying...`);
+                  await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); // 2s, 4s backoff
+                  continue;
+                }
+                throw lastError;
+              }
             }
-            const { meta, specs } = parseAiResponse(raw);
+            if (lastError) throw lastError;
+
+            const { meta, specs } = parseAiResponse(raw!);
             const processed = postProcessSpecs(specs);
 
             // ── Валидация нацрежима и ОКПД2 по каталогу (ПП 1875) ──

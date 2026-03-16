@@ -1877,7 +1877,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['система охлаждения','кулер','cooler','радиатор','вентилятор','fan 120','fan 140','thermalright','noctua','deepcool','be quiet'], type: 'cooling' },
 
   // ── ПО: Операционные системы ──
-  { tokens: ['astra linux','астра линукс','alt linux','альт линукс','ред ос','редос','rosa linux','роса линукс','операционная система','windows server','windows 1','ubuntu','debian','centos','rhel'], type: 'os' },
+  { tokens: ['astra linux','астра линукс','alt linux','альт линукс','ред ос','редос','rosa linux','роса линукс','операционная система','windows server','windows 1','ubuntu','debian','centos','rhel','лицензия astra','лицензия астра','лицензия alt','лицензия альт','лицензия ред ос'], type: 'os' },
 
   // ── ПО: Офисные пакеты ──
   { tokens: ['мойофис','мой офис','р7-офис','r7-офис','libreoffice','microsoft office','office 365','microsoft 365','офисный пакет'], type: 'office' },
@@ -1938,7 +1938,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['nextgis','панорама гис','гис','геоинформац','mapinfo','qgis'], type: 'gis' },
 
   // ── ПО: LDAP / Служба каталогов ──
-  { tokens: ['ald pro','алд про','ald','astra linux directory','ред адм','red adm','freeipa','openldap','samba ad','служба каталогов','ldap','active directory','домен контроллер','контроллер домена','astra ald'], type: 'ldap' },
+  { tokens: ['ald pro','алд про','ald','astra linux directory','ред адм','red adm','freeipa','openldap','samba ad','служба каталогов','ldap','active directory','домен контроллер','контроллер домена','astra ald','лицензия ald','лицензия алд'], type: 'ldap' },
 
   // ── Прочие расходные/периферия ──
   { tokens: ['батарейк','battery','duracell','energizer','gp ultra','lr6','lr03','aa щелоч','aaa щелоч'], type: 'battery' },
@@ -2313,6 +2313,14 @@ export function detectAllGoodsTypes(model: string): Array<{ type: string; name: 
   const text = normalizeText(model);
   if (text.length < 2) return [];
 
+  // Убираем служебные слова «лицензия на», «продление», «подписка на» из начала —
+  // они не влияют на тип товара, а только мешают детекту.
+  // «лицензия ALD PRO» → ищем по «ald pro», а если ничего — добавим «license» вторым.
+  const stripPrefixRe = /^(лицензия на |лицензия |лиценз\. |продление |подписка на |renewal |license )/;
+  const strippedText = text.replace(stripPrefixRe, '').trim();
+  const hadLicensePrefix = strippedText !== text;
+  const searchText = strippedText.length >= 2 ? strippedText : text;
+
   const results: Array<{ type: string; name: string; okpd2: string }> = [];
   const seenTypes = new Set<string>();
 
@@ -2323,21 +2331,22 @@ export function detectAllGoodsTypes(model: string): Array<{ type: string; name: 
   };
 
   // Для коротких запросов (2-3 символа) — проверяем по границам слова
-  const shortQuery = text.length <= 3;
-  const escText = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const shortQuery = searchText.length <= 3;
+  const escText = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const wordBoundaryRe = new RegExp(`(?:^|[\\s,.:;()/\\-])${escText}(?:$|[\\s,.:;()/\\-])`);
 
   // 1. TYPE_HINTS — токены конкретных моделей/линеек (ВЫСШИЙ ПРИОРИТЕТ)
   //    Проверяем первым, чтобы "ProBook" → laptop имел приоритет над "HP" → [pc,laptop,...]
+  // 1. TYPE_HINTS — поиск по searchText (без префикса «лицензия»)
   for (const hint of TYPE_HINTS) {
     for (const tok of hint.tokens) {
       const tn = normalizeText(tok);
       let tokenMatched = false;
       if (tn.length <= 3) {
         const re = new RegExp(`(?:^|\\s|[^а-яa-z])${tn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s|[^а-яa-z])`);
-        tokenMatched = re.test(` ${text} `);
+        tokenMatched = re.test(` ${searchText} `);
       } else {
-        tokenMatched = text.includes(tn);
+        tokenMatched = searchText.includes(tn);
       }
       if (tokenMatched) { addType(hint.type); break; }
     }
@@ -2348,9 +2357,9 @@ export function detectAllGoodsTypes(model: string): Array<{ type: string; name: 
     const bn = normalizeText(brand);
     let brandMatch = false;
     if (bn.length <= 3 || shortQuery) {
-      brandMatch = wordBoundaryRe.test(` ${bn} `) || new RegExp(`(?:^|[\\s,.:;()/\\-])${bn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|[\\s,.:;()/\\-])`).test(` ${text} `);
+      brandMatch = wordBoundaryRe.test(` ${bn} `) || new RegExp(`(?:^|[\\s,.:;()/\\-])${bn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|[\\s,.:;()/\\-])`).test(` ${searchText} `);
     } else {
-      brandMatch = text.includes(bn) || bn.includes(text);
+      brandMatch = searchText.includes(bn) || bn.includes(searchText);
     }
     if (brandMatch) {
       for (const t of types) addType(t);
@@ -2372,12 +2381,18 @@ export function detectAllGoodsTypes(model: string): Array<{ type: string; name: 
         matched = true;
       }
     } else {
-      if (nameNorm.includes(text) || placeholderNorm.includes(text) || okpd2nameNorm.includes(text)) {
+      if (nameNorm.includes(searchText) || placeholderNorm.includes(searchText) || okpd2nameNorm.includes(searchText)) {
         matched = true;
       }
     }
 
     if (matched) addType(typeKey);
+  }
+
+  // 4. Если был префикс «лицензия» и нашёлся конкретный тип ПО — не добавляем общий license
+  // Если ничего не нашлось — fallback на license
+  if (hadLicensePrefix && results.length === 0) {
+    addType('license');
   }
 
   return results;

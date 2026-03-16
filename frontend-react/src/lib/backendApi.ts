@@ -83,7 +83,7 @@ export function isLoggedIn(): boolean {
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
 
-const DEFAULT_TIMEOUT_MS = 120_000; // 120s for AI calls (DeepSeek can take 40-60s)
+const DEFAULT_TIMEOUT_MS = 180_000; // 180s for AI calls (DeepSeek can take 40-90s, with retry)
 const SHORT_TIMEOUT_MS = 15_000;   // 15s for auth/CRUD
 
 function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {

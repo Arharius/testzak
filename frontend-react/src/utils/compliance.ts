@@ -41,8 +41,10 @@ const ARTICLE_CODE_RE = /\b[A-ZА-Я]{1,6}-\d{2,8}[A-ZА-Я0-9-]*\b/;
 const OPERATOR_RE = /(>=|<=|>|<)/;
 const STRICT_WEAK_VALUE_RE = /(по типу( товара| программного обеспечения)?|по назначению|в соответствии с технической документацией производителя( и требованиями заказчика)?|по условиям поставки и требованиям заказчика|актуальная поддерживаемая версия по документации производителя|в соответствии с требованиями заказчика|при необходимости|по описанию|по согласованию с заказчиком|типовая конфигурация|конкретное значение|согласно документации|согласно требованиям|или иное по требованию|или иное — по требованию|уточнить при необходимости)/i;
 const GENERIC_NAME_RE = /^(функциональные возможности|технические характеристики|характеристики|параметры|описание|назначение|тип товара)$/i;
-const MEASURABLE_NAME_RE = /(колич|объем|объ[её]м|емкост|[её]мкост|размер|ширин|высот|глубин|толщин|мощност|скорост|пропускн|частот|диагонал|разрешен|памят|яд(ер|ра)|поток|срок|верси|уров|класс|ресурс|масса|вес|длин|время реакции|время решения|порт|сокет|tbw|mtbf|iops)/i;
-const BOOLEAN_ALLOWED_NAME_RE = /(наличие|поддержка|совместим|интеграц|журналир|аудит|веб-интерфейс|api|экспорт|импорт|консоль|кластеризац|резервн|ролевая модель|двухфактор|авторизац|аутентификац|шлюз|мониторинг|оповещени|доставка|доступ|управление|миграц|политик|сервис|средств|защит|шифрован|контроль|блокиров|регистрац|монтаж|развертыван|разв[её]ртыван|интерфейс|подключение|протокол|клиент|агент|диспетчер)/i;
+const MEASURABLE_NAME_RE = /(колич|объем|объ[её]м|емкост|[её]мкост|размер|ширин|высот|глубин|толщин|мощност|скорост|пропускн|частот|диагонал|разрешен|памят|ядер|поток|срок|верси|уров|класс|ресурс|масса|вес|длин|время реакции|время решения|порт|сокет|tbw|mtbf|iops)/i;
+const BOOLEAN_ALLOWED_NAME_RE = /(наличие|поддержка|совместим|интеграц|журналир|аудит|веб-интерфейс|api|экспорт|импорт|консоль|кластеризац|резервн|ролевая модель|двухфактор|авторизац|аутентификац|шлюз|мониторинг|оповещени|доставка|доступ|управление|миграц|политик|сервис|средств|защит|шифрован|контроль|блокиров|регистрац|монтаж|развертыван|разв[её]ртыван|интерфейс|подключение|протокол|клиент|агент|диспетчер|маркировк|очистк|запуск|инструмент|графическ(ое|ие) средст)/i;
+const QUALITATIVE_CONCRETE_VALUE_RE = /^(наличие|да|нет|монолитное|гибридное|электронная поставка|бессрочная|подписка|серверная|клиентская|конкурентная сессия|именованный пользователь|64-бит|x86_64)$/i;
+const QUALITATIVE_ALLOWED_NAME_RE = /(тип ядра|тип лицензии|редакц|исполнени|уровень доверия|класс защиты|тип операционной системы|разрядность|носитель поставки|вариант поставки)/i;
 const SOFTWARE_TYPE_KEYS = new Set([
   'os', 'office', 'virt', 'vdi', 'dbms', 'erp', 'cad', 'license', 'antivirus', 'edr', 'firewall_sw', 'dlp',
   'siem', 'crypto', 'waf', 'pam', 'iam', 'pki', 'email', 'vks', 'ecm', 'portal', 'project_sw', 'bpm',
@@ -92,6 +94,7 @@ function isWeakStrictValue(value: string): boolean {
 function isConcreteValue(value: string): boolean {
   const normalized = String(value || '').trim();
   if (!normalized) return false;
+  if (QUALITATIVE_CONCRETE_VALUE_RE.test(normalized)) return true;
   if (/\d/.test(normalized)) return true;
   if (/не менее|не более|до |от |tls|ssl|rbac|ldap|kerberos|smtp|imap|pop3|https|ssh|ceph|lvm|kvm|qemu|rest api|cli|html5|totp|saml|openid|patroni|postgresql|gost|гост|фстэк/i.test(normalized)) {
     return true;
@@ -99,6 +102,22 @@ function isConcreteValue(value: string): boolean {
   if (/[;,/]/.test(normalized)) return true;
   if (normalized.split(/\s+/).length >= 5 && !isWeakStrictValue(normalized)) return true;
   return false;
+}
+
+function inferMissingUnit(name: string, value: string, unit: string): string {
+  const normalizedUnit = String(unit || '').trim();
+  if (normalizedUnit && normalizedUnit !== '—') return normalizedUnit;
+  const normalizedName = normalizeSpecKey(name);
+  const normalizedValue = normalizeSpecKey(value);
+  if (!normalizedName) return normalizedUnit || '—';
+  if (normalizedName.includes('срок')) return 'мес';
+  if (normalizedName.includes('уровень доверия')) return 'уровень';
+  if (normalizedName.includes('класс защиты')) return 'класс';
+  if (normalizedName.includes('версия') || normalizedName.includes('релиз')) return 'версия';
+  if (normalizedName.includes('тип')) return 'тип';
+  if (normalizedName.includes('количество')) return 'шт';
+  if (/^(наличие|да|нет)$/i.test(normalizedValue)) return 'наличие';
+  return normalizedUnit || '—';
 }
 
 function inferSpecStrength(spec: SpecItem): number {
@@ -129,7 +148,7 @@ export function sanitizeProcurementSpecs(row: Pick<RowForCompliance, 'type' | 'm
       group,
       name,
       value,
-      unit: unit || '—',
+      unit: inferMissingUnit(name, value, unit),
     };
     if (MEASURABLE_NAME_RE.test(name) && !BOOLEAN_ALLOWED_NAME_RE.test(name) && !isConcreteValue(value)) {
       prepared._warning = 'Требуется более конкретное и проверяемое значение';
@@ -187,6 +206,7 @@ export function buildAntiFasReport(rows: RowForCompliance[], minScore = 85): Com
       if (
         MEASURABLE_NAME_RE.test(String(spec.name || '')) &&
         !BOOLEAN_ALLOWED_NAME_RE.test(String(spec.name || '')) &&
+        !QUALITATIVE_ALLOWED_NAME_RE.test(String(spec.name || '')) &&
         !isConcreteValue(String(spec.value || ''))
       ) {
         addIssue(

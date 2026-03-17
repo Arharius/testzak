@@ -4,9 +4,11 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const workspacePath = path.join(root, 'frontend-react', 'src', 'components', 'Workspace.tsx');
 const npaPath = path.join(root, 'frontend-react', 'src', 'utils', 'npa-blocks.ts');
+const compliancePath = path.join(root, 'frontend-react', 'src', 'utils', 'compliance.ts');
 
 const workspace = fs.readFileSync(workspacePath, 'utf-8');
 const npa = fs.readFileSync(npaPath, 'utf-8');
+const compliance = fs.readFileSync(compliancePath, 'utf-8');
 
 const checks = [
   {
@@ -153,6 +155,36 @@ const checks = [
     name: 'Support: major upgrades',
     haystack: workspace + npa,
     needle: 'Право на получение новых мажорных релизов',
+  },
+  {
+    name: 'Cleanup: explicit anti-noise expansion hook',
+    haystack: compliance,
+    needle: 'function expandGenericValue(',
+  },
+  {
+    name: 'Cleanup: electronic supply phrase',
+    haystack: compliance,
+    needle: 'электронная поставка лицензий, ключей активации, дистрибутива и эксплуатационной документации',
+  },
+  {
+    name: 'Cleanup: registry inclusion phrase',
+    haystack: compliance,
+    needle: 'включено в Единый реестр российского ПО Минцифры России',
+  },
+  {
+    name: 'Cleanup: RBAC expanded value',
+    haystack: compliance,
+    needle: 'разделение ролей и полномочий пользователей, операторов, администраторов и аудиторов',
+  },
+  {
+    name: 'Cleanup: audit expanded value',
+    haystack: compliance,
+    needle: 'аудит входов, изменений конфигурации и административных операций',
+  },
+  {
+    name: 'Cleanup: isolated perimeter phrase',
+    haystack: compliance,
+    needle: 'работа в изолированном контуре без обязательного обращения к внешним сервисам',
   },
 ];
 

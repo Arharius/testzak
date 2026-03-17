@@ -136,6 +136,136 @@ function normalizeExistingUnit(name: string, value: string, unit: string): strin
   return '—';
 }
 
+function lowerFirst(text: string): string {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return normalized;
+  return normalized.charAt(0).toLowerCase() + normalized.slice(1);
+}
+
+function expandGenericValue(name: string, value: string): string {
+  const rawName = String(name || '').replace(/\s+/g, ' ').trim();
+  const rawValue = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!rawName || !rawValue) return rawValue;
+
+  const normalizedName = normalizeSpecKey(rawName);
+  const normalizedValue = normalizeSpecKey(rawValue);
+  if (!/^(наличие|да|поддержка|электронная)$/i.test(normalizedValue)) return rawValue;
+
+  if (normalizedName.includes('способ поставки')) {
+    return 'электронная поставка лицензий, ключей активации, дистрибутива и эксплуатационной документации';
+  }
+  if (normalizedName.includes('документация на русском языке')) {
+    return 'эксплуатационная документация на русском языке в электронном виде';
+  }
+  if (normalizedName.includes('наличие в едином реестре российского по минцифры россии')) {
+    return 'включено в Единый реестр российского ПО Минцифры России';
+  }
+  if (normalizedName.includes('соответствие требованиям постановления правительства')) {
+    return 'соответствует указанным требованиям национального режима и нормативной документации';
+  }
+  if (normalizedName.includes('раскрытие сведений о средствах и способах реализации функций безопасности')) {
+    return 'сведения раскрыты в технической и эксплуатационной документации продукта';
+  }
+  if (normalizedName.includes('сертификат фстэк')) {
+    return 'действующий сертификат ФСТЭК России на поставляемый продукт';
+  }
+  if (normalizedName.includes('профиль защиты')) {
+    return 'соответствие заявленному профилю защиты подтверждено документацией и сертификатами';
+  }
+  if (normalizedName.includes('веб-консоль') || normalizedName.includes('веб-интерфейс') || normalizedName.includes('графический веб-интерфейс')) {
+    return 'web-интерфейс для настройки, мониторинга и администрирования системы';
+  }
+  if (normalizedName.includes('api')) {
+    return 'штатный API для автоматизации, интеграции и обмена данными';
+  }
+  if (normalizedName.includes('ролевая модель доступа')) {
+    return 'разделение ролей и полномочий пользователей, операторов, администраторов и аудиторов';
+  }
+  if (normalizedName.includes('журналирование')) {
+    return 'регистрация, хранение, поиск и экспорт журналов событий, изменений и операций';
+  }
+  if (normalizedName.includes('аудит действий')) {
+    return 'аудит входов, изменений конфигурации и административных операций';
+  }
+  if (normalizedName.includes('мониторинг')) {
+    return 'мониторинг состояния компонентов, ресурсов, событий и аварийных уведомлений средствами продукта';
+  }
+  if (normalizedName.includes('резервное копирование конфигурации')) {
+    return 'резервное копирование конфигурации с возможностью последующего восстановления';
+  }
+  if (normalizedName.includes('отказоустойчивая схема развёртывания') || normalizedName.includes('отказоустойчивая схема развертывания')) {
+    return 'кластерная и/или резервированная схема развёртывания компонентов управления';
+  }
+  if (normalizedName === 'высокая доступность') {
+    return 'отказоустойчивая и/или кластерная схема развёртывания компонентов решения';
+  }
+  if (normalizedName.includes('горизонтальное масштабирование')) {
+    return `обеспечивается ${lowerFirst(rawName)}`;
+  }
+  if (normalizedName.includes('функционирование без ограничений в контуре периметра')) {
+    return 'работа в изолированном контуре без обязательного обращения к внешним сервисам';
+  }
+  if (normalizedName.includes('взаимодействие пользователей с продуктом посредством графического интерфейса')) {
+    return 'доступ к функциям продукта через web-интерфейс и/или графическую консоль';
+  }
+  if (normalizedName.includes('поддержка светлой и темной темы интерфейса')) {
+    return 'светлая и тёмная тема пользовательского интерфейса';
+  }
+  if (normalizedName.includes('работа на архитектуре x86')) {
+    return 'функционирование на аппаратной архитектуре x86_64';
+  }
+  if (normalizedName.includes('развертывание под управлением ос astra linux') || normalizedName.includes('развёртывание под управлением ос astra linux')) {
+    return 'развёртывание серверных компонентов под управлением Astra Linux';
+  }
+  if (normalizedName.startsWith('наличие ')) {
+    const tail = rawName.replace(/^Наличие\s+/i, '').trim();
+    return tail ? `предусмотрен ${lowerFirst(tail)}` : rawValue;
+  }
+  if (normalizedName.startsWith('поддержка ')) {
+    const tail = rawName.replace(/^Поддержка\s+/i, '').trim();
+    return tail ? `поддержка ${lowerFirst(tail)} штатными средствами продукта` : rawValue;
+  }
+  if (
+    normalizedName.startsWith('работа с ') ||
+    normalizedName.startsWith('работа в ') ||
+    normalizedName.startsWith('аутентификация ') ||
+    normalizedName.startsWith('авторизация ') ||
+    normalizedName.startsWith('идентификация ') ||
+    normalizedName.startsWith('регистрация ') ||
+    normalizedName.startsWith('настройка ') ||
+    normalizedName.startsWith('просмотр ') ||
+    normalizedName.startsWith('изменение ') ||
+    normalizedName.startsWith('ввод ') ||
+    normalizedName.startsWith('подключение ') ||
+    normalizedName.startsWith('управление ') ||
+    normalizedName.startsWith('создание ') ||
+    normalizedName.startsWith('выполнение ') ||
+    normalizedName.startsWith('использование ') ||
+    normalizedName.startsWith('развертывание ') ||
+    normalizedName.startsWith('развёртывание ') ||
+    normalizedName.startsWith('возврат ') ||
+    normalizedName.startsWith('ограничение ') ||
+    normalizedName.startsWith('перенаправление ') ||
+    normalizedName.startsWith('предоставление ') ||
+    normalizedName.startsWith('доставка ') ||
+    normalizedName.startsWith('доступ ') ||
+    normalizedName.startsWith('консольный ') ||
+    normalizedName.startsWith('автоматическое ') ||
+    normalizedName.startsWith('кластеризация ') ||
+    normalizedName.startsWith('мультиарендность') ||
+    normalizedName.startsWith('интеграция ') ||
+    normalizedName.startsWith('совместимость ') ||
+    normalizedName.startsWith('квоты ') ||
+    normalizedName.startsWith('тарификация ') ||
+    normalizedName.startsWith('инициализация ') ||
+    normalizedName.startsWith('реализация ')
+  ) {
+    return `обеспечивается ${lowerFirst(rawName)}`;
+  }
+
+  return rawValue;
+}
+
 function inferSpecStrength(spec: SpecItem): number {
   const name = String(spec.name || '').trim();
   const value = String(spec.value || '').trim();
@@ -154,7 +284,7 @@ export function sanitizeProcurementSpecs(row: Pick<RowForCompliance, 'type' | 'm
   const orderedKeys: string[] = [];
   for (const original of specs) {
     const name = String(original.name || '').replace(/\s+/g, ' ').trim();
-    const value = String(original.value || '').replace(/\s+/g, ' ').trim();
+    const value = expandGenericValue(name, String(original.value || '').replace(/\s+/g, ' ').trim());
     const unit = String(original.unit || '').replace(/\s+/g, ' ').trim();
     const group = String(original.group || 'Общие сведения').replace(/\s+/g, ' ').trim() || 'Общие сведения';
     if (!name || !value) continue;

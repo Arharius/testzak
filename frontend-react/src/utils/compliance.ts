@@ -120,6 +120,22 @@ function inferMissingUnit(name: string, value: string, unit: string): string {
   return normalizedUnit || '—';
 }
 
+function normalizeExistingUnit(name: string, value: string, unit: string): string {
+  const normalizedUnit = String(unit || '').trim();
+  if (!normalizedUnit || normalizedUnit === '—') return normalizedUnit || '—';
+  if (!/^наличие$/i.test(normalizedUnit)) return normalizedUnit;
+
+  const normalizedName = normalizeSpecKey(name);
+  const normalizedValue = normalizeSpecKey(value);
+  if (/^(наличие|да|нет|есть|имеется|предусмотрено)$/i.test(normalizedValue)) return 'наличие';
+  if (normalizedValue.startsWith('наличие ')) return 'наличие';
+  if (/^(наличие|поддержка|совместимость|интеграция|журналирование|аудит|разграничение|двухфакторная аутентификация|веб-интерфейс)/i.test(normalizedName) &&
+      normalizedValue.split(/\s+/).length <= 4) {
+    return 'наличие';
+  }
+  return '—';
+}
+
 function inferSpecStrength(spec: SpecItem): number {
   const name = String(spec.name || '').trim();
   const value = String(spec.value || '').trim();
@@ -148,7 +164,7 @@ export function sanitizeProcurementSpecs(row: Pick<RowForCompliance, 'type' | 'm
       group,
       name,
       value,
-      unit: inferMissingUnit(name, value, unit),
+      unit: normalizeExistingUnit(name, value, inferMissingUnit(name, value, unit)),
     };
     if (MEASURABLE_NAME_RE.test(name) && !BOOLEAN_ALLOWED_NAME_RE.test(name) && !isConcreteValue(value)) {
       prepared._warning = 'Требуется более конкретное и проверяемое значение';

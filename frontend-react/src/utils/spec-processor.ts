@@ -214,8 +214,8 @@ function inferUnit(nameLower: string, value: string): string {
   if (/скорост.*сет|пропускн/.test(nameLower)) return 'Мбит/с';
   // Разрешение
   if (/разрешен/.test(nameLower)) return 'пикс';
-  // Boolean / наличие
-  if (/^(да|нет|есть|имеется|поддерж|обеспеч|соответств)/i.test(value)) return 'наличие';
+  // Чистый бинарный признак
+  if (/^(да|нет|есть|имеется|предусмотрено|наличие)$/i.test(value.trim())) return 'наличие';
   // Текстовое описание
   if (/тип|вид|формат|стандарт|интерфейс|класс|категори|протокол|режим/.test(nameLower)) return '—';
   // Fallback

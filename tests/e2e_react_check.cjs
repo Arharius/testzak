@@ -514,7 +514,7 @@ async function run() {
     return /Все основные подсистемы готовы|Основные функции доступны/.test(text);
   }, { timeout: 30000 });
 
-  await page.getByRole('button', { name: /Arctic|Контраст/ }).evaluate((button) => button.click());
+  await page.getByRole('button', { name: /Светлая|Arctic|Контраст/ }).evaluate((button) => button.click());
   await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'contrast', { timeout: 10000 });
   const theme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
   assert.strictEqual(theme, 'contrast', 'Theme should switch to contrast');

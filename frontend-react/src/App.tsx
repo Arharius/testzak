@@ -456,16 +456,18 @@ export function App() {
           className={`theme-btn ${theme === 'sapphire' ? 'is-active' : ''}`}
           onClick={() => setTheme('sapphire')}
           aria-pressed={theme === 'sapphire'}
+          title="Темная тема"
         >
-          Obsidian
+          Темная
         </button>
         <button
           type="button"
           className={`theme-btn ${theme === 'contrast' ? 'is-active' : ''}`}
           onClick={() => setTheme('contrast')}
           aria-pressed={theme === 'contrast'}
+          title="Светлая тема"
         >
-          Arctic
+          Светлая
         </button>
       </div>
 

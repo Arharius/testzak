@@ -110,10 +110,10 @@ export function WorkspacePreview({
 }: WorkspacePreviewProps) {
   if (doneRows.length === 0) return null;
 
-  const bdr = '1px solid #555';
-  const tdC = { border: bdr, padding: '4px 8px', color: '#F5F0E8' } as const;
-  const pStyle = { margin: '4px 0', lineHeight: 1.5, color: '#F5F0E8' } as const;
-  const boldStyle = { fontWeight: 700, margin: '10px 0 4px', color: '#F5F0E8' } as const;
+  const bdr = '1px solid var(--doc-table-border)';
+  const tdC = { border: bdr, padding: '6px 10px', color: 'var(--doc-text)' } as const;
+  const pStyle = { margin: '4px 0', lineHeight: 1.58, color: 'var(--doc-text-soft)' } as const;
+  const boldStyle = { fontWeight: 700, margin: '14px 0 6px', color: 'var(--doc-heading)' } as const;
   const {
     currentYear,
     multi,
@@ -124,10 +124,17 @@ export function WorkspacePreview({
   const editCellStyle: CSSProperties = {
     ...tdC,
     padding: 0,
+    background: 'transparent',
   };
   const editInputStyle: CSSProperties = {
-    width: '100%', background: 'transparent', border: 'none', color: '#F5F0E8',
-    padding: '4px 8px', fontSize: 12, fontFamily: 'inherit', outline: 'none',
+    width: '100%',
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--doc-text)',
+    padding: '6px 10px',
+    fontSize: 12,
+    fontFamily: 'inherit',
+    outline: 'none',
   };
 
   const renderSpecsTable = (row: PreviewRow, specs: SpecItem[], isSW: boolean, nacRegime: string) => {
@@ -144,7 +151,7 @@ export function WorkspacePreview({
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
         <thead>
-          <tr style={{ background: '#1F5C8B', color: '#fff' }}>
+          <tr style={{ background: 'var(--doc-table-head-bg)', color: 'var(--doc-table-head-text)' }}>
             <th style={{ border: bdr, padding: '4px 8px' }}>Наименование характеристики</th>
             <th style={{ border: bdr, padding: '4px 8px' }}>Значение характеристики</th>
             <th style={{ border: bdr, padding: '4px 8px', width: 90 }}>Ед. изм.</th>
@@ -155,16 +162,32 @@ export function WorkspacePreview({
           {flatRows.map((flatRow, index) =>
             flatRow.type === 'group' ? (
               <tr key={`grp-${flatRow.idx}`}>
-                <td colSpan={4} style={{ border: bdr, padding: '4px 8px', background: '#2D3A5C', fontWeight: 700, textAlign: 'center', color: '#F5F0E8' }}>{flatRow.groupLabel}</td>
+                <td
+                  colSpan={4}
+                  style={{
+                    border: bdr,
+                    padding: '6px 10px',
+                    background: 'var(--doc-table-group-bg)',
+                    fontWeight: 700,
+                    textAlign: 'center',
+                    color: 'var(--doc-heading)',
+                  }}
+                >
+                  {flatRow.groupLabel}
+                </td>
               </tr>
             ) : (
-              <tr key={`spec-${flatRow.idx}-${index}`} style={{ background: flatRow.spec?._warning ? '#3D3020' : undefined }}>
+              <tr key={`spec-${flatRow.idx}-${index}`} style={{ background: flatRow.spec?._warning ? 'var(--doc-warning-bg)' : undefined }}>
                 <td style={editCellStyle}>
                   <input style={editInputStyle} value={flatRow.spec?.name ?? ''} onChange={(e) => onUpdateSpec(row.id, flatRow.idx, 'name', e.target.value)} title="Редактировать название" />
                 </td>
                 <td style={editCellStyle}>
                   <input style={editInputStyle} value={flatRow.spec?.value ?? ''} onChange={(e) => onUpdateSpec(row.id, flatRow.idx, 'value', e.target.value)} title="Редактировать значение" />
-                  {flatRow.spec?._warning && <span style={{ color: '#FBBF24', fontSize: 10, display: 'block', padding: '0 8px 2px' }}>⚠️ {flatRow.spec._warning}</span>}
+                  {flatRow.spec?._warning && (
+                    <span style={{ color: 'var(--doc-warning-text)', fontSize: 10, display: 'block', padding: '0 8px 4px' }}>
+                      ⚠️ {flatRow.spec._warning}
+                    </span>
+                  )}
                 </td>
                 <td style={editCellStyle}>
                   <input style={{ ...editInputStyle, textAlign: 'center' }} value={flatRow.spec?.unit ?? ''} onChange={(e) => onUpdateSpec(row.id, flatRow.idx, 'unit', e.target.value)} title="Ед. измерения" />
@@ -180,7 +203,21 @@ export function WorkspacePreview({
         <tfoot>
           <tr>
             <td colSpan={4} style={{ border: bdr, padding: '4px 8px', textAlign: 'center' }}>
-              <button onClick={() => onAddSpec(row.id)} style={{ background: '#1F5C8B', color: '#fff', border: 'none', borderRadius: 4, padding: '3px 16px', cursor: 'pointer', fontSize: 11 }}>+ Добавить характеристику</button>
+              <button
+                onClick={() => onAddSpec(row.id)}
+                style={{
+                  background: 'var(--doc-button-bg)',
+                  color: 'var(--doc-button-text)',
+                  border: 'none',
+                  borderRadius: 999,
+                  padding: '6px 18px',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              >
+                + Добавить характеристику
+              </button>
             </td>
           </tr>
         </tfoot>
@@ -191,7 +228,7 @@ export function WorkspacePreview({
   const renderSectionTable = (rowsData: SectionTableRowLike[], headers: [string, string] = ['Пункт', 'Содержание']) => (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
       <thead>
-        <tr style={{ background: '#2A3444', color: '#F5F0E8' }}>
+        <tr style={{ background: 'var(--doc-table-head-bg)', color: 'var(--doc-table-head-text)' }}>
           <th style={{ border: bdr, padding: '4px 8px', width: 90 }}>{headers[0]}</th>
           <th style={{ border: bdr, padding: '4px 8px' }}>{headers[1]}</th>
         </tr>
@@ -210,7 +247,7 @@ export function WorkspacePreview({
   const renderLegalSummaryTable = (rowsData: LegalSummaryRowLike[]) => (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
       <thead>
-        <tr style={{ background: '#2A3444', color: '#F5F0E8' }}>
+        <tr style={{ background: 'var(--doc-table-head-bg)', color: 'var(--doc-table-head-text)' }}>
           <th style={{ border: bdr, padding: '4px 8px', width: 30 }}>№</th>
           <th style={{ border: bdr, padding: '4px 8px' }}>Позиция</th>
           <th style={{ border: bdr, padding: '4px 8px' }}>ОКПД2 / КТРУ</th>
@@ -235,7 +272,7 @@ export function WorkspacePreview({
   const renderPublicationDossierTable = (rowsData: PublicationDossierRowLike[]) => (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
       <thead>
-        <tr style={{ background: '#2A3444', color: '#F5F0E8' }}>
+        <tr style={{ background: 'var(--doc-table-head-bg)', color: 'var(--doc-table-head-text)' }}>
           <th style={{ border: bdr, padding: '4px 8px', width: 30 }}>№</th>
           <th style={{ border: bdr, padding: '4px 8px' }}>Позиция</th>
           <th style={{ border: bdr, padding: '4px 8px', width: 96 }}>Статус</th>
@@ -253,7 +290,7 @@ export function WorkspacePreview({
               ...tdC,
               textAlign: 'center',
               whiteSpace: 'pre-wrap',
-              color: row.status === 'block' ? '#FCA5A5' : row.status === 'review' ? '#FDE68A' : '#86EFAC',
+              color: row.status === 'block' ? 'var(--red)' : row.status === 'review' ? 'var(--amber)' : 'var(--green)',
             }}>{getPublicationDossierRowStatusLabel(row.status)}</td>
             <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.classifier}</td>
             <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.quality}</td>
@@ -265,9 +302,18 @@ export function WorkspacePreview({
   );
 
   return (
-    <div className="tz-preview" style={{ marginTop: 24, fontSize: 12, fontFamily: 'Times New Roman, serif', lineHeight: 1.5, color: '#F5F0E8' }}>
+    <div
+      className="tz-preview"
+      style={{
+        marginTop: 24,
+        fontSize: 12.5,
+        fontFamily: 'var(--font-doc)',
+        lineHeight: 1.58,
+        color: 'var(--doc-text)',
+      }}
+    >
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-        <div style={{ width: 260, textAlign: 'right', color: '#F5F0E8' }}>
+        <div style={{ width: 260, textAlign: 'right', color: 'var(--doc-text)' }}>
           <div style={{ fontWeight: 700 }}>УТВЕРЖДАЮ</div>
           <div>________________________________</div>
           <div style={{ fontSize: 11, fontStyle: 'italic', opacity: 0.8 }}>(должность)</div>
@@ -275,8 +321,8 @@ export function WorkspacePreview({
           <div>«___» _______ {currentYear} г.</div>
         </div>
       </div>
-      <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 16, marginBottom: 6, color: '#F5F0E8' }}>ТЕХНИЧЕСКОЕ ЗАДАНИЕ</div>
-      <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 14, marginBottom: 12, color: '#FBBF24' }}>
+      <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 16, marginBottom: 6, color: 'var(--doc-heading)' }}>ТЕХНИЧЕСКОЕ ЗАДАНИЕ</div>
+      <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 14, marginBottom: 12, color: 'var(--doc-accent)' }}>
         {docSections.serviceOnly ? 'на оказание ' : 'на поставку '}{objectName}
       </div>
 
@@ -285,7 +331,7 @@ export function WorkspacePreview({
       {multi ? (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
           <thead>
-            <tr style={{ background: '#2A3444', color: '#F5F0E8' }}>
+            <tr style={{ background: 'var(--doc-table-head-bg)', color: 'var(--doc-table-head-text)' }}>
               <th style={{ border: bdr, padding: '4px 8px', width: 30 }}>№</th>
               <th style={{ border: bdr, padding: '4px 8px' }}>Наименование</th>
               {showCommercialTerms && <th style={{ border: bdr, padding: '4px 8px' }}>Тип лицензии</th>}
@@ -322,7 +368,7 @@ export function WorkspacePreview({
       {renderLegalSummaryTable(docSections.legalSummaryRows)}
 
       <div style={{ ...boldStyle, fontSize: 13 }}>Паспорт публикации</div>
-      <div style={{ ...pStyle, color: '#CBD5E1', whiteSpace: 'pre-wrap' }}>
+      <div style={{ ...pStyle, color: 'var(--doc-text-soft)', whiteSpace: 'pre-wrap' }}>
         {publicationSummaryText}
       </div>
       {renderPublicationDossierTable(docSections.publicationDossierRows)}
@@ -350,9 +396,9 @@ export function WorkspacePreview({
         const commercial = getResolvedCommercialContext(row);
         return (
           <div key={row.id} style={{ marginTop: 32, pageBreakBefore: 'always' }}>
-            <hr style={{ borderTop: '2px dashed #93C5FD', margin: '24px 0' }} />
-            <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 14, color: '#FBBF24', marginBottom: 4 }}>Приложение {idx + 1}</div>
-            <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 13, marginBottom: 8, color: '#F5F0E8' }}>
+            <hr style={{ borderTop: '2px dashed color-mix(in srgb, var(--doc-accent) 58%, transparent)', margin: '24px 0' }} />
+            <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 14, color: 'var(--doc-accent)', marginBottom: 4 }}>Приложение {idx + 1}</div>
+            <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 13, marginBottom: 8, color: 'var(--doc-heading)' }}>
               {goods.name}{row.model ? ` (${row.model})` : ''} — {row.qty} {getRowQtyUnitShort(row)}
               {[commercial.suggestedLicenseType, commercial.suggestedTerm].filter(Boolean).length > 0
                 ? ` / ${[commercial.suggestedLicenseType, commercial.suggestedTerm].filter(Boolean).join(' / ')}`

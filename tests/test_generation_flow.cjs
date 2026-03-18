@@ -150,6 +150,18 @@ const checks = [
       && !workspace.includes('/^приложение\\b/i')
       && !workspace.includes('/^код окпд2\\b/i'),
   },
+  {
+    name: 'Import replaces the current draft instead of appending stale rows',
+    ok: workspace.includes('setRows(mappedRows);')
+      && workspace.includes('Текущий черновик заменён.'),
+  },
+  {
+    name: 'Publication gate stays neutral until generation or imported specs appear',
+    ok: workspace.includes("const publicationStatusLabel = draftedRowsCount === 0")
+      && workspace.includes("!hasPublicationBaseline\n      ? 'Нужна генерация'")
+      && workspace.includes("Следующий шаг: сгенерировать ТЗ")
+      && workspace.includes('showPublicationControl={hasPublicationBaseline && liveLegalSummarySourceRows.length > 0}'),
+  },
 ];
 
 let failed = 0;

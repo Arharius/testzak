@@ -1,4 +1,4 @@
-export type PublicationStatusTone = 'block' | 'warn' | 'ready';
+export type PublicationStatusTone = 'neutral' | 'block' | 'warn' | 'ready';
 
 export type ReadinessActionKind =
   | 'focus'

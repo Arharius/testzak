@@ -1117,6 +1117,11 @@ html[data-theme='contrast'] .panel:hover {
   background: var(--red-soft);
 }
 
+.workspace-kpi-chip--neutral {
+  border-color: rgba(125, 143, 179, 0.22);
+  background: rgba(17, 24, 39, 0.55);
+}
+
 .workspace-kpi-chip--warn {
   border-color: rgba(251, 191, 36, 0.28);
   background: var(--amber-soft);
@@ -1607,6 +1612,12 @@ html[data-theme='contrast'] .panel:hover {
   background: var(--amber-soft);
   color: var(--amber);
   border-color: rgba(251, 191, 36, 0.24);
+}
+
+.workspace-status-badge--neutral {
+  background: rgba(17, 24, 39, 0.72);
+  color: var(--text-main);
+  border-color: rgba(125, 143, 179, 0.24);
 }
 
 .workspace-status-badge--ready {

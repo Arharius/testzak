@@ -347,6 +347,15 @@ function getChildElements(node: ParentNode, localName?: string): Element[] {
   });
 }
 
+function countDescendantElements(node: ParentNode, localName: string): number {
+  let count = 0;
+  for (const child of getChildElements(node)) {
+    if (getNodeLocalName(child) === localName) count += 1;
+    count += countDescendantElements(child, localName);
+  }
+  return count;
+}
+
 function collectDocxInlineText(node: Node, parts: string[]): void {
   if (node.nodeType !== 1) return;
   const localName = getNodeLocalName(node);
@@ -380,6 +389,31 @@ function extractDocxCellText(cell: Element): string {
   );
 }
 
+function parseDirectDocxTableRows(table: Element): string[][] {
+  return getChildElements(table, 'tr')
+    .map((row) => getChildElements(row, 'tc').map((cell) => extractDocxCellText(cell)))
+    .map((row) => row.map((cell) => normalizeCell(cell)))
+    .filter((row) => row.some(Boolean));
+}
+
+function collectDocxTables(node: ParentNode, result: string[][][]): void {
+  for (const child of getChildElements(node)) {
+    if (getNodeLocalName(child) === 'tbl') {
+      const rows = parseDirectDocxTableRows(child);
+      const nestedTableCount = countDescendantElements(child, 'tbl');
+      const maxCols = rows.reduce((max, row) => Math.max(max, row.length), 0);
+      const wrapperTable = nestedTableCount > 0 && maxCols <= 1;
+      if (wrapperTable) {
+        collectDocxTables(child, result);
+      } else if (rows.length > 0) {
+        result.push(rows);
+      }
+      continue;
+    }
+    collectDocxTables(child, result);
+  }
+}
+
 async function parseDocxContent(buffer: ArrayBuffer): Promise<ParsedDocxContent> {
   const zip = await JSZip.loadAsync(buffer);
   const documentFile = zip.file('word/document.xml');
@@ -404,11 +438,9 @@ async function parseDocxContent(buffer: ArrayBuffer): Promise<ParsedDocxContent>
       continue;
     }
     if (localName === 'tbl') {
-      const rows = getChildElements(child, 'tr')
-        .map((row) => getChildElements(row, 'tc').map((cell) => extractDocxCellText(cell)))
-        .map((row) => row.map((cell) => normalizeCell(cell)))
-        .filter((row) => row.some(Boolean));
-      if (rows.length > 0) {
+      const extractedTables: string[][][] = [];
+      collectDocxTables(child, extractedTables);
+      for (const rows of extractedTables) {
         tables.push(rows);
         blocks.push({ kind: 'table', rows });
       }

@@ -13,6 +13,7 @@ export interface GeneralGoodsItem {
   okpd2name: string;
   ktruFixed?: string;
   placeholder?: string;
+  isService?: boolean;
   /** Подсказка AI: какие параметры запрашивать */
   specHint?: string;
 }
@@ -1071,6 +1072,14 @@ export const GENERAL_CATALOG: Record<string, GeneralGoodsItem> = {
     placeholder: 'Введите ЛЮБОЙ товар: «стул офисный с подлокотниками», «бензопила Husqvarna 450», «палатка туристическая 4-местная», «микроскоп бинокулярный»...',
     specHint: 'AI автоматически определит: 1) правильный код ОКПД2, 2) КТРУ если есть, 3) нацрежим (ПП 1875), 4) все технические характеристики для ТЗ по 44-ФЗ. Опишите товар максимально подробно.',
   },
+  otherService: {
+    name: '⭐ Услуга (свободный ввод)',
+    okpd2: '00.00.00.000',
+    okpd2name: 'ОКПД2 услуги определяется автоматически по описанию',
+    isService: true,
+    placeholder: 'Введите услугу: «техническая поддержка 24/7», «монтаж ЛВС», «уборка помещений», «обслуживание ИБП», «разработка ПО», «миграция данных»...',
+    specHint: 'AI должен определить: 1) код ОКПД2 услуги, 2) применимость КТРУ, 3) отсутствие/наличие мер нацрежима, 4) полный набор требований к услуге: состав, объем, сроки, этапы, SLA, место оказания, требования к результату, квалификации исполнителя, приемке и отчетности.',
+  },
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -1079,6 +1088,7 @@ export const GENERAL_CATALOG: Record<string, GeneralGoodsItem> = {
 export const GENERAL_GROUPS: GeneralGoodsGroup[] = [
   { label: '⭐ Любой товар (свободный ввод)', items: [
     'otherGoods',
+    'otherService',
   ]},
   { label: '🪑 Мебель офисная', items: [
     'deskOffice', 'deskComputer', 'deskHeight', 'deskNegotiation', 'chairOffice', 'chairDirector',
@@ -1172,7 +1182,99 @@ export function getGeneralNacRegime(goodsType: string): 'pp616' | 'none' {
     'labReagents', 'labGlassware', 'fuel',
     'bedLinen', 'curtains', 'carpet',
     'otherGoods',
+    'otherService',
   ]);
   if (NO_REGIME.has(goodsType)) return 'none';
   return 'pp616';
+}
+
+const GENERAL_DETECT_STOP_WORDS = new Set([
+  'например', 'товар', 'товары', 'услуга', 'услуги', 'для', 'под', 'над', 'или', 'и', 'на', 'в', 'из', 'с',
+  'по', 'при', 'без', 'шт', 'шт.', 'мм', 'см', 'м', 'л', 'кг', 'г', 'мл', 'уп', 'уп.', 'комплект', 'набор',
+  'тип', 'вид', 'модель', 'описание', 'позиция', 'закупка', 'оказание', 'выполнение',
+]);
+
+function normalizeDetectText(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[«»"“”„'`()]/g, ' ')
+    .replace(/[_/,+]/g, ' ')
+    .replace(/[^a-zа-я0-9.%\- ]/gi, ' ')
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildDetectWords(value: string): string[] {
+  const text = normalizeDetectText(value);
+  if (!text) return [];
+  return [...new Set(
+    text
+      .split(' ')
+      .map((word) => word.trim())
+      .filter((word) => word && !GENERAL_DETECT_STOP_WORDS.has(word) && (word.length >= 3 || /\d/.test(word)))
+  )];
+}
+
+type GeneralDetectEntry = {
+  type: string;
+  name: string;
+  okpd2: string;
+  nameNorm: string;
+  haystack: string;
+  words: string[];
+};
+
+const GENERAL_DETECT_INDEX: GeneralDetectEntry[] = Object.entries(GENERAL_CATALOG)
+  .filter(([type]) => type !== 'otherGoods' && type !== 'otherService')
+  .map(([type, item]) => {
+    const haystack = [item.name, item.placeholder, item.specHint].filter(Boolean).join(' ');
+    return {
+      type,
+      name: item.name,
+      okpd2: item.okpd2,
+      nameNorm: normalizeDetectText(item.name),
+      haystack: normalizeDetectText(haystack),
+      words: buildDetectWords(haystack),
+    };
+  });
+
+function wordsMatch(inputWord: string, entryWord: string): boolean {
+  if (!inputWord || !entryWord) return false;
+  return inputWord === entryWord || inputWord.startsWith(entryWord) || entryWord.startsWith(inputWord);
+}
+
+export function detectGeneralGoodsTypes(query: string, limit = 8): Array<{ type: string; name: string; okpd2: string }> {
+  const normalized = normalizeDetectText(query);
+  const inputWords = buildDetectWords(query);
+  if (!normalized || inputWords.length === 0) return [];
+
+  return GENERAL_DETECT_INDEX
+    .map((entry) => {
+      let score = 0;
+      const fullNameMatch = normalized.includes(entry.nameNorm) || entry.nameNorm.includes(normalized);
+      if (fullNameMatch) score += 10;
+
+      let matchedWords = 0;
+      for (const word of inputWords) {
+        if (entry.words.some((entryWord) => wordsMatch(word, entryWord))) {
+          matchedWords += 1;
+        }
+      }
+      score += matchedWords * 3;
+
+      if (matchedWords >= 2 && entry.haystack.includes(normalized)) score += 3;
+      if (inputWords.length === 1 && matchedWords === 1 && inputWords[0].length >= 6) score += 1;
+
+      return { entry, score, matchedWords };
+    })
+    .filter(({ score, matchedWords }) => score >= 6 || matchedWords >= 2)
+    .sort((a, b) => b.score - a.score || b.matchedWords - a.matchedWords || a.entry.name.length - b.entry.name.length)
+    .slice(0, limit)
+    .map(({ entry }) => ({ type: entry.type, name: entry.name, okpd2: entry.okpd2 }));
+}
+
+export function detectGeneralGoodsType(query: string, fallback = 'otherGoods'): string {
+  return detectGeneralGoodsTypes(query, 1)[0]?.type || fallback;
 }

@@ -48,6 +48,8 @@ class TZDocument(Base):
     law_mode = Column(String, default="44")  # '44' or '223'
     rows_json = Column(Text, nullable=True)  # Full rows state: [{type, model, qty, specs, meta}]
     compliance_score = Column(Integer, nullable=True)
+    readiness_json = Column(Text, nullable=True)
+    publication_dossier_json = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -134,6 +136,10 @@ def _auto_migrate(target_engine=None, target_database_url=None):
                 conn.execute(text("ALTER TABLE tz_documents ADD COLUMN rows_json TEXT"))
             if "compliance_score" not in existing:
                 conn.execute(text("ALTER TABLE tz_documents ADD COLUMN compliance_score INTEGER"))
+            if "readiness_json" not in existing:
+                conn.execute(text("ALTER TABLE tz_documents ADD COLUMN readiness_json TEXT"))
+            if "publication_dossier_json" not in existing:
+                conn.execute(text("ALTER TABLE tz_documents ADD COLUMN publication_dossier_json TEXT"))
             if "updated_at" not in existing:
                 conn.execute(text("ALTER TABLE tz_documents ADD COLUMN updated_at TIMESTAMP"))
             if "created_at" not in existing:

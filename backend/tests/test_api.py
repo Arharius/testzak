@@ -167,6 +167,28 @@ class TestTZDocuments:
             "title": "Тестовое ТЗ",
             "law_mode": "44",
             "rows": [{"type": "pc", "model": "Test PC", "qty": 5, "specs": [{"name": "CPU", "value": "не менее 4 ядер", "unit": ""}]}],
+            "readiness": {
+                "status": "warn",
+                "blockers": ["нет ОКПД2"],
+                "warnings": ["нужна ручная проверка"],
+            },
+            "publication_dossier": {
+                "status": "warn",
+                "readyItems": 0,
+                "reviewItems": 1,
+                "blockedItems": 0,
+                "trustedClassification": 0,
+                "benchmarkReady": 0,
+                "serviceReady": 0,
+                "rows": [{
+                    "index": "1",
+                    "item": "Системный блок (Test PC)",
+                    "status": "review",
+                    "classifier": "ОКПД2: 26.20.15.000",
+                    "quality": "Benchmark: нет",
+                    "action": "подтвердить классификацию",
+                }],
+            },
         }, headers=headers)
         assert resp.status_code == 200
         doc_id = resp.json()["id"]
@@ -176,11 +198,16 @@ class TestTZDocuments:
         assert resp2.status_code == 200
         items = resp2.json()["items"]
         assert any(d["id"] == doc_id for d in items)
+        saved_item = next(d for d in items if d["id"] == doc_id)
+        assert saved_item["readiness_status"] == "warn"
+        assert saved_item["readiness_blockers"] == 1
 
         # Get
         resp3 = client.get(f"/api/tz/{doc_id}", headers=headers)
         assert resp3.status_code == 200
         assert resp3.json()["doc"]["title"] == "Тестовое ТЗ"
+        assert resp3.json()["doc"]["readiness"]["status"] == "warn"
+        assert resp3.json()["doc"]["publication_dossier"]["status"] == "warn"
 
         # Update
         resp4 = client.put(f"/api/tz/{doc_id}", json={"title": "Обновлённое ТЗ"}, headers=headers)

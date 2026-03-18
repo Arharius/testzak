@@ -34,11 +34,26 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks(id: string) {
             if (!id.includes('node_modules')) return;
-            if (id.includes('/docx') || id.includes('/jspdf') || id.includes('/file-saver')) {
+            if (id.includes('/docx')) {
+              return 'docx-vendor';
+            }
+            if (id.includes('/jspdf') || id.includes('/html2canvas') || id.includes('/canvg')) {
+              return 'pdf-vendor';
+            }
+            if (id.includes('/file-saver')) {
               return 'export-vendor';
             }
             if (id.includes('/@tanstack/')) {
               return 'query-vendor';
+            }
+            if (id.includes('/react-hook-form/') || id.includes('/@hookform/')) {
+              return 'form-vendor';
+            }
+            if (id.includes('/zod/')) {
+              return 'schema-vendor';
+            }
+            if (id.includes('/axios/') || id.includes('/clsx/')) {
+              return 'runtime-vendor';
             }
             return 'vendor';
           },

@@ -502,6 +502,8 @@ export type TZDocumentSummary = {
   model: string;
   law_mode: string;
   compliance_score: number | null;
+  readiness_status?: string | null;
+  readiness_blockers?: number | null;
   rows_count: number;
   created_at: string | null;
   updated_at: string | null;
@@ -514,6 +516,31 @@ export type TZDocumentFull = {
   model: string;
   law_mode: string;
   compliance_score: number | null;
+  readiness?: {
+    status?: string;
+    blockers?: string[];
+    warnings?: string[];
+    antiFas?: Record<string, unknown>;
+    benchmark?: Record<string, unknown>;
+    legal?: Record<string, unknown>;
+  } | null;
+  publication_dossier?: {
+    status?: string;
+    readyItems?: number;
+    reviewItems?: number;
+    blockedItems?: number;
+    trustedClassification?: number;
+    benchmarkReady?: number;
+    serviceReady?: number;
+    rows?: Array<{
+      index: string;
+      item: string;
+      status: string;
+      classifier: string;
+      quality: string;
+      action: string;
+    }>;
+  } | null;
   rows: Array<{
     type: string;
     model: string;
@@ -522,6 +549,7 @@ export type TZDocumentFull = {
     qty: number;
     specs: unknown[];
     meta: Record<string, string>;
+    benchmark?: unknown | null;
   }>;
   created_at: string | null;
   updated_at: string | null;
@@ -563,6 +591,8 @@ function summarizeTZDoc(doc: TZDocumentFull): TZDocumentSummary {
     model: doc.model,
     law_mode: doc.law_mode,
     compliance_score: doc.compliance_score,
+    readiness_status: doc.readiness?.status ?? null,
+    readiness_blockers: Array.isArray(doc.readiness?.blockers) ? doc.readiness?.blockers.length ?? 0 : 0,
     rows_count: Array.isArray(doc.rows) ? doc.rows.length : 0,
     created_at: doc.created_at,
     updated_at: doc.updated_at,
@@ -593,6 +623,8 @@ export async function saveTZDocumentLocal(data: {
   law_mode: string;
   rows: unknown[];
   compliance_score?: number | null;
+  readiness?: TZDocumentFull['readiness'];
+  publication_dossier?: TZDocumentFull['publication_dossier'];
 }): Promise<{ ok: boolean; id: string; title: string; created_at: string }> {
   const now = new Date().toISOString();
   const meta = buildTZTitle(data);
@@ -603,6 +635,8 @@ export async function saveTZDocumentLocal(data: {
     model: meta.model,
     law_mode: data.law_mode || '44',
     compliance_score: data.compliance_score ?? null,
+    readiness: data.readiness ?? null,
+    publication_dossier: data.publication_dossier ?? null,
     rows: Array.isArray(data.rows) ? data.rows as TZDocumentFull['rows'] : [],
     created_at: now,
     updated_at: now,
@@ -636,6 +670,8 @@ export async function saveTZDocument(data: {
   law_mode: string;
   rows: unknown[];
   compliance_score?: number | null;
+  readiness?: TZDocumentFull['readiness'];
+  publication_dossier?: TZDocumentFull['publication_dossier'];
 }): Promise<{ ok: boolean; id: string; title: string; created_at: string }> {
   return apiPost('/api/tz/save', data, true);
 }
@@ -645,6 +681,8 @@ export async function updateTZDocument(docId: string, data: {
   law_mode?: string;
   rows?: unknown[];
   compliance_score?: number | null;
+  readiness?: TZDocumentFull['readiness'];
+  publication_dossier?: TZDocumentFull['publication_dossier'];
 }): Promise<{ ok: boolean; id: string; updated_at: string }> {
   return apiPut(`/api/tz/${docId}`, data);
 }

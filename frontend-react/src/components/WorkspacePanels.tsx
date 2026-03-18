@@ -1,0 +1,182 @@
+import type { TZDocumentSummary } from '../lib/backendApi';
+import type { PublicationStatusTone, ReadinessGateSummaryLike } from './workspace-panels.types';
+
+type WorkspaceSidePanelsProps = {
+  publicationStatusTone: PublicationStatusTone;
+  publicationStatusLabel: string;
+  publicationLeadText: string;
+  readinessGate: ReadinessGateSummaryLike;
+  readyRowsCount: number;
+  loggedIn: boolean;
+  historyOpen: boolean;
+  historyLoading: boolean;
+  historyItems: TZDocumentSummary[];
+  currentDocId: string | null;
+  docxReady: boolean;
+  exportReadinessTitle: string;
+  exportsBlockedByReadiness: boolean;
+  onExportPackage: () => void;
+  onExportDocx: () => void;
+  onExportPdf: () => void;
+  onSaveTZ: () => void;
+  onToggleHistory: () => void;
+  onCloseHistory: () => void;
+  onLoadHistoryItem: (docId: string) => void;
+  onDeleteHistoryItem: (docId: string) => void;
+};
+
+export function WorkspaceSidePanels({
+  publicationStatusTone,
+  publicationStatusLabel,
+  publicationLeadText,
+  readinessGate,
+  readyRowsCount,
+  loggedIn,
+  historyOpen,
+  historyLoading,
+  historyItems,
+  currentDocId,
+  docxReady,
+  exportReadinessTitle,
+  exportsBlockedByReadiness,
+  onExportPackage,
+  onExportDocx,
+  onExportPdf,
+  onSaveTZ,
+  onToggleHistory,
+  onCloseHistory,
+  onLoadHistoryItem,
+  onDeleteHistoryItem,
+}: WorkspaceSidePanelsProps) {
+  return (
+    <>
+      <div className="workspace-side-card">
+        <div className="workspace-side-head">
+          <div>
+            <div className="micro-label">Step 2</div>
+            <strong>Публикационная готовность</strong>
+          </div>
+          <span className={`workspace-status-badge workspace-status-badge--${publicationStatusTone}`}>
+            {publicationStatusLabel}
+          </span>
+        </div>
+        <div className="workspace-side-copy">{publicationLeadText}</div>
+        <div className="workspace-metric-grid">
+          <div className="workspace-metric-card">
+            <span>Готово</span>
+            <strong>{readyRowsCount}</strong>
+          </div>
+          <div className="workspace-metric-card is-block">
+            <span>Block</span>
+            <strong>{readinessGate.blockers.length}</strong>
+          </div>
+          <div className="workspace-metric-card is-warn">
+            <span>Warn</span>
+            <strong>{readinessGate.warnings.length}</strong>
+          </div>
+          <div className="workspace-metric-card">
+            <span>Ручная вериф.</span>
+            <strong>{readinessGate.legal.manualReview}</strong>
+          </div>
+        </div>
+        <div className="workspace-side-note">
+          Автодоводка вынесена в верхнюю полосу. Здесь только итоговый срез перед экспортом, а массовые safe-fix и детализация остаются в контрольных блоках ниже.
+        </div>
+      </div>
+
+      <div className="workspace-side-card">
+        <div className="workspace-side-head">
+          <div>
+            <div className="micro-label">Step 3</div>
+            <strong>Экспорт и история</strong>
+          </div>
+          <span className="workspace-side-meta">{readyRowsCount > 0 ? `${readyRowsCount} готово` : 'нет готовых позиций'}</span>
+        </div>
+        <div className="workspace-action-grid workspace-action-grid--compact">
+          <button type="button" onClick={onExportPackage} title={exportReadinessTitle}>📦 Экспорт JSON</button>
+          <button
+            type="button"
+            onClick={onExportDocx}
+            disabled={!docxReady}
+            title={exportReadinessTitle}
+            className={docxReady ? 'workspace-action-button is-docx' : 'workspace-action-button'}
+          >
+            📄 Скачать DOCX
+          </button>
+          <button
+            type="button"
+            onClick={onExportPdf}
+            disabled={!docxReady}
+            title={exportReadinessTitle}
+          >
+            🖨️ Скачать PDF
+          </button>
+          {loggedIn && (
+            <>
+              <button
+                type="button"
+                onClick={onSaveTZ}
+                disabled={!docxReady}
+                className={docxReady ? 'workspace-action-button is-save' : 'workspace-action-button'}
+              >
+                💾 Сохранить ТЗ
+              </button>
+              <button
+                type="button"
+                onClick={onToggleHistory}
+                className={`workspace-action-button ${historyOpen ? 'is-history-open' : 'is-history-closed'}`}
+              >
+                📋 Мои ТЗ{historyItems.length > 0 ? ` (${historyItems.length})` : ''}
+              </button>
+            </>
+          )}
+        </div>
+        <div className={`workspace-export-note ${exportsBlockedByReadiness ? 'is-block' : readinessGate.status === 'warn' ? 'is-warn' : 'is-ready'}`}>
+          {exportReadinessTitle}
+        </div>
+        {loggedIn && historyOpen && (
+          <div className="workspace-history-panel">
+            <div className="workspace-side-head workspace-side-head--history">
+              <div>
+                <div className="micro-label">History</div>
+                <strong>Сохранённые ТЗ</strong>
+              </div>
+              <button type="button" onClick={onCloseHistory} className="row-detail-toggle">Скрыть</button>
+            </div>
+            {historyLoading ? (
+              <div className="workspace-side-note workspace-side-note--flush">⏳ Загрузка...</div>
+            ) : historyItems.length === 0 ? (
+              <div className="workspace-side-note workspace-side-note--flush">Нет сохранённых ТЗ</div>
+            ) : (
+              <div className="workspace-history-scroll">
+                {historyItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`workspace-history-item ${currentDocId === item.id ? 'is-active' : ''}`}
+                  >
+                    <div className="workspace-history-copy">
+                      <div className="workspace-history-title">
+                        {item.title || 'Без названия'}
+                      </div>
+                      <div className="workspace-history-meta">
+                        {item.rows_count} поз. · {item.law_mode}-ФЗ · Score: {item.compliance_score ?? '—'}
+                        {typeof item.readiness_blockers === 'number' ? ` · Blockers: ${item.readiness_blockers}` : ''}
+                        {item.created_at && ` · ${new Date(item.created_at).toLocaleDateString('ru-RU')}`}
+                      </div>
+                    </div>
+                    <div className="workspace-history-actions">
+                      <button type="button" onClick={() => onLoadHistoryItem(item.id)} className="workspace-history-btn is-load">Загрузить</button>
+                      <button type="button" onClick={() => onDeleteHistoryItem(item.id)} className="workspace-history-btn is-delete">Удалить</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+export { WorkspaceReviewSections } from './WorkspaceReviewSections';

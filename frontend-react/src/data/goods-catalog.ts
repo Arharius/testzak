@@ -14,6 +14,7 @@ export interface GoodsItem {
   ktruFixed?: string;
   ktruByRam?: Array<{ min: number; code: string }>;
   isSoftware?: boolean;
+  isService?: boolean;
   placeholder?: string;
   hardTemplate?: HardSpec[];
 }
@@ -255,6 +256,86 @@ export const GOODS_CATALOG: Record<string, GoodsItem> = {
       { group: 'Тип носителя', name: 'Стандарт', value: 'Соответствует стандарту DVD Forum (DVD Specifications for Recordable Disc)' },
       { group: 'Состояние и упаковка', name: 'Состояние', value: 'Новый, не использованный, без механических повреждений и дефектов поверхности' },
       { group: 'Состояние и упаковка', name: 'Упаковка', value: 'В оригинальной упаковке производителя (шпиндель Cake Box или индивидуальный конверт/бокс)' },
+    ],
+  },
+  cdr: {
+    name: 'CD-R диск',
+    okpd2: '26.80.13.000',
+    okpd2name: 'Носители для записи информации оптические',
+    ktruFixed: '26.80.13.000-00000001',
+    placeholder: 'Например: CD-R 700MB 52x...',
+    hardTemplate: [
+      { group: 'Тип носителя', name: 'Тип оптического носителя', value: 'CD-R однократной записи' },
+      { group: 'Тип носителя', name: 'Ёмкость носителя', value: 'не менее 700', unit: 'МБ' },
+      { group: 'Тип носителя', name: 'Скорость записи', value: 'не менее 48x' },
+      { group: 'Тип носителя', name: 'Диаметр диска', value: 'не менее 120', unit: 'мм' },
+      { group: 'Тип носителя', name: 'Совместимость', value: 'Совместим с приводами CD-R/CD-RW и комбинированными приводами' },
+      { group: 'Состояние и упаковка', name: 'Состояние', value: 'Новый, не использованный, без механических повреждений и дефектов поверхности' },
+      { group: 'Состояние и упаковка', name: 'Упаковка', value: 'В оригинальной упаковке производителя (шпиндель, конверт или jewel case)' },
+    ],
+  },
+  cdrw: {
+    name: 'CD-RW диск',
+    okpd2: '26.80.13.000',
+    okpd2name: 'Носители для записи информации оптические',
+    ktruFixed: '26.80.13.000-00000001',
+    placeholder: 'Например: CD-RW 700MB 12x...',
+    hardTemplate: [
+      { group: 'Тип носителя', name: 'Тип оптического носителя', value: 'CD-RW многократной записи' },
+      { group: 'Тип носителя', name: 'Ёмкость носителя', value: 'не менее 700', unit: 'МБ' },
+      { group: 'Тип носителя', name: 'Скорость записи / перезаписи', value: 'не менее 8x' },
+      { group: 'Тип носителя', name: 'Диаметр диска', value: 'не менее 120', unit: 'мм' },
+      { group: 'Тип носителя', name: 'Поддержка циклов перезаписи', value: 'многократная запись и стирание данных штатными средствами привода' },
+      { group: 'Состояние и упаковка', name: 'Состояние', value: 'Новый, не использованный, без механических повреждений и дефектов поверхности' },
+      { group: 'Состояние и упаковка', name: 'Упаковка', value: 'В оригинальной упаковке производителя (шпиндель, конверт или jewel case)' },
+    ],
+  },
+  dvdr: {
+    name: 'DVD-R / DVD+R диск',
+    okpd2: '26.80.13.000',
+    okpd2name: 'Носители для записи информации оптические',
+    ktruFixed: '26.80.13.000-00000001',
+    placeholder: 'Например: DVD-R 4.7GB 16x, DVD+R 8.5GB...',
+    hardTemplate: [
+      { group: 'Тип носителя', name: 'Тип оптического носителя', value: 'DVD-R или DVD+R однократной записи' },
+      { group: 'Тип носителя', name: 'Ёмкость носителя', value: 'не менее 4,7', unit: 'ГБ' },
+      { group: 'Тип носителя', name: 'Скорость записи', value: 'не менее 16x' },
+      { group: 'Тип носителя', name: 'Диаметр диска', value: 'не менее 120', unit: 'мм' },
+      { group: 'Тип носителя', name: 'Стандарт', value: 'Соответствует стандартам DVD Forum и/или DVD+RW Alliance' },
+      { group: 'Состояние и упаковка', name: 'Состояние', value: 'Новый, не использованный, без механических повреждений и дефектов поверхности' },
+      { group: 'Состояние и упаковка', name: 'Упаковка', value: 'В оригинальной упаковке производителя (шпиндель Cake Box или индивидуальный конверт/бокс)' },
+    ],
+  },
+  dvdrw: {
+    name: 'DVD-RW / DVD+RW диск',
+    okpd2: '26.80.13.000',
+    okpd2name: 'Носители для записи информации оптические',
+    ktruFixed: '26.80.13.000-00000001',
+    placeholder: 'Например: DVD-RW 4.7GB 6x, DVD+RW 4.7GB 8x...',
+    hardTemplate: [
+      { group: 'Тип носителя', name: 'Тип оптического носителя', value: 'DVD-RW или DVD+RW многократной записи' },
+      { group: 'Тип носителя', name: 'Ёмкость носителя', value: 'не менее 4,7', unit: 'ГБ' },
+      { group: 'Тип носителя', name: 'Скорость записи / перезаписи', value: 'не менее 4x' },
+      { group: 'Тип носителя', name: 'Диаметр диска', value: 'не менее 120', unit: 'мм' },
+      { group: 'Тип носителя', name: 'Поддержка циклов перезаписи', value: 'многократная запись и стирание данных штатными средствами привода' },
+      { group: 'Состояние и упаковка', name: 'Состояние', value: 'Новый, не использованный, без механических повреждений и дефектов поверхности' },
+      { group: 'Состояние и упаковка', name: 'Упаковка', value: 'В оригинальной упаковке производителя (шпиндель Cake Box или индивидуальный конверт/бокс)' },
+    ],
+  },
+  bdr: {
+    name: 'BD-R / BD-RE диск',
+    okpd2: '26.80.13.000',
+    okpd2name: 'Носители для записи информации оптические',
+    ktruFixed: '26.80.13.000-00000001',
+    placeholder: 'Например: BD-R 25GB 6x, BD-RE 25GB...',
+    hardTemplate: [
+      { group: 'Тип носителя', name: 'Тип оптического носителя', value: 'BD-R однократной записи или BD-RE многократной записи' },
+      { group: 'Тип носителя', name: 'Ёмкость носителя', value: 'не менее 25', unit: 'ГБ' },
+      { group: 'Тип носителя', name: 'Скорость записи', value: 'не менее 4x' },
+      { group: 'Тип носителя', name: 'Диаметр диска', value: 'не менее 120', unit: 'мм' },
+      { group: 'Тип носителя', name: 'Стандарт', value: 'Соответствует стандарту Blu-ray Disc' },
+      { group: 'Состояние и упаковка', name: 'Состояние', value: 'Новый, не использованный, без механических повреждений и дефектов поверхности' },
+      { group: 'Состояние и упаковка', name: 'Упаковка', value: 'В оригинальной упаковке производителя (шпиндель Cake Box или индивидуальный бокс)' },
     ],
   },
   tapeLib: {
@@ -1579,7 +1660,7 @@ export const GOODS_GROUPS: GoodsGroup[] = [
     'sfpModule', 'sfpDac', 'poeInjector', 'poeSplitter', 'wifiController', 'lteModem', 'consoleServer',
   ] },
   { label: '💾 Накопители и носители', items: [
-    'ssd', 'hdd', 'ram', 'flashDrive', 'dvd', 'tapeLib', 'tapeCartridge',
+    'ssd', 'hdd', 'ram', 'flashDrive', 'dvd', 'cdr', 'cdrw', 'dvdr', 'dvdrw', 'bdr', 'tapeLib', 'tapeCartridge',
     'extSsd', 'extHdd', 'memoryCard', 'cardReader', 'opticalDrive', 'ltoTape', 'ltoCleaningCartridge',
   ] },
   { label: '🔌 Кабели и коммутация', items: [
@@ -1662,7 +1743,7 @@ export const HW_175_TYPES = new Set([
   'rackCabinet','wallCabinet','rackShelf','cableManagerRack','blankPanel',
   'cageNutSet','serverRailKit','pdu',
   // Накопители / носители (не РЭПР)
-  'flashDrive','dvd','extSsd','extHdd','memoryCard','cardReader','opticalDrive',
+  'flashDrive','dvd','cdr','cdrw','dvdr','dvdrw','bdr','extSsd','extHdd','memoryCard','cardReader','opticalDrive',
   'ltoTape','ltoCleaningCartridge','tapeCartridge',
   // Расходные материалы
   'cartridge','inkCartridge','paper','toner','drum','labelTape',
@@ -1848,7 +1929,12 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['флеш-накопитель','флешка','flash drive','usb flash','usb накопитель','transcend jetflash','sandisk cruzer'], type: 'flashDrive' },
 
   // ── Оптические носители / ленточные ──
-  { tokens: ['dvd','cd-r','bd-r','blu-ray','оптический диск','lto-','lto7','lto8','lto9','ultrium','стриммер','ленточная библиотека','tape library'], type: 'dvd' },
+  { tokens: ['cd-rw','cdrw','перезаписываемый cd','компакт-диск rw'], type: 'cdrw' },
+  { tokens: ['cd-r','cdr','компакт-диск r'], type: 'cdr' },
+  { tokens: ['dvd-rw','dvd+rw','dvdrw','перезаписываемый dvd'], type: 'dvdrw' },
+  { tokens: ['dvd-r','dvd+r','dvdr'], type: 'dvdr' },
+  { tokens: ['bd-r','bd-re','bdr','blu-ray','blu ray'], type: 'bdr' },
+  { tokens: ['dvd','cd','оптический диск','lto-','lto7','lto8','lto9','ultrium','стриммер','ленточная библиотека','tape library'], type: 'dvd' },
 
   // ── Кабели и коммутация ──
   { tokens: ['utp','stp','s/ftp','cat5e','cat6','cat6a','cat7','витая пара','патч-корд','patchcord','patch cord','rj45 кабель','ethernet кабель','lan кабель'], type: 'patchCord' },

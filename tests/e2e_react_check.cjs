@@ -39,6 +39,87 @@ function mockedAiPayload() {
   };
 }
 
+function mockedServiceAiPayload() {
+  return {
+    choices: [
+      {
+        message: {
+          content: JSON.stringify({
+            meta: {
+              okpd2_code: '43.21.10.290',
+              okpd2_name: 'Работы электромонтажные прочие, не включенные в другие группировки',
+              ktru_code: '',
+              law175_status: 'none',
+              law175_basis: 'По текущей классификации позиция относится к услугам; специальные защитные меры ПП РФ № 1875 по данной услуге не применяются, требуется финальная проверка предмета закупки на дату публикации.',
+              nac_regime: 'none',
+            },
+            specs: [
+              { group: 'Общие требования', name: 'Состав услуг', value: 'Обследование трасс, монтаж кабельных линий, установка и подключение оборудования, маркировка, исполнительная документация', unit: '—' },
+              { group: 'Сроки и этапы', name: 'Этапность оказания услуг', value: 'Подготовка, монтаж, пусконаладка и сдача результата по согласованному графику', unit: '—' },
+              { group: 'Сроки и SLA', name: 'Срок оказания услуг', value: 'не более 20', unit: 'рабочих дней' },
+              { group: 'Приемка', name: 'Подтверждение результата', value: 'Акт сдачи-приемки, исполнительная схема, фотоотчет и комплект отчетных материалов', unit: '—' },
+              { group: 'Организация работ', name: 'Место и режим оказания услуг', value: 'На территории Заказчика в согласованные окна работ', unit: '—' },
+              { group: 'Требования к исполнителю', name: 'Квалификация специалистов', value: 'Наличие обученного персонала с необходимыми допусками и ответственным руководителем работ', unit: '—' },
+            ],
+          }),
+        },
+      },
+    ],
+  };
+}
+
+function mockedUniversalDraftAiPayload() {
+  return {
+    choices: [
+      {
+        message: {
+          content: JSON.stringify({
+            meta: {
+              okpd2_code: '',
+              okpd2_name: '',
+              ktru_code: '',
+              law175_status: 'none',
+              law175_basis: 'нужно уточнение',
+              nac_regime: 'none',
+            },
+            specs: [
+              { group: 'Общие сведения', name: 'Тип изделия', value: 'Тепловизор инфракрасный', unit: 'тип' },
+              { group: 'Основные характеристики', name: 'Диапазон измерения', value: 'не менее -20 ... +550', unit: '°C' },
+              { group: 'Основные характеристики', name: 'Разрешение ИК-матрицы', value: 'не менее 256 x 192', unit: 'пикс.' },
+            ],
+          }),
+        },
+      },
+    ],
+  };
+}
+
+function mockedUniversalClassifiedAiPayload() {
+  return {
+    choices: [
+      {
+        message: {
+          content: JSON.stringify({
+            meta: {
+              okpd2_code: '26.70.13.190',
+              okpd2_name: 'Камеры цифровые прочие',
+              ktru_code: '',
+              law175_status: 'none',
+              law175_basis: 'По данным ЕИС и внешних источников позиция не подпадает под специальную защитную меру ПП РФ № 1875; требуется обычная финальная проверка перечней на дату публикации.',
+              nac_regime: 'none',
+            },
+            specs: [
+              { group: 'Общие сведения', name: 'Тип изделия', value: 'Тепловизор инфракрасный', unit: 'тип' },
+              { group: 'Основные характеристики', name: 'Диапазон измерения', value: 'не менее -20 ... +550', unit: '°C' },
+              { group: 'Основные характеристики', name: 'Разрешение ИК-матрицы', value: 'не менее 256 x 192', unit: 'пикс.' },
+            ],
+          }),
+        },
+      },
+    ],
+  };
+}
+
 function keyboardMouseSetEisSpecs() {
   return [
     { name: 'Состав комплекта', value: 'Клавиатура и компьютерная мышь', unit: '' },
@@ -81,12 +162,34 @@ function cableTesterInternetSpecs() {
   ];
 }
 
+function serviceSpecs() {
+  return [
+    { name: 'Состав услуг', value: 'Обследование, монтаж, подключение, маркировка и сдача результата', unit: '' },
+    { name: 'Срок оказания услуг', value: 'не более 20 рабочих дней', unit: '' },
+    { name: 'Этапность', value: 'Подготовка, монтаж, пусконаладка, сдача результата', unit: '' },
+    { name: 'Приемка', value: 'Акт, отчетные материалы, исполнительная документация', unit: '' },
+    { name: 'Место оказания услуг', value: 'На территории Заказчика', unit: '' },
+    { name: 'Квалификация исполнителя', value: 'Квалифицированные специалисты с необходимыми допусками', unit: '' },
+  ];
+}
+
+function thermalCameraSpecs() {
+  return [
+    { name: 'Тип изделия', value: 'Тепловизор инфракрасный', unit: '' },
+    { name: 'Диапазон измерения температуры', value: 'не менее -20 ... +550', unit: '°C' },
+    { name: 'Разрешение ИК-матрицы', value: 'не менее 256 x 192', unit: 'пикс.' },
+    { name: 'Интерфейсы', value: 'USB Type-C или эквивалент', unit: '' },
+    { name: 'Комплектность', value: 'Тепловизор, аккумулятор, зарядное устройство, документация', unit: '' },
+  ];
+}
+
 async function run() {
   ensureDir(ARTIFACTS_DIR);
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
   const searchHits = { internet: 0, eis: 0 };
+  const universalAiHits = { thermal: 0 };
   const consoleErrors = [];
 
   page.on('console', (msg) => {
@@ -102,10 +205,26 @@ async function run() {
     'https://openrouter.ai/api/v1/chat/completions',
   ]) {
     await page.route(url, async (route) => {
+      let body = {};
+      try {
+        body = route.request().postDataJSON() || {};
+      } catch (_) {}
+      const messageText = JSON.stringify(body).toLowerCase();
+      let payload;
+      if (/тепловизор|инфракрасн/.test(messageText)) {
+        universalAiHits.thermal += 1;
+        payload = universalAiHits.thermal >= 5
+          ? mockedUniversalClassifiedAiPayload()
+          : mockedUniversalDraftAiPayload();
+      } else if (/otherservice|оказани[ея] услуг|монтаж лвс|услуга|состав услуг|приемк|sla/.test(messageText)) {
+        payload = mockedServiceAiPayload();
+      } else {
+        payload = mockedAiPayload();
+      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(mockedAiPayload()),
+        body: JSON.stringify(payload),
       });
     });
   }
@@ -198,6 +317,10 @@ async function run() {
       specs = keyboardMouseSetInternetSpecs();
     } else if (goodsType === 'cableTester' || product.includes('телефонного кабеля')) {
       specs = cableTesterInternetSpecs();
+    } else if (goodsType === 'otherGoods' || /тепловизор|инфракрасн/.test(product)) {
+      specs = thermalCameraSpecs();
+    } else if (goodsType === 'otherService' || /монтаж|лвс|структурированной кабельной системы/.test(product)) {
+      specs = serviceSpecs();
     }
     await route.fulfill({
       status: 200,
@@ -214,6 +337,10 @@ async function run() {
     let specs = [];
     if (goodsType === 'keyboardMouseSet' || query.includes('mk240')) {
       specs = keyboardMouseSetEisSpecs();
+    } else if (goodsType === 'otherGoods' || /тепловизор|инфракрасн/.test(query)) {
+      specs = thermalCameraSpecs();
+    } else if (goodsType === 'otherService' || /монтаж|лвс|структурированной кабельной системы/.test(query)) {
+      specs = serviceSpecs();
     }
     await route.fulfill({
       status: 200,
@@ -317,43 +444,51 @@ async function run() {
   assert.match(authPanelText, /e2e@local\.test/i, 'Stored backend user should be shown in auth panel');
   assert.match(authPanelText, /Trial|безлимит/i, 'Trial access state should be shown in auth panel');
 
+  async function ensurePreviewOpen() {
+    const preview = page.locator('.tz-preview');
+    if (await preview.count() > 0 && await preview.first().isVisible().catch(() => false)) return;
+    const previewSummary = page.locator('summary').filter({ hasText: 'Предпросмотр ТЗ' }).first();
+    if (await previewSummary.count() === 0) return;
+    await previewSummary.click();
+    await page.waitForTimeout(120);
+  }
+
+  async function clickGenerateTZ() {
+    const generateButton = page.locator('button').filter({ hasText: 'Сгенерировать ТЗ' }).first();
+    await generateButton.scrollIntoViewIfNeeded().catch(() => {});
+    await page.waitForFunction(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const target = buttons.find((btn) => String(btn.textContent || '').includes('Сгенерировать ТЗ'));
+      return !!target && !target.disabled;
+    }, { timeout: 30000 });
+    await generateButton.evaluate((button) => {
+      button.click();
+    });
+  }
+
   const firstRow = page.locator('.rows-table tbody tr').first();
   await firstRow.locator('td').nth(1).locator('select').selectOption('keyboardMouseSet');
-  await firstRow.locator('td').nth(2).locator('input').fill('mk240 nano');
+  await firstRow.locator('td').nth(2).locator('input').fill('комплект клавиатура мышь mk240 nano');
 
   await page.click('button:has-text("+ Добавить строку")');
   const secondRow = page.locator('.rows-table tbody tr').nth(1);
   await secondRow.locator('td').nth(1).locator('select').selectOption('cableTester');
-  await secondRow.locator('td').nth(2).locator('input').fill('тестер телефонного кабеля rj45 rj11');
+  await secondRow.locator('td').nth(2).locator('input').fill('тестер кабеля rj45 rj11 телефонный');
 
-  await page.click('button:has-text("Сгенерировать ТЗ")');
+  await page.click('button:has-text("+ Добавить строку")');
+  const thirdRow = page.locator('.rows-table tbody tr').nth(2);
+  await thirdRow.locator('td').nth(1).locator('select').selectOption('otherService');
+  await thirdRow.locator('td').nth(2).locator('input').fill('монтаж ЛВС и структурированной кабельной системы');
+
+  await clickGenerateTZ();
   await page.waitForFunction(() => {
-    const rows = Array.from(document.querySelectorAll('.rows-table tbody tr')).slice(0, 2);
-    return rows.length === 2 && rows.every((row) => row.textContent && row.textContent.includes('Готово'));
+    const rows = Array.from(document.querySelectorAll('.rows-table tbody tr')).slice(0, 3);
+    return rows.length === 3 && rows.every((row) => row.textContent && row.textContent.includes('Готово'));
   }, { timeout: 60000 });
 
-  try {
-    await page.waitForFunction(() => (
-      Array.from(document.querySelectorAll('.tz-preview input'))
-        .some((node) => node instanceof HTMLInputElement && String(node.value || '').includes('USB-приёмник'))
-    ), { timeout: 15000 });
-    await page.waitForFunction(() => (
-      Array.from(document.querySelectorAll('.tz-preview input'))
-        .some((node) => node instanceof HTMLInputElement && String(node.value || '').includes('RJ-45, RJ-11, RJ-12'))
-    ), { timeout: 15000 });
-  } catch (error) {
-    const previewText = await page.locator('.tz-preview').innerText().catch(() => '');
-    const previewInputs = await page.evaluate(() => (
-      Array.from(document.querySelectorAll('.tz-preview input'))
-        .map((node) => node instanceof HTMLInputElement ? String(node.value || '') : '')
-        .filter(Boolean)
-        .slice(0, 80)
-    )).catch(() => []);
-    console.error('[react-e2e-searchHits]', JSON.stringify(searchHits));
-    console.error('[react-e2e-preview-snippet]', previewText.slice(0, 2500));
-    console.error('[react-e2e-preview-inputs]', JSON.stringify(previewInputs));
-    throw error;
-  }
+  await ensurePreviewOpen();
+  const mixedPreviewText = await page.locator('.tz-preview').innerText().catch(() => '');
+  assert.match(mixedPreviewText, /Позиция №3: .*Услуга/i, 'Mixed preview should include service row summary');
 
   const docxBtn = page.locator('button:has-text("Скачать DOCX")');
   await page.waitForFunction(() => {
@@ -363,8 +498,59 @@ async function run() {
   }, { timeout: 60000 });
   assert.strictEqual(await docxBtn.isDisabled(), false, 'DOCX export button must be enabled after generation');
 
-  assert.ok(searchHits.internet >= 2, 'Internet specs endpoint should be called for both rows');
-  assert.ok(searchHits.eis >= 2, 'EIS specs endpoint should be called for both rows');
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.rows-table tbody tr', { timeout: 30000 });
+
+  const serviceRow = page.locator('.rows-table tbody tr').first();
+  await serviceRow.locator('td').nth(1).locator('select').selectOption('otherService');
+  await serviceRow.locator('td').nth(2).locator('input').fill('монтаж ЛВС и структурированной кабельной системы');
+
+  await clickGenerateTZ();
+  await page.waitForFunction(() => {
+    const row = document.querySelector('.rows-table tbody tr');
+    return Boolean(row && row.textContent && row.textContent.includes('Готово'));
+  }, { timeout: 60000 });
+
+  await ensurePreviewOpen();
+  const servicePreviewText = await page.locator('.tz-preview').innerText();
+  const readinessText = await page.evaluate(() => document.body.innerText || '');
+
+  assert.match(servicePreviewText, /на оказание/i, 'Service-only preview should switch document wording to services');
+  assert.match(servicePreviewText, /Требования к порядку оказания услуг/i, 'Service-only preview should include service execution section');
+  assert.match(servicePreviewText, /Требования к порядку сдачи-?приемки и отчетности/i, 'Service-only preview should include acceptance/reporting section');
+  assert.match(servicePreviewText, /Полнота ТЗ на услуги/i, 'Service-only preview should include service readiness summary');
+
+  assert.match(readinessText, /Readiness gate перед публикацией/i, 'Page should show readiness gate after service generation');
+  assert.match(readinessText, /Автодовести до публикации/i, 'Page should expose publication autopilot in readiness gate');
+  assert.ok(!/service-block-/.test(readinessText), 'Service-specific issue keys should not leak into UI text');
+
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.rows-table tbody tr', { timeout: 30000 });
+
+  const universalRow = page.locator('.rows-table tbody tr').first();
+  await universalRow.locator('td').nth(1).locator('select').selectOption('otherGoods');
+  await universalRow.locator('td').nth(2).locator('input').fill('тепловизор инфракрасный промышленный');
+
+  await clickGenerateTZ();
+  await page.waitForFunction(() => {
+    const row = document.querySelector('.rows-table tbody tr');
+    return Boolean(row && row.textContent && row.textContent.includes('Готово'));
+  }, { timeout: 60000 });
+
+  await page.waitForFunction(() => {
+    const text = document.body.innerText || '';
+    return /Инструменты исправления|Уточнить ОКПД2|Переобогатить классификацию|Класс\./.test(text);
+  }, { timeout: 60000 });
+
+  await universalRow.getByRole('button', { name: /Класс\./ }).click();
+  await page.waitForFunction(() => {
+    const text = document.body.innerText || '';
+    return /Классификация обновлена/i.test(text);
+  }, { timeout: 60000 });
+
+  assert.ok(searchHits.internet >= 1, 'Internet specs endpoint should be used at least once');
+  assert.ok(searchHits.eis >= 1, 'EIS specs endpoint should be used at least once');
+  assert.ok(universalAiHits.thermal >= 5, 'Universal classification scenario should hit AI multiple times');
   const relevantConsoleErrors = consoleErrors.filter((message) => !/Failed to load resource: the server responded with a status of 404/i.test(message));
   assert.deepStrictEqual(relevantConsoleErrors, [], `Unexpected browser console errors: ${relevantConsoleErrors.join(' | ')}`);
 

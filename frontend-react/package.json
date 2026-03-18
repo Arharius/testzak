@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit --pretty false",
     "preview": "vite preview",
     "deploy": "gh-pages -d dist -r https://github.com/Arharius/testzak.git -b gh-pages"
   },

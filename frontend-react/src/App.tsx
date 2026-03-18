@@ -344,18 +344,6 @@ export function App() {
           : `Free (${backendUser.tz_count}/${backendUser.tz_limit})`)
     : '';
 
-  const themeNote = theme === 'contrast'
-    ? {
-      label: 'Arctic',
-      title: 'Светлая тема для комфортной дневной работы',
-      description: 'Чистый светлый интерфейс с высокой контрастностью текста. Идеально для длительной работы с документацией и спецификациями.',
-    }
-    : {
-      label: 'Obsidian',
-      title: 'Профессиональная тёмная тема',
-      description: 'Минималистичный тёмный интерфейс с чёткими шрифтами и холодными акцентами. Снижает нагрузку на глаза при работе в тёмном окружении.',
-    };
-
   const runtimeLabel = !backendAvailable
     ? 'Local'
     : backendReadinessQuery.isPending
@@ -364,9 +352,20 @@ export function App() {
         ? 'Offline'
         : backendReadinessQuery.data?.status === 'ready'
           ? 'Ready'
+        : backendReadinessQuery.data?.status === 'degraded'
+          ? 'Degraded'
+          : 'Not ready';
+  const runtimeDisclosureState = !backendAvailable
+    ? 'Локальный режим'
+    : backendReadinessQuery.isError
+      ? 'Backend недоступен'
+      : backendReadinessQuery.isPending
+        ? 'Проверка runtime'
+        : backendReadinessQuery.data?.status === 'ready'
+          ? 'Контур готов'
           : backendReadinessQuery.data?.status === 'degraded'
-            ? 'Degraded'
-            : 'Not ready';
+            ? 'Есть ограничения'
+            : 'Нужна настройка';
 
   return (
     <main className="layout sovereign-layout">
@@ -594,9 +593,9 @@ export function App() {
 
       <header className="hero sovereign-hero section-fade section-delay-0">
         <div className="hero-spine" aria-hidden="true"></div>
-        <span className="hero-chip">44/223-ФЗ • Sovereign Workflow</span>
-        <h1>Генератор ТЗ</h1>
-        <p>Премиальная рабочая среда закупок: спецификации, КТРУ/ОКПД2, поиск по интернету и ЕИС, комплаенс-контроль.</p>
+        <span className="hero-chip">44/223-ФЗ • Генерация • Проверка • Публикация</span>
+        <h1>Генератор ТЗ, доведённый до публикации без лишнего шума</h1>
+        <p>Позиции, классификация, ПП1875, benchmark, anti-ФАС и экспорт собраны в один рабочий сценарий без лишнего интерфейсного шума.</p>
         <div className="hero-metrics">
           <div className="hero-metric">
             <span className="hero-metric-label">режим</span>
@@ -611,38 +610,34 @@ export function App() {
             <strong>{backendUser ? 'Signed In' : 'Guest'}</strong>
           </div>
           <div className="hero-metric">
-            <span className="hero-metric-label">pipeline</span>
-            <strong>Specs / EIS / Export</strong>
+            <span className="hero-metric-label">flow</span>
+            <strong>Draft / Verify / Export</strong>
           </div>
         </div>
       </header>
 
-      <RuntimeStatusPanel
-        backendAvailable={backendAvailable}
-        health={backendHealthQuery.data}
-        readiness={backendReadinessQuery.data}
-        isLoading={backendHealthQuery.isFetching || backendReadinessQuery.isFetching}
-        error={
-          backendReadinessQuery.error instanceof Error
-            ? backendReadinessQuery.error.message
-            : backendHealthQuery.error instanceof Error
-              ? backendHealthQuery.error.message
-              : undefined
-        }
-      />
-
-      <section className="sov-note section-fade section-delay-2">
-        <div>
-          <div className="micro-label">{themeNote.label}</div>
-          <h2>{themeNote.title}</h2>
-          <p>{themeNote.description}</p>
-        </div>
-        <div className="sov-note-tags" aria-label="Возможности">
-          <span>DeepSeek / OpenRouter / Groq</span>
-          <span>ЕИС / 44-ФЗ / 223-ФЗ</span>
-          <span>DOCX / PDF / JSON</span>
-        </div>
-      </section>
+      <details className="app-disclosure section-fade section-delay-1" open>
+        <summary className="app-disclosure-summary">
+          <div>
+            <div className="micro-label">System</div>
+            <strong>Системный статус и runtime</strong>
+          </div>
+          <span className="app-disclosure-meta">{runtimeDisclosureState}</span>
+        </summary>
+        <RuntimeStatusPanel
+          backendAvailable={backendAvailable}
+          health={backendHealthQuery.data}
+          readiness={backendReadinessQuery.data}
+          isLoading={backendHealthQuery.isFetching || backendReadinessQuery.isFetching}
+          error={
+            backendReadinessQuery.error instanceof Error
+              ? backendReadinessQuery.error.message
+              : backendHealthQuery.error instanceof Error
+                ? backendHealthQuery.error.message
+                : undefined
+          }
+        />
+      </details>
 
       <div className="section-fade section-delay-3">
         <Workspace
@@ -653,100 +648,106 @@ export function App() {
         />
       </div>
 
-      <section className="sov-block section-fade section-delay-4">
-        <div className="sov-block-head">
+      <details className="app-disclosure section-fade section-delay-4">
+        <summary className="app-disclosure-summary">
           <div>
             <div className="micro-label">Control Layer</div>
-            <h2>Интеграции и автоматизация</h2>
+            <strong>Интеграции и автоматизация</strong>
           </div>
-        </div>
-        <div className="control-grid">
-          <AutomationPanel
-            value={automationSettings}
-            onSave={handleSaveAutomation}
-            onSendTest={async () => {
-              await webhookMutation.mutateAsync();
-            }}
-            onAutopilot={async () => {
-              appendAutomationLog({ at: new Date().toISOString(), event: 'autopilot.requested', ok: true });
-              window.dispatchEvent(new CustomEvent('tz:autopilot:run'));
-              setRefreshTick((x) => x + 1);
-            }}
-            onExportLearning={() => {
-              const json = exportLearningMap();
-              download(`learning_map_${Date.now()}.json`, json, 'application/json;charset=utf-8');
-              appendAutomationLog({ at: new Date().toISOString(), event: 'learning.export', ok: true });
-              setRefreshTick((x) => x + 1);
-            }}
-            onImportLearning={() => {
-              const raw = prompt('Вставьте JSON карты обучения');
-              if (!raw) return;
-              const result = importLearningMap(raw);
-              appendAutomationLog({
-                at: new Date().toISOString(),
-                event: 'learning.import',
-                ok: result.ok,
-                note: result.ok ? `items=${result.count}` : 'invalid_json'
-              });
-              setRefreshTick((x) => x + 1);
-            }}
-            queueSize={queueStats.automation}
-            onFlushQueue={async () => {
-              await flushAutomationMutation.mutateAsync();
-            }}
-            flushPending={flushAutomationMutation.isPending}
-          />
+          <span className="app-disclosure-meta">automation {queueStats.automation} · platform {queueStats.platform}</span>
+        </summary>
+        <section className="sov-block">
+          <div className="control-grid">
+            <AutomationPanel
+              value={automationSettings}
+              onSave={handleSaveAutomation}
+              onSendTest={async () => {
+                await webhookMutation.mutateAsync();
+              }}
+              onAutopilot={async () => {
+                appendAutomationLog({ at: new Date().toISOString(), event: 'autopilot.requested', ok: true });
+                window.dispatchEvent(new CustomEvent('tz:autopilot:run'));
+                setRefreshTick((x) => x + 1);
+              }}
+              onExportLearning={() => {
+                const json = exportLearningMap();
+                download(`learning_map_${Date.now()}.json`, json, 'application/json;charset=utf-8');
+                appendAutomationLog({ at: new Date().toISOString(), event: 'learning.export', ok: true });
+                setRefreshTick((x) => x + 1);
+              }}
+              onImportLearning={() => {
+                const raw = prompt('Вставьте JSON карты обучения');
+                if (!raw) return;
+                const result = importLearningMap(raw);
+                appendAutomationLog({
+                  at: new Date().toISOString(),
+                  event: 'learning.import',
+                  ok: result.ok,
+                  note: result.ok ? `items=${result.count}` : 'invalid_json'
+                });
+                setRefreshTick((x) => x + 1);
+              }}
+              queueSize={queueStats.automation}
+              onFlushQueue={async () => {
+                await flushAutomationMutation.mutateAsync();
+              }}
+              flushPending={flushAutomationMutation.isPending}
+            />
 
-          <PlatformPanel
-            value={platformSettings}
-            onSave={handleSavePlatform}
-            onSendDraft={async () => {
-              await platformMutation.mutateAsync();
-            }}
-            onExportPack={() => {
-              const payload = {
-                app: 'tz_generator_react',
-                exportedAt: new Date().toISOString(),
-                profile: platformSettings.profile,
-                procurementMethod: platformSettings.procurementMethod,
-                law: platformSettings.profile === 'eis_223' ? '223-FZ' : '44-FZ',
-                organization: platformSettings.orgName,
-                customerInn: platformSettings.customerInn,
-                items: []
-              };
-              download(`procurement_pack_${Date.now()}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
-              appendAutomationLog({ at: new Date().toISOString(), event: 'platform.export', ok: true });
-              setRefreshTick((x) => x + 1);
-            }}
-            queueSize={queueStats.platform}
-            onFlushQueue={async () => {
-              await flushPlatformMutation.mutateAsync();
-            }}
-            flushPending={flushPlatformMutation.isPending}
-          />
+            <PlatformPanel
+              value={platformSettings}
+              onSave={handleSavePlatform}
+              onSendDraft={async () => {
+                await platformMutation.mutateAsync();
+              }}
+              onExportPack={() => {
+                const payload = {
+                  app: 'tz_generator_react',
+                  exportedAt: new Date().toISOString(),
+                  profile: platformSettings.profile,
+                  procurementMethod: platformSettings.procurementMethod,
+                  law: platformSettings.profile === 'eis_223' ? '223-FZ' : '44-FZ',
+                  organization: platformSettings.orgName,
+                  customerInn: platformSettings.customerInn,
+                  items: []
+                };
+                download(`procurement_pack_${Date.now()}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+                appendAutomationLog({ at: new Date().toISOString(), event: 'platform.export', ok: true });
+                setRefreshTick((x) => x + 1);
+              }}
+              queueSize={queueStats.platform}
+              onFlushQueue={async () => {
+                await flushPlatformMutation.mutateAsync();
+              }}
+              flushPending={flushPlatformMutation.isPending}
+            />
 
-          <EnterprisePanel
-            value={enterpriseSettings}
-            onSave={handleSaveEnterprise}
-          />
-        </div>
-      </section>
+            <EnterprisePanel
+              value={enterpriseSettings}
+              onSave={handleSaveEnterprise}
+            />
+          </div>
+        </section>
+      </details>
 
-      <section className="sov-block section-fade section-delay-4">
-        <div className="sov-block-head">
+      <details className="app-disclosure section-fade section-delay-4">
+        <summary className="app-disclosure-summary">
           <div>
             <div className="micro-label">Telemetry</div>
-            <h2>Журнал автоматизации</h2>
+            <strong>Журнал автоматизации</strong>
           </div>
-        </div>
-        <EventLog
-          events={events}
-          onClear={() => {
-            clearAutomationLog();
-            setRefreshTick((x) => x + 1);
-          }}
-        />
-      </section>
+          <span className="app-disclosure-meta">{events.length} событий</span>
+        </summary>
+        <section className="sov-block">
+          <EventLog
+            events={events}
+            onClear={() => {
+              clearAutomationLog();
+              setRefreshTick((x) => x + 1);
+            }}
+          />
+        </section>
+      </details>
     </main>
   );
 }

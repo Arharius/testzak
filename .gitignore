@@ -1,14 +1,21 @@
 node_modules/
 frontend-react/node_modules/
 frontend-react/dist/
+frontend-react/dist-vercel/
 backend/__pycache__/
 *.pyc
+*.db
+*.sqlite
+*.sqlite3
+*.tsbuildinfo
+.DS_Store
 .env
 .env.*
 index.backup.*.html
 tests/e2e_artifacts/
 tests/autodetect_report.*
 backups/
+.deploy/
 
 # Local Netlify folder
 .netlify

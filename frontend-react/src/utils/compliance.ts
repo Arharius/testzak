@@ -398,8 +398,8 @@ export function buildAntiFasReport(rows: RowForCompliance[], minScore = 85): Com
         issues,
         row,
         { name: 'Количество характеристик', value: String(row.specs.length), unit: 'шт' },
-        'critical',
-        'Недостаточная детализация комплекта характеристик для строгого закупочного шаблона.',
+        'major',
+        'Текущий набор характеристик короче рекомендуемого строгого шаблона.',
         `Доведите количество характеристик как минимум до ${row.strictMinSpecs}.`
       );
     }

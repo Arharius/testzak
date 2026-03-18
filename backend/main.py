@@ -1860,12 +1860,16 @@ class TZDocumentSaveRequest(BaseModel):
     law_mode: str = "44"
     rows: list = Field(default_factory=list)  # [{type, model, qty, specs, meta}]
     compliance_score: Optional[int] = None
+    readiness: Optional[dict[str, Any]] = None
+    publication_dossier: Optional[dict[str, Any]] = None
 
 class TZDocumentUpdateRequest(BaseModel):
     title: Optional[str] = None
     law_mode: Optional[str] = None
     rows: Optional[list] = None
     compliance_score: Optional[int] = None
+    readiness: Optional[dict[str, Any]] = None
+    publication_dossier: Optional[dict[str, Any]] = None
 
 
 @app.post("/api/tz/save")
@@ -1898,6 +1902,8 @@ def save_tz_document(
         law_mode=req.law_mode,
         rows_json=json.dumps(req.rows, ensure_ascii=False),
         compliance_score=req.compliance_score,
+        readiness_json=json.dumps(req.readiness, ensure_ascii=False) if req.readiness is not None else None,
+        publication_dossier_json=json.dumps(req.publication_dossier, ensure_ascii=False) if req.publication_dossier is not None else None,
     )
     db.add(doc)
     db.commit()
@@ -1938,6 +1944,10 @@ def update_tz_document(
             doc.specs_json = json.dumps(first.get("specs", []), ensure_ascii=False)
     if req.compliance_score is not None:
         doc.compliance_score = req.compliance_score
+    if req.readiness is not None:
+        doc.readiness_json = json.dumps(req.readiness, ensure_ascii=False)
+    if req.publication_dossier is not None:
+        doc.publication_dossier_json = json.dumps(req.publication_dossier, ensure_ascii=False)
 
     db.commit()
     return {"ok": True, "id": doc.id, "updated_at": doc.updated_at.isoformat() if doc.updated_at else None}
@@ -1963,11 +1973,16 @@ def list_tz_documents(
     items = []
     for d in docs:
         rows_count = 0
+        readiness = None
         try:
             parsed = json.loads(d.rows_json or "[]")
             rows_count = len(parsed)
         except Exception:
             pass
+        try:
+            readiness = json.loads(getattr(d, "readiness_json", None) or "null")
+        except Exception:
+            readiness = None
         items.append({
             "id": d.id,
             "title": d.title,
@@ -1975,6 +1990,8 @@ def list_tz_documents(
             "model": d.model,
             "law_mode": getattr(d, "law_mode", "44") or "44",
             "compliance_score": getattr(d, "compliance_score", None),
+            "readiness_status": readiness.get("status") if isinstance(readiness, dict) else None,
+            "readiness_blockers": len(readiness.get("blockers", [])) if isinstance(readiness, dict) and isinstance(readiness.get("blockers"), list) else 0,
             "rows_count": rows_count,
             "created_at": d.created_at.isoformat() if d.created_at else None,
             "updated_at": getattr(d, "updated_at", None),
@@ -1994,10 +2011,20 @@ def get_tz_document(
         raise HTTPException(status_code=404, detail="Документ не найден")
 
     rows = []
+    readiness = None
+    publication_dossier = None
     try:
         rows = json.loads(doc.rows_json or "[]")
     except Exception:
         pass
+    try:
+        readiness = json.loads(getattr(doc, "readiness_json", None) or "null")
+    except Exception:
+        readiness = None
+    try:
+        publication_dossier = json.loads(getattr(doc, "publication_dossier_json", None) or "null")
+    except Exception:
+        publication_dossier = None
 
     return {
         "ok": True,
@@ -2008,6 +2035,8 @@ def get_tz_document(
             "model": doc.model,
             "law_mode": getattr(doc, "law_mode", "44") or "44",
             "compliance_score": getattr(doc, "compliance_score", None),
+            "readiness": readiness,
+            "publication_dossier": publication_dossier,
             "rows": rows,
             "created_at": doc.created_at.isoformat() if doc.created_at else None,
             "updated_at": getattr(doc, "updated_at", None),

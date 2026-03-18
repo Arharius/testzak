@@ -108,7 +108,32 @@ export function getEnterpriseSettings(): EnterpriseSettings {
   const parsed = enterpriseSettingsSchema.safeParse(
     readJson(KEYS.enterpriseSettings, defaultEnterpriseSettings)
   );
-  return parsed.success ? parsed.data : defaultEnterpriseSettings;
+  const data = parsed.success ? parsed.data : defaultEnterpriseSettings;
+  const looksLegacyDefaults =
+    data.simulationMode &&
+    data.etpBidirectionalStatus &&
+    !data.etpEndpoint &&
+    !data.etpToken &&
+    !data.ecmEndpoint &&
+    !data.ecmToken &&
+    !data.erpEndpoint &&
+    !data.erpToken &&
+    !data.cryptoEndpoint &&
+    !data.cryptoToken &&
+    data.antiFasStrictMode &&
+    data.antiFasMinScore === 85 &&
+    data.blockExportsOnFail &&
+    data.blockIntegrationsOnFail;
+  if (looksLegacyDefaults) {
+    const upgraded: EnterpriseSettings = {
+      ...data,
+      blockExportsOnFail: false,
+      blockIntegrationsOnFail: false,
+    };
+    writeJson(KEYS.enterpriseSettings, upgraded);
+    return upgraded;
+  }
+  return data;
 }
 
 export function setEnterpriseSettings(value: EnterpriseSettings): void {

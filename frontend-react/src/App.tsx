@@ -339,9 +339,11 @@ export function App() {
       ? 'Admin'
       : backendUser.role === 'pro'
         ? 'Pro'
+        : backendUser.payment_required
+          ? 'Оплата нужна'
         : backendUser.trial_active
           ? `Trial (${backendUser.trial_days_left}д)`
-          : `Free (${backendUser.tz_count}/${backendUser.tz_limit})`)
+          : 'Trial')
     : '';
 
   const runtimeLabel = !backendAvailable
@@ -381,23 +383,23 @@ export function App() {
         <div className="trial-banner">
           <span className="trial-banner-icon">⚡</span>
           <span className="trial-banner-text">
-            PRO-trial: <strong>{backendUser.trial_days_left} {backendUser.trial_days_left === 1 ? 'день' : backendUser.trial_days_left < 5 ? 'дня' : 'дней'}</strong> осталось — безлимитные ТЗ, все 91 тип, приоритетная AI-генерация
+            PRO-trial: <strong>{backendUser.trial_days_left} {backendUser.trial_days_left === 1 ? 'день' : backendUser.trial_days_left < 5 ? 'дня' : 'дней'}</strong> осталось — полный доступ к генерации, поиску, экспорту и истории
           </span>
           <button className="trial-banner-btn" onClick={() => setShowPricing(true)}>
-            Оформить Pro
+            Оформить Pro Business
           </button>
         </div>
       )}
 
       {/* Trial expired banner */}
-      {backendUser && !backendUser.trial_active && backendUser.trial_ends_at && backendUser.role === 'free' && (
+      {backendUser && backendUser.payment_required && backendUser.trial_ends_at && backendUser.role === 'free' && (
         <div className="trial-banner trial-expired">
           <span className="trial-banner-icon">⏰</span>
           <span className="trial-banner-text">
-            Пробный период завершён. Вы на плане <strong>Free ({backendUser.tz_limit} ТЗ/мес)</strong>. Оформите Pro для безлимитного доступа.
+            Пробный период завершён. Без оплаты <strong>генерация, поиск, экспорт и сохранение</strong> недоступны.
           </span>
           <button className="trial-banner-btn" onClick={() => setShowPricing(true)}>
-            Оформить Pro — 1500 ₽/мес
+            Оформить Pro Business — 29 900 ₽/мес
           </button>
         </div>
       )}
@@ -420,7 +422,7 @@ export function App() {
                   className="auth-primary-btn"
                   style={{ padding: '4px 12px', fontSize: '12px' }}
                 >
-                  Upgrade Pro
+                  Pro Business
                 </button>
               )}
               <button
@@ -564,11 +566,12 @@ export function App() {
           )}
           <div className="auth-pro-box">
             <div className="micro-label">Pro доступ</div>
-            <strong>Pro план — 1500 &#x20bd;/мес</strong><br />
+            <strong>Pro Business — 29 900 &#x20bd;/мес за компанию</strong><br />
             &bull; Безлимитные ТЗ<br />
             &bull; Поиск в интернете (реальные характеристики)<br />
             &bull; Поиск в ЕИС (готовые ТЗ из zakupki.gov.ru)<br />
-            &bull; Не нужен собственный API-ключ
+            &bull; Не нужен собственный API-ключ<br />
+            &bull; Новым аккаунтам — 14 дней полного trial
           </div>
         </div>
       )}

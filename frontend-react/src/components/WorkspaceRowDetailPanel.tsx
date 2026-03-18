@@ -1,4 +1,5 @@
 import type { SpecItem } from '../utils/spec-processor';
+import type { ImportedRowImportInfo } from '../utils/row-import';
 
 type GoodsRowLike = {
   id: number;
@@ -9,6 +10,7 @@ type GoodsRowLike = {
   benchmark?: {
     sourceSpecs: SpecItem[];
   };
+  importInfo?: ImportedRowImportInfo;
 };
 
 type RowActionStateLike = {
@@ -158,6 +160,38 @@ export function WorkspaceRowDetailPanel({
             )}
           </div>
         </div>
+        {row.importInfo && (
+          <div>
+            <div className="row-detail-title">Импорт из исходного файла</div>
+            <div className="row-detail-copy">
+              <strong>Источник:</strong> {row.importInfo.sourceFormat.toUpperCase()} · {row.importInfo.sourceKind}
+            </div>
+            <div className="row-detail-copy">
+              <strong>Уверенность импорта:</strong> {Math.round((row.importInfo.confidence || 0) * 100)}% ({row.importInfo.confidenceLabel})
+            </div>
+            <div className="row-detail-copy">
+              <strong>Требует проверки:</strong> {row.importInfo.needsReview ? 'да' : 'нет'}
+            </div>
+            <div className="row-detail-copy">
+              <strong>Игнорировано блоков:</strong> {row.importInfo.ignoredBlocks || 0}
+            </div>
+            {!!row.specs?.length && (
+              <div className="row-detail-copy">
+                <strong>Импортировано характеристик:</strong> {row.specs.length}
+              </div>
+            )}
+            {row.importInfo.sourcePreview && (
+              <div className="row-detail-copy">
+                <strong>Фрагмент:</strong> {row.importInfo.sourcePreview}
+              </div>
+            )}
+            {row.importInfo.notes?.slice(0, 5).map((note) => (
+              <div key={note} className="row-detail-copy">
+                • {note}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

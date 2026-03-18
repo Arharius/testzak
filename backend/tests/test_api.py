@@ -118,20 +118,22 @@ class TestAuth:
         assert resp3.status_code == 400
 
     def test_new_user_gets_trial_with_unlimited_access(self, client):
-        resp = client.post("/api/auth/send-link", json={"email": "trial-user@test.ru"})
+        email = f"trial-user-{int(datetime.now(timezone.utc).timestamp() * 1000)}@test.ru"
+        resp = client.post("/api/auth/send-link", json={"email": email})
         token = resp.json()["magic_link"].split("magic=")[-1]
 
         resp2 = client.get(f"/api/auth/verify?token={token}")
         assert resp2.status_code == 200
 
         user = resp2.json()["user"]
-        assert user["email"] == "trial-user@test.ru"
+        assert user["email"] == email
         assert user["role"] == "free"
         assert user["trial_active"] is True
-        assert user["trial_days_left"] >= 1
+        assert user["trial_days_left"] >= 13
         assert user["tz_limit"] == -1
+        assert user["payment_required"] is False
 
-    def test_expired_trial_falls_back_to_free_limit(self, client):
+    def test_expired_trial_requires_payment(self, client):
         from main import SessionLocal
         from auth import sync_user_entitlements
         from database import User
@@ -152,7 +154,7 @@ class TestAuth:
 
             changed = sync_user_entitlements(user)
             assert changed is True
-            assert user.tz_limit == 3
+            assert user.tz_limit == 0
         finally:
             db.delete(user)
             db.commit()
@@ -160,6 +162,38 @@ class TestAuth:
 
 
 class TestSearch:
+    def test_search_specs_blocks_expired_trial_user(self, client):
+        from auth import create_jwt
+        from main import SessionLocal
+        from database import User
+
+        db = SessionLocal()
+        user = User(
+            id="expired-search-user",
+            email="expired-search@test.ru",
+            role="free",
+            tz_limit=0,
+            tz_count=0,
+            trial_ends_at=datetime.now(timezone.utc) - timedelta(days=1),
+        )
+        try:
+            db.add(user)
+            db.commit()
+            token = create_jwt(user.email, user.role)
+
+            resp = client.post(
+                "/api/search/specs",
+                json={"product": "test laptop", "goods_type": "laptop"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+            assert resp.status_code == 402
+            assert "Пробный период" in resp.json()["detail"]
+        finally:
+            db.delete(user)
+            db.commit()
+            db.close()
+
     def test_search_specs_empty_product(self, client):
         resp = client.post("/api/search/specs", json={"product": "", "goods_type": "pc"})
         assert resp.status_code == 400
@@ -180,6 +214,38 @@ class TestTZDocuments:
     def test_list_requires_auth(self, client):
         resp = client.get("/api/tz/list")
         assert resp.status_code == 401
+
+    def test_save_blocks_expired_trial_user(self, client):
+        from auth import create_jwt
+        from main import SessionLocal
+        from database import User
+
+        db = SessionLocal()
+        user = User(
+            id="expired-save-user",
+            email="expired-save@test.ru",
+            role="free",
+            tz_limit=0,
+            tz_count=0,
+            trial_ends_at=datetime.now(timezone.utc) - timedelta(days=1),
+        )
+        try:
+            db.add(user)
+            db.commit()
+            token = create_jwt(user.email, user.role)
+
+            resp = client.post("/api/tz/save", json={
+                "title": "Blocked save",
+                "law_mode": "44",
+                "rows": [{"type": "pc", "model": "Test PC", "qty": 1, "specs": []}],
+            }, headers={"Authorization": f"Bearer {token}"})
+
+            assert resp.status_code == 402
+            assert "Пробный период" in resp.json()["detail"]
+        finally:
+            db.delete(user)
+            db.commit()
+            db.close()
 
     def test_save_and_list(self, client, admin_token):
         headers = {"Authorization": f"Bearer {admin_token}"}
@@ -310,7 +376,7 @@ class TestPayments:
         assert data["tz_limit"] == -1
         assert data["subscription_until"] is not None
 
-    def test_require_active_blocks_user_over_free_limit(self):
+    def test_require_active_blocks_expired_trial_user(self):
         from main import require_active
         from database import User
 
@@ -318,8 +384,8 @@ class TestPayments:
             id="limit-check-user",
             email="limit@test.ru",
             role="free",
-            tz_limit=3,
-            tz_count=3,
+            tz_limit=0,
+            tz_count=0,
             tz_month_start=datetime.now(timezone.utc),
             trial_ends_at=datetime.now(timezone.utc) - timedelta(days=1),
         )
@@ -328,3 +394,4 @@ class TestPayments:
             require_active(user)
 
         assert exc.value.status_code == 402
+        assert "Пробный период" in exc.value.detail

@@ -69,6 +69,8 @@ export type BackendUser = {
   trial_active?: boolean;
   trial_days_left?: number;
   trial_ends_at?: string | null;
+  payment_required?: boolean;
+  access_tier?: 'admin' | 'pro' | 'trial' | 'payment_required';
 };
 
 export function getStoredUser(): BackendUser | null {
@@ -547,9 +549,13 @@ export type TZDocumentFull = {
     licenseType?: string;
     term?: string;
     qty: number;
+    status?: 'idle' | 'loading' | 'done' | 'error';
+    error?: string;
     specs: unknown[];
     meta: Record<string, string>;
     benchmark?: unknown | null;
+    import_info?: unknown | null;
+    split_group?: string | null;
   }>;
   created_at: string | null;
   updated_at: string | null;

@@ -61,6 +61,8 @@ try:
         sync_user_entitlements,
         authenticate_superadmin,
         is_trial_active,
+        is_payment_required,
+        payment_required_message,
         trial_days_left,
         JWT_SECRET,
         SMTP_USER,
@@ -89,6 +91,8 @@ except ImportError:
         sync_user_entitlements,
         authenticate_superadmin,
         is_trial_active,
+        is_payment_required,
+        payment_required_message,
         trial_days_left,
         JWT_SECRET,
         SMTP_USER,
@@ -129,7 +133,7 @@ YOOKASSA_WEBHOOK_SECRET = os.getenv("YOOKASSA_WEBHOOK_SECRET", "").strip()
 
 AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "100"))
 
-FREE_TZ_LIMIT = int(os.getenv("FREE_TZ_LIMIT", "3"))
+FREE_TZ_LIMIT = max(0, int(os.getenv("FREE_TZ_LIMIT", "0")))
 
 # ── Integration / Enterprise automation env ───────────────────
 INTEGRATION_TARGET_WEBHOOK_URL = os.getenv("INTEGRATION_TARGET_WEBHOOK_URL", "").strip()
@@ -201,6 +205,7 @@ _EMAIL_RE = _re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 
 def _user_response(user: User) -> dict:
     """Build standardized user info dict for API responses."""
+    payment_required = is_payment_required(user)
     return {
         "email": user.email,
         "role": user.role,
@@ -209,6 +214,16 @@ def _user_response(user: User) -> dict:
         "trial_active": is_trial_active(user),
         "trial_days_left": trial_days_left(user),
         "trial_ends_at": user.trial_ends_at.isoformat() if user.trial_ends_at else None,
+        "payment_required": payment_required,
+        "access_tier": (
+            "admin"
+            if user.role == "admin"
+            else "pro"
+            if user.role == "pro"
+            else "trial"
+            if is_trial_active(user)
+            else "payment_required"
+        ),
     }
 
 
@@ -312,8 +327,12 @@ def require_active(user: User, db=None) -> None:
     """Check that user can generate TZ (not over limit)."""
     if user.role == "admin":
         return  # unlimited
+    if is_payment_required(user):
+        raise HTTPException(status_code=402, detail=payment_required_message(user))
     if user.tz_limit == -1:
         return  # explicitly unlimited (pro)
+    if user.tz_limit <= 0:
+        raise HTTPException(status_code=402, detail=payment_required_message(user))
     # Check monthly count — reset on new calendar month
     now = datetime.now(timezone.utc)
     month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
@@ -1081,8 +1100,16 @@ def _call_ai_streaming(provider: str, model: str, messages: list, temperature: f
 
 # ── ЮKassa helpers ──────────────────────────────────────────────
 PLAN_PRICES = {
-    "pro":    {"amount": "1500.00", "currency": "RUB", "label": "Pro (1 месяц)"},
-    "annual": {"amount": "12000.00", "currency": "RUB", "label": "Pro (12 месяцев)"},
+    "pro": {
+        "amount": "29900.00",
+        "currency": "RUB",
+        "label": "Pro Business (1 месяц, за компанию)",
+    },
+    "annual": {
+        "amount": "299000.00",
+        "currency": "RUB",
+        "label": "Pro Business (12 месяцев, за компанию)",
+    },
 }
 
 def _yookassa_create_payment(amount: str, currency: str, description: str, return_url: str, metadata: dict, idempotency_key: str) -> dict:
@@ -1691,9 +1718,16 @@ def ai_get_key(request: Request, req: AIKeyRequest, user: Optional[User] = Depen
 # ── Search: internet specs ─────────────────────────────────────
 @app.post("/api/search/specs")
 @limiter.limit("15/minute")
-async def search_specs(request: Request, req: SearchSpecsRequest, user: Optional[User] = Depends(get_optional_user)):
+async def search_specs(
+    request: Request,
+    req: SearchSpecsRequest,
+    user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
     if not req.product.strip():
         raise HTTPException(status_code=400, detail="Укажите модель товара")
+    if user is not None:
+        require_active(user, db)
     import time as _time
     t0 = _time.time()
     logger.info(f"Internet search: {req.product!r} type={req.goods_type!r}")
@@ -1709,9 +1743,16 @@ async def search_specs(request: Request, req: SearchSpecsRequest, user: Optional
 # ── Search: EIS zakupki.gov.ru ─────────────────────────────────
 @app.post("/api/search/eis")
 @limiter.limit("15/minute")
-async def search_eis(request: Request, req: SearchEisRequest, user: Optional[User] = Depends(get_optional_user)):
+async def search_eis(
+    request: Request,
+    req: SearchEisRequest,
+    user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
     if not req.query.strip():
         raise HTTPException(status_code=400, detail="Укажите запрос")
+    if user is not None:
+        require_active(user, db)
     import time as _time
     t0 = _time.time()
     logger.info(f"EIS search: {req.query!r} type={req.goods_type!r}")
@@ -1888,6 +1929,7 @@ def save_tz_document(
     db: Session = Depends(get_db),
 ):
     """Save a new TZ document to history."""
+    require_active(user, db)
     # Auto-generate title from first row if not provided
     title = req.title.strip()
     if not title and req.rows:
@@ -1935,6 +1977,7 @@ def update_tz_document(
     db: Session = Depends(get_db),
 ):
     """Update an existing TZ document."""
+    require_active(user, db)
     doc = db.query(TZDocument).filter_by(id=doc_id, user_email=user.email).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Документ не найден")

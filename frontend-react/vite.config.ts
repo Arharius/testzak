@@ -30,7 +30,9 @@ export default defineConfig(({ mode }) => {
     base,
     plugins: [react()],
     build: {
-      chunkSizeWarningLimit: 700,
+      // After lazy-loading preview/panels and keeping PDF/DOCX exporters out of the initial path,
+      // the remaining large chunks are intentional app-shell/export chunks rather than accidental eager deps.
+      chunkSizeWarningLimit: 900,
       rollupOptions: {
         output: {
           manualChunks(id: string) {

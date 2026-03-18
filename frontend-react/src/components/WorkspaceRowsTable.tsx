@@ -4,6 +4,7 @@ import { GENERAL_CATALOG, GENERAL_GROUPS } from '../data/general-catalog';
 import type { SpecItem } from '../utils/spec-processor';
 import { WorkspaceRowDetailPanel } from './WorkspaceRowDetailPanel';
 import { WorkspaceSpecEditor } from './WorkspaceSpecEditor';
+import type { ImportedRowImportInfo } from '../utils/row-import';
 
 type GoodsRowLike = {
   id: number;
@@ -19,6 +20,7 @@ type GoodsRowLike = {
   benchmark?: {
     sourceSpecs: SpecItem[];
   };
+  importInfo?: ImportedRowImportInfo;
 };
 
 type CatalogLike = {
@@ -214,6 +216,11 @@ export function WorkspaceRowsTable({
                     <span className="row-primary-pill">
                       ПП1875: {getLaw175MeasureLabel(row.meta?.law175_status || '', row.meta?.nac_regime || getUnifiedNacRegime(row.type))}
                     </span>
+                    {row.importInfo && (
+                      <span className={`row-primary-pill ${row.importInfo.confidenceLabel === 'low' ? 'row-primary-pill--warn' : row.importInfo.confidenceLabel === 'medium' ? 'row-primary-pill--accent' : ''}`}>
+                        Импорт: {Math.round((row.importInfo.confidence || 0) * 100)}%
+                      </span>
+                    )}
                     {autoDetectedRow === row.id && <span className="row-primary-pill row-primary-pill--accent">auto</span>}
                   </div>
                 </td>
@@ -359,7 +366,7 @@ export function WorkspaceRowsTable({
         </tbody>
       </table>
       <div className="workspace-inline-note">
-        Импорт списка поддерживает `CSV`, `TSV`, `TXT`, `XLSX`. Рекомендуемые колонки: `Тип товара`, `Модель / описание`, `Тип лицензии`, `Срок действия`, `Количество`.
+        Импорт списка поддерживает `CSV`, `TSV`, `TXT`, `XLSX`, `DOCX`. Для таблиц и служебных записок лучше всего работают колонки `Тип товара`, `Модель / описание`, `Тип лицензии`, `Срок действия`, `Количество`; в `DOCX` приложение также умеет забирать табличные позиции, приложения, нумерованные перечни лицензий и характеристики из таблиц/разделов, а рядом с каждой строкой показывает confidence импорта.
       </div>
     </div>
   );

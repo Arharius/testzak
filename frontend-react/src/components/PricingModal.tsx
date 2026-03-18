@@ -30,6 +30,7 @@ export function PricingModal({ onClose, currentRole, trialActive, trialDaysLeft 
   };
 
   const isPro = currentRole === 'pro' || currentRole === 'admin';
+  const trialExpired = !isPro && !trialActive;
 
   return (
     <div className="pricing-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -38,47 +39,57 @@ export function PricingModal({ onClose, currentRole, trialActive, trialDaysLeft 
 
         <div className="pricing-header">
           <span className="micro-label">Тарифы</span>
-          <h2>Выберите план</h2>
-          {trialActive && trialDaysLeft != null && (
+          <h2>Полнофункциональный доступ для компании</h2>
+          {trialActive && trialDaysLeft != null ? (
             <p className="pricing-trial-note">
-              ⚡ Пробный период: ещё <strong>{trialDaysLeft}</strong> {trialDaysLeft === 1 ? 'день' : trialDaysLeft < 5 ? 'дня' : 'дней'}
+              ⚡ Trial: ещё <strong>{trialDaysLeft}</strong> {trialDaysLeft === 1 ? 'день' : trialDaysLeft < 5 ? 'дня' : 'дней'} полного Pro-доступа
+            </p>
+          ) : trialExpired ? (
+            <p className="pricing-trial-note">
+              ⏰ Trial завершён. Без оплаты генерация, поиск, экспорт и сохранение отключены.
+            </p>
+          ) : (
+            <p className="pricing-trial-note">
+              Активный платный план: доступ открыт без ограничений.
             </p>
           )}
         </div>
 
         <div className="pricing-cards">
-          {/* Free */}
-          <div className={`pricing-card ${!isPro && !trialActive ? 'current' : ''}`}>
-            <div className="pricing-card-badge">Free</div>
+          <div className={`pricing-card ${trialActive ? 'current' : ''}`}>
+            <div className="pricing-card-badge">Trial</div>
             <div className="pricing-card-price">
               <span className="pricing-amount">0</span>
               <span className="pricing-currency">₽</span>
+              <span className="pricing-period">/14 дней</span>
             </div>
             <ul className="pricing-features">
-              <li>3 ТЗ в месяц</li>
-              <li>91 тип товара</li>
-              <li>DOCX + PDF экспорт</li>
-              <li>Нужен свой API-ключ</li>
+              <li>Полный Pro-функционал без ограничений</li>
+              <li>Генерация, поиск, DOCX, PDF, история</li>
+              <li>Подходит для пилота и теста закупщиков</li>
+              <li>После 14 дней нужен платный план</li>
             </ul>
-            {!isPro && !trialActive && (
-              <div className="pricing-current-badge">Текущий план</div>
-            )}
+            {trialActive ? (
+              <div className="pricing-current-badge">Активен сейчас</div>
+            ) : trialExpired ? (
+              <div className="pricing-current-badge">Завершён</div>
+            ) : null}
           </div>
 
-          {/* Pro Monthly */}
           <div className={`pricing-card pricing-card-pro ${isPro ? 'current' : ''}`}>
-            <div className="pricing-card-badge">Pro</div>
+            <div className="pricing-card-badge">Pro Business</div>
             <div className="pricing-card-price">
-              <span className="pricing-amount">1 500</span>
+              <span className="pricing-amount">29 900</span>
               <span className="pricing-currency">₽</span>
               <span className="pricing-period">/мес</span>
             </div>
+            <div className="pricing-card-subprice">за компанию · до 5 пользователей</div>
             <ul className="pricing-features">
               <li>♾️ Безлимитные ТЗ</li>
               <li>Встроенный AI (без ключа)</li>
               <li>Поиск по ЕИС</li>
               <li>Поиск в интернете</li>
-              <li>Приоритетная генерация</li>
+              <li>Экспорт, история, автодоводка, import DOCX/XLSX</li>
             </ul>
             {isPro ? (
               <div className="pricing-current-badge">Текущий план</div>
@@ -88,25 +99,24 @@ export function PricingModal({ onClose, currentRole, trialActive, trialDaysLeft 
                 onClick={() => handlePay('pro')}
                 disabled={loading !== null}
               >
-                {loading === 'pro' ? 'Переход к оплате...' : 'Оформить Pro'}
+                {loading === 'pro' ? 'Переход к оплате...' : 'Оформить Pro Business'}
               </button>
             )}
           </div>
 
-          {/* Annual */}
           <div className="pricing-card pricing-card-annual">
-            <div className="pricing-card-badge">Годовой</div>
-            <div className="pricing-card-save">Экономия 33%</div>
+            <div className="pricing-card-badge">Business Annual</div>
+            <div className="pricing-card-save">2 месяца в подарок</div>
             <div className="pricing-card-price">
-              <span className="pricing-amount">12 000</span>
+              <span className="pricing-amount">299 000</span>
               <span className="pricing-currency">₽</span>
               <span className="pricing-period">/год</span>
             </div>
-            <div className="pricing-card-subprice">1 000 ₽/мес</div>
+            <div className="pricing-card-subprice">24 917 ₽/мес · за компанию</div>
             <ul className="pricing-features">
-              <li>♾️ Всё из Pro</li>
+              <li>♾️ Всё из Pro Business</li>
               <li>12 месяцев доступа</li>
-              <li>Фиксированная цена</li>
+              <li>Оптимально для постоянной закупочной команды</li>
             </ul>
             {isPro ? (
               <div className="pricing-current-badge">Текущий план</div>
@@ -125,8 +135,8 @@ export function PricingModal({ onClose, currentRole, trialActive, trialDaysLeft 
         {error && <div className="pricing-error">{error}</div>}
 
         <div className="pricing-footer">
-          <p>Оплата через ЮКасса • Банковские карты, СБП, ЮMoney</p>
-          <p>После оплаты доступ активируется автоматически</p>
+          <p>Оплата через ЮKassa • Банковские карты, СБП, ЮMoney</p>
+          <p>Доступ активируется автоматически после подтверждения оплаты</p>
         </div>
       </div>
     </div>

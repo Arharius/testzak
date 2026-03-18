@@ -8,6 +8,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # Force SQLite for tests (no PostgreSQL needed)
 os.environ["DATABASE_URL"] = "sqlite:///test_tz.db"
 os.environ["JWT_SECRET"] = "test-secret-for-pytest"
+os.environ["TRIAL_DAYS"] = "14"
+os.environ["FREE_TZ_LIMIT"] = "0"
+os.environ["POST_TRIAL_TZ_LIMIT"] = "0"
 os.environ["INTEGRATION_ALLOW_ANON"] = "1"
 os.environ["ENTERPRISE_SIMULATION_MODE"] = "1"
 

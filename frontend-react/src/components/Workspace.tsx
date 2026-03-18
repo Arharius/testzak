@@ -1,23 +1,6 @@
-import { useMemo, useState, useCallback, useRef, useEffect, type ChangeEvent } from 'react';
+import { lazy, Suspense, useMemo, useState, useCallback, useRef, useEffect, type ChangeEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import {
-  AlignmentType,
-  BorderStyle,
-  Document,
-  HeightRule,
-  Packer,
-  Paragraph,
-  ShadingType,
-  Table,
-  TableCell,
-  TableLayoutType,
-  TableRow,
-  TextRun,
-  VerticalAlign,
-  WidthType,
-} from 'docx';
 import { saveAs } from 'file-saver';
-import { jsPDF } from 'jspdf';
 import {
   flushAutomationQueue,
   flushPlatformQueue,
@@ -55,12 +38,25 @@ import { GENERAL_CATALOG, detectGeneralGoodsType, detectGeneralGoodsTypes, getGe
 import { postProcessSpecs, parseAiResponse, type SpecItem } from '../utils/spec-processor';
 import { deriveCommercialContext, resolveCommercialTerms, type LdapLicenseProfile } from '../utils/commercial-terms';
 import { type LawMode } from '../utils/npa-blocks';
-import { parseImportedRows } from '../utils/row-import';
-import { WorkspaceReviewSections, WorkspaceSidePanels } from './WorkspacePanels';
-import { WorkspacePreview } from './WorkspacePreview';
+import { parseImportedRows, type ImportedRowImportInfo } from '../utils/row-import';
 import { WorkspaceRowsTable } from './WorkspaceRowsTable';
 import { createWorkspacePublicationTools } from './workspace-publication';
 import { WorkspaceTypeSuggestions } from './WorkspaceTypeSuggestions';
+
+const WorkspaceSidePanels = lazy(async () => {
+  const mod = await import('./WorkspacePanels');
+  return { default: mod.WorkspaceSidePanels };
+});
+
+const WorkspaceReviewSections = lazy(async () => {
+  const mod = await import('./WorkspacePanels');
+  return { default: mod.WorkspaceReviewSections };
+});
+
+const WorkspacePreview = lazy(async () => {
+  const mod = await import('./WorkspacePreview');
+  return { default: mod.WorkspacePreview };
+});
 
 // ── Объединённый каталог: ИТ + не-ИТ ─────────────────────────
 type CatalogMode = 'it' | 'general';
@@ -287,6 +283,7 @@ interface GoodsRow {
   specs?: SpecItem[];
   meta?: Record<string, string>;
   benchmark?: RowBenchmarkEvidence;
+  importInfo?: ImportedRowImportInfo;
   // Яндекс-подсказки и ссылки ЕИС (хранятся в отдельном state, не здесь)
 }
 
@@ -378,6 +375,14 @@ type GenerateOptions = {
   trigger?: 'manual' | 'autopilot_button';
 };
 
+type GenerationProgress = {
+  current: number;
+  total: number;
+  batchSize: number;
+  batchIndex: number;
+  totalBatches: number;
+};
+
 type LegalSummaryRow = {
   index: string;
   item: string;
@@ -405,10 +410,243 @@ type PublicationDossierSummary = {
   serviceReady: number;
 };
 
+type ProcurementPurposeKey =
+  | 'network'
+  | 'workstations'
+  | 'server'
+  | 'components'
+  | 'peripherals'
+  | 'software'
+  | 'security'
+  | 'consumables'
+  | 'tools'
+  | 'services'
+  | 'general';
+
+type ProcurementPurposeMeta = {
+  key: ProcurementPurposeKey;
+  label: string;
+  title: string;
+  order: number;
+};
+
+type ProcurementSplitGroup = ProcurementPurposeMeta & {
+  count: number;
+  rows: GoodsRow[];
+  preview: string;
+};
+
+const PROCUREMENT_PURPOSE_META: Record<ProcurementPurposeKey, ProcurementPurposeMeta> = {
+  network: { key: 'network', label: 'Сетевое', title: 'ТЗ на сетевое оборудование и СКС', order: 10 },
+  workstations: { key: 'workstations', label: 'Рабочие места', title: 'ТЗ на рабочие станции и клиентские устройства', order: 20 },
+  server: { key: 'server', label: 'Серверное', title: 'ТЗ на серверное оборудование и хранение данных', order: 30 },
+  components: { key: 'components', label: 'Комплектующие', title: 'ТЗ на комплектующие для ПК и рабочих станций', order: 40 },
+  peripherals: { key: 'peripherals', label: 'Периферия', title: 'ТЗ на периферию и оргтехнику', order: 50 },
+  software: { key: 'software', label: 'ПО', title: 'ТЗ на программное обеспечение и лицензии', order: 60 },
+  security: { key: 'security', label: 'ИБ', title: 'ТЗ на средства защиты информации', order: 70 },
+  consumables: { key: 'consumables', label: 'Расходники', title: 'ТЗ на расходные материалы', order: 80 },
+  tools: { key: 'tools', label: 'Инструменты', title: 'ТЗ на инструменты и оснастку', order: 90 },
+  services: { key: 'services', label: 'Услуги', title: 'ТЗ на услуги', order: 100 },
+  general: { key: 'general', label: 'Общее', title: 'ТЗ на товары общего назначения', order: 110 },
+};
+
+const PROCUREMENT_TYPE_TO_PURPOSE: Partial<Record<string, ProcurementPurposeKey>> = {
+  pc: 'workstations',
+  laptop: 'workstations',
+  monoblock: 'workstations',
+  tablet: 'workstations',
+  thinClient: 'workstations',
+  server: 'server',
+  serverBlade: 'server',
+  san: 'server',
+  nas: 'server',
+  tapeLib: 'server',
+  serverRack: 'server',
+  rackCabinet: 'server',
+  pdu: 'server',
+  kvm_server: 'server',
+  switch: 'network',
+  router: 'network',
+  firewall: 'network',
+  accessPoint: 'network',
+  patchPanel: 'network',
+  mediaConverter: 'network',
+  patchCord: 'network',
+  fiberCable: 'network',
+  powerCable: 'network',
+  hdmiCable: 'network',
+  monitor: 'peripherals',
+  printer: 'peripherals',
+  mfu: 'peripherals',
+  scanner: 'peripherals',
+  keyboard: 'peripherals',
+  mouse: 'peripherals',
+  kvm: 'peripherals',
+  ups: 'peripherals',
+  projector: 'peripherals',
+  interactive: 'peripherals',
+  webcam: 'peripherals',
+  headset: 'peripherals',
+  cpu: 'components',
+  gpu: 'components',
+  motherboard: 'components',
+  psu: 'components',
+  cooling: 'components',
+  ram: 'components',
+  ssd: 'components',
+  hdd: 'components',
+  flashDrive: 'components',
+  dvd: 'components',
+  parts: 'components',
+  cartridge: 'consumables',
+  paper: 'consumables',
+  toner: 'consumables',
+  drum: 'consumables',
+  os: 'software',
+  office: 'software',
+  virt: 'software',
+  vdi: 'software',
+  dbms: 'software',
+  erp: 'software',
+  cad: 'software',
+  license: 'software',
+  email: 'software',
+  vks: 'software',
+  ecm: 'software',
+  portal: 'software',
+  project_sw: 'software',
+  bpm: 'software',
+  backup_sw: 'software',
+  itsm: 'software',
+  monitoring: 'software',
+  mdm: 'software',
+  hr: 'software',
+  gis: 'software',
+  antivirus: 'security',
+  edr: 'security',
+  firewall_sw: 'security',
+  dlp: 'security',
+  siem: 'security',
+  crypto: 'security',
+  waf: 'security',
+  pam: 'security',
+  iam: 'security',
+  pki: 'security',
+};
+
 function trimPreviewText(value: string, maxLen = 240): string {
   const source = String(value || '').replace(/\s+/g, ' ').trim();
   if (source.length <= maxLen) return source;
   return source.slice(0, Math.max(0, maxLen - 1)) + '…';
+}
+
+function getImportedSpecs(row: GoodsRow): SpecItem[] {
+  return Array.isArray(row.specs) ? row.specs : [];
+}
+
+function cloneGoodsRows(rows: GoodsRow[]): GoodsRow[] {
+  return rows.map((row) => ({
+    ...row,
+    specs: row.specs?.map((spec) => ({ ...spec })),
+    meta: row.meta ? { ...row.meta } : undefined,
+    benchmark: row.benchmark ? {
+      ...row.benchmark,
+      sourceSpecs: row.benchmark.sourceSpecs.map((spec) => ({ ...spec })),
+    } : undefined,
+    importInfo: row.importInfo ? {
+      ...row.importInfo,
+      notes: [...row.importInfo.notes],
+    } : undefined,
+  }));
+}
+
+function hasImportedSeedSpecs(row: GoodsRow): boolean {
+  return row.status === 'idle' && getImportedSpecs(row).length > 0;
+}
+
+function getImportedSourceContext(row: GoodsRow): string {
+  return String(row.importInfo?.sourceContextText || '').trim();
+}
+
+function buildImportedSpecsPromptBlock(row: GoodsRow): string {
+  const contextText = getImportedSourceContext(row);
+  const importedSpecs = getImportedSpecs(row);
+  if (!contextText && importedSpecs.length === 0 && !row.importInfo) return '';
+
+  const specsJson = importedSpecs.length > 0
+    ? JSON.stringify(
+        importedSpecs.slice(0, 24).map((spec) => ({
+          group: spec.group || '',
+          name: spec.name || '',
+          value: spec.value || '',
+          unit: spec.unit || '—',
+        })),
+        null,
+        2,
+      )
+    : '[]';
+
+  const noteBlock = row.importInfo?.notes?.length
+    ? row.importInfo.notes.slice(0, 6).map((note) => `- ${note}`).join('\n')
+    : '';
+
+  return [
+    '',
+    'КОНТЕКСТ ИЗ ИСХОДНОГО ФАЙЛА:',
+    row.importInfo ? `- Качество импорта: ${Math.round((row.importInfo.confidence || 0) * 100)}% (${row.importInfo.confidenceLabel})` : '',
+    row.importInfo?.ignoredBlocks ? `- Отфильтровано блоков требований / нормативки: ${row.importInfo.ignoredBlocks}` : '',
+    noteBlock ? `Примечания импорта:\n${noteBlock}` : '',
+    importedSpecs.length > 0 ? `Уже извлеченные характеристики из исходного DOCX:\n${specsJson}` : '',
+    contextText ? `Смысловой контекст исходного DOCX:\n${contextText}` : '',
+    '- Если в исходном DOCX уже есть полезные характеристики или ограничения, сохрани их смысл и дополняй, а не игнорируй.',
+    '',
+  ].filter(Boolean).join('\n');
+}
+
+function inferProcurementPurposeFromText(text: string): ProcurementPurposeKey {
+  const normalized = String(text || '').toLowerCase();
+  if (/(монтаж|демонтаж|ремонт|обслуживан|сопровождени|уборк|охран|медосмотр|оказани[ея]\s+услуг|услуг)/i.test(normalized)) return 'services';
+  if (/(коммутатор|switch|router|маршрутизатор|wifi|wi-fi|сете|rj45|патч|скс|витая пара|sfp|оптич)/i.test(normalized)) return 'network';
+  if (/(сервер|схд|san|nas|ленточн|стойк|шкаф|kvm-server|хранилищ)/i.test(normalized)) return 'server';
+  if (/(ноутбук|системный блок|моноблок|тонкий клиент|рабочая станция|планшет)/i.test(normalized)) return 'workstations';
+  if (/(процессор|cpu|gpu|видеокарт|материнск|памят|ram|ssd|hdd|блок питания|кулер|охлажден|dvd|cd-r|dvd-r|rw)/i.test(normalized)) return 'components';
+  if (/(монитор|принтер|мфу|сканер|клавиатур|мыш|гарнитур|веб-кам|проектор|ибп)/i.test(normalized)) return 'peripherals';
+  if (/(лиценз|астра|astra|ред ос|мойофис|р7|postgres|почтов|вкс|сэд|itsm|мониторинг|по\b|программн)/i.test(normalized)) return 'software';
+  if (/(антивирус|siem|dlp|edr|pam|iam|крипт|скзи|межсетев|waf|иб\b|защит)/i.test(normalized)) return 'security';
+  if (/(картридж|тонер|бумаг|фотобарабан|расходн)/i.test(normalized)) return 'consumables';
+  if (/(инструмент|оснастк|сверл|шуруповерт|перфоратор|набор адаптеров|ключ|отвертк|бур|коронк)/i.test(normalized)) return 'tools';
+  return 'general';
+}
+
+function getProcurementPurposeMeta(row: GoodsRow): ProcurementPurposeMeta {
+  if (isServiceCatalogType(row.type)) return PROCUREMENT_PURPOSE_META.services;
+  const direct = PROCUREMENT_TYPE_TO_PURPOSE[row.type];
+  if (direct) return PROCUREMENT_PURPOSE_META[direct];
+  const textKey = `${lookupCatalog(row.type).name} ${row.model}`;
+  return PROCUREMENT_PURPOSE_META[inferProcurementPurposeFromText(textKey)];
+}
+
+function buildProcurementSplitGroups(rows: GoodsRow[]): ProcurementSplitGroup[] {
+  const sourceRows = rows.filter((row) => row.model.trim() || row.specs?.length);
+  const grouped = new Map<ProcurementPurposeKey, GoodsRow[]>();
+  sourceRows.forEach((row) => {
+    const purpose = getProcurementPurposeMeta(row);
+    const bucket = grouped.get(purpose.key) || [];
+    bucket.push(row);
+    grouped.set(purpose.key, bucket);
+  });
+
+  return Array.from(grouped.entries())
+    .map(([key, bucket]) => ({
+      ...PROCUREMENT_PURPOSE_META[key],
+      count: bucket.length,
+      rows: bucket,
+      preview: bucket
+        .slice(0, 2)
+        .map((row) => row.model || lookupCatalog(row.type).name)
+        .join(' · '),
+    }))
+    .sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'ru'));
 }
 
 function normalizeBenchmarkText(value: string): string {
@@ -1749,6 +1987,10 @@ function getClassificationSourceLabel(meta: Record<string, string> = {}, rowType
     case 'catalog':
     case 'template':
       return 'каталог / шаблон позиции';
+    case 'docx_import':
+      return 'импорт из DOCX / служебной записки';
+    case 'import':
+      return 'импорт из файла';
     case 'internet':
       return 'интернет / документация производителя';
     case 'eis':
@@ -1774,7 +2016,10 @@ function hasTrustedClassificationEvidence(row: GoodsRow): boolean {
 function requiresManualClassificationReview(row: GoodsRow): boolean {
   const sourceKey = getClassificationSourceKey(row.meta, row.type);
   if (isUniversalGoodsType(row.type)) {
-    return !hasTrustedClassificationEvidence(row);
+    return !hasTrustedClassificationEvidence(row) || !!row.importInfo?.needsReview;
+  }
+  if (row.importInfo?.needsReview && (!getResolvedOkpd2Code(row) || sourceKey === 'docx_import' || sourceKey === 'import')) {
+    return true;
   }
   return sourceKey === 'ai' || sourceKey === 'internet';
 }
@@ -1791,6 +2036,14 @@ function buildRowClassificationContext(row: GoodsRow): string {
 
   const currentSpecsBlock = buildSpecSnapshotContext(row.specs, 'Текущие характеристики ТЗ', 16);
   if (currentSpecsBlock) parts.push(currentSpecsBlock);
+
+  if (row.importInfo?.sourcePreview) {
+    parts.push(`Фрагмент исходного файла: ${row.importInfo.sourcePreview}`);
+  }
+
+  if (row.importInfo?.sourceContextText) {
+    parts.push(`Контекст исходного файла:\n${trimPreviewText(row.importInfo.sourceContextText, 1600)}`);
+  }
 
   if (row.benchmark?.sourceContextText) {
     parts.push(`Контекст внешнего источника:\n${trimPreviewText(row.benchmark.sourceContextText, 1600)}`);
@@ -2248,6 +2501,7 @@ function buildUniversalSearchPrompt(row: GoodsRow, sourceLabel: string, contextT
   const contextBlock = trimmedContext
     ? `\nКонтекст найденных характеристик (${sourceLabel}):\n---\n${trimmedContext}\n---\n`
     : `\nКонтекст ${sourceLabel} недоступен. Используй описание товара и отраслевые знания о типичных характеристиках этого класса изделий.\n`;
+  const importedBlock = buildImportedSpecsPromptBlock(row);
   const commercial = getResolvedCommercialContext(row);
   const minSpecs = getMinimumSpecCount(row, commercial);
   if (isUniversalServiceType(row.type)) {
@@ -2257,6 +2511,7 @@ ${contextBlock}
 Предмет закупки: ${row.model}
 Количество / объем: ${row.qty}
 ${commercial.suggestedTerm ? `Срок / период оказания услуг: ${commercial.suggestedTerm}\n` : ''}${commercial.suggestedLicenseType ? `Тип услуги / формат сопровождения: ${commercial.suggestedLicenseType}\n` : ''}
+${importedBlock}
 
 Определи и верни:
 1. Код ОКПД2 услуги
@@ -2299,6 +2554,7 @@ ${commercial.suggestedTerm ? `Срок / период оказания услу�
 Исходное описание товара: "${row.model}"
 Количество: ${row.qty} шт.
 ${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n` : ''}${contextBlock}
+${importedBlock}
 ТВОЯ ЗАДАЧА:
 1. Определить тип товара и его назначение
 2. Определить корректный ОКПД2 и полное наименование ОКПД2
@@ -2338,13 +2594,14 @@ function buildUniversalMetaPrompt(row: GoodsRow, contextText = ''): string {
   const contextBlock = trimmedContext
     ? `\nКонтекст для классификации:\n---\n${trimmedContext}\n---\n`
     : '';
+  const importedBlock = buildImportedSpecsPromptBlock(row);
   return `Ты — эксперт по классификации предметов закупки для РФ.
 Нужно определить только метаданные позиции без генерации полного перечня характеристик.
 
 Предмет закупки: ${row.model}
 Тип позиции: ${isService ? 'услуга' : 'товар'}
 Количество / объем: ${row.qty}
-${contextBlock}
+${contextBlock}${importedBlock}
 Верни строго один JSON:
 {
   "meta": {
@@ -5301,6 +5558,7 @@ function buildPrompt(row: GoodsRow, lawMode: LawMode): { system: string; user: s
     explicitLicenseType ? `- Тип лицензии / сертификата: ${explicitLicenseType}` : '',
     explicitTerm ? `- Срок действия / технической поддержки: ${explicitTerm}` : '',
   ].filter(Boolean).join('\n');
+  const importedBlock = buildImportedSpecsPromptBlock(row);
 
   // ── Единый SYSTEM-промпт для всех типов ──
   const systemPrompt = `Ты — ведущий эксперт по формированию технических заданий для государственных закупок РФ (${law}).
@@ -5332,6 +5590,7 @@ function buildPrompt(row: GoodsRow, lawMode: LawMode): { system: string; user: s
       user: `Пользователь хочет закупить услугу. Описание: "${row.model}"
 Количество / объем: ${row.qty}
 ${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n` : ''}
+${importedBlock}
 
 ТВОЯ ЗАДАЧА:
 1. Определить правильный код ОКПД2 услуги
@@ -5371,6 +5630,7 @@ ${explicitCommercialTermsBlock ? `Коммерческие параметры и
       user: `Пользователь хочет закупить товар. Описание: "${row.model}"
 Количество: ${row.qty} шт.
 ${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n` : ''}
+${importedBlock}
 
 ТВОЯ ЗАДАЧА:
 1. Определить правильный код ОКПД2 (до 3 знаков после точки минимум)
@@ -5486,6 +5746,7 @@ ${explicitCommercialTermsBlock ? `Коммерческие параметры и
 Модель/описание (для ориентира — НЕ копировать марку/модель в ответ): ${row.model}
 Количество: ${row.qty} шт.
 ${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n- Отрази эти параметры в итоговых характеристиках без изменения их смысла.\n` : ''}
+${importedBlock}
 ОКПД2: ${okpd2}${ktru ? '\nКТРУ: ' + ktru : ''}
 
 ${isSW ? `Национальный режим — ПО (ПП РФ № 1875 + ПП РФ № 1236):
@@ -5555,6 +5816,7 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
   const resolvedCommercial = getResolvedCommercialContext(row);
   const minSpecs = getMinimumSpecCount(row, resolvedCommercial);
   const hint = getDetailedSpecHint(row.type);
+  const importedBlock = buildImportedSpecsPromptBlock(row);
   const ldapRoleHint = row.type === 'ldap'
     ? getLdapRoleHint(resolvedCommercial.ldapProfile, resolvedCommercial.suggestedLicenseType)
     : '';
@@ -5564,6 +5826,7 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
 Исходный запрос (только для поиска, не копировать в ответ): "${row.model}"
 Тип: ${g.name}
 ОКПД2: ${g.okpd2}
+${importedBlock}
 
 Задача: укажи реальные характеристики именно этой модели/версии, как указаны у производителя (или ближайшего аналога по классу). Характеристики должны быть МАКСИМАЛЬНО ДЕТАЛЬНЫМИ — уровень реальных ТЗ из ЕИС (zakupki.gov.ru).
 
@@ -5704,118 +5967,6 @@ const DOCX_SUMMARY_WIDTHS = {
   default: { idx: 420, name: 5250, qty: 900, okpd2: 1550, appendix: 1648 },
 };
 
-function cellShade(fill: string) {
-  return { fill, type: ShadingType.CLEAR, color: 'auto' };
-}
-
-function noBorders() {
-  const none = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
-  return { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: none };
-}
-
-function docxRuns(text: string, opts: { bold?: boolean; color?: string; size?: number; italics?: boolean } = {}) {
-  const parts = String(text || '').split('\n');
-  return parts.flatMap((part, idx) => {
-    const runs = [
-      new TextRun({
-        text: part,
-        bold: opts.bold ?? false,
-        color: opts.color,
-        italics: opts.italics ?? false,
-        font: FONT,
-        size: opts.size ?? FONT_SIZE,
-      }),
-    ];
-    if (idx < parts.length - 1) runs.push(new TextRun({ break: 1 }));
-    return runs;
-  });
-}
-
-function hCell(
-  text: string,
-  opts: {
-    span?: number;
-    w?: number;
-    size?: number;
-    margins?: { top: number; bottom: number; left: number; right: number };
-  } = {},
-) {
-  return new TableCell({
-    children: [new Paragraph({
-      children: docxRuns(text, { bold: true, color: 'FFFFFF', size: opts.size ?? FONT_SIZE }),
-      alignment: AlignmentType.CENTER,
-      keepLines: true,
-    })],
-    columnSpan: opts.span,
-    width: opts.w ? { size: opts.w, type: WidthType.DXA } : undefined,
-    shading: cellShade('1F5C8B'),
-    verticalAlign: VerticalAlign.CENTER,
-    borders: allBorders(),
-    margins: opts.margins ?? DOCX_CELL_MARGINS,
-  });
-}
-
-function dCell(
-  text: string,
-  opts: {
-    span?: number;
-    w?: number;
-    align?: typeof AlignmentType[keyof typeof AlignmentType];
-    size?: number;
-    margins?: { top: number; bottom: number; left: number; right: number };
-  } = {},
-) {
-  return new TableCell({
-    children: [new Paragraph({
-      children: docxRuns(text || '—', { size: opts.size ?? FONT_SIZE }),
-      alignment: opts.align ?? AlignmentType.CENTER,
-      keepLines: true,
-    })],
-    columnSpan: opts.span,
-    width: opts.w ? { size: opts.w, type: WidthType.DXA } : undefined,
-    verticalAlign: VerticalAlign.CENTER,
-    borders: allBorders(),
-    margins: opts.margins ?? DOCX_CELL_MARGINS,
-  });
-}
-
-function buildDocxSectionTable(
-  rows: SectionTableRow[],
-  headers: [string, string] = ['Пункт', 'Содержание'],
-  widths: { left?: number; right?: number } = {},
-): Table {
-  const leftWidth = widths.left ?? DOCX_SECTION_LEFT_WIDTH;
-  const rightWidth = widths.right ?? DOCX_SECTION_RIGHT_WIDTH;
-  return new Table({
-    layout: TableLayoutType.FIXED,
-    width: { size: DOCX_TEXT_WIDTH, type: WidthType.DXA },
-    rows: [
-      new TableRow({
-        tableHeader: true,
-        cantSplit: true,
-        height: { value: 400, rule: HeightRule.ATLEAST },
-        children: [
-          hCell(headers[0], { w: leftWidth }),
-          hCell(headers[1], { w: rightWidth }),
-        ],
-      }),
-      ...rows.map((row) => new TableRow({
-        cantSplit: true,
-        children: [
-          dCell(row.label, { w: leftWidth, align: AlignmentType.CENTER }),
-          dCell(row.value, { w: rightWidth, align: AlignmentType.LEFT }),
-        ],
-      })),
-    ],
-  });
-}
-
-
-function allBorders() {
-  const b = { style: BorderStyle.SINGLE, size: 4, color: 'A0AEC0' };
-  return { top: b, bottom: b, left: b, right: b, insideHorizontal: b, insideVertical: b };
-}
-
 
 function numText(n: number): string {
   const ones = ['','один','два','три','четыре','пять','шесть','семь','восемь','девять',
@@ -5829,50 +5980,6 @@ function numText(n: number): string {
   return tens[t] + (o ? ' ' + ones[o] : '');
 }
 
-// ── Вспомогательные функции для 3-колоночной таблицы характеристик ────────────
-function specGroupRow3(text: string): TableRow {
-  return new TableRow({
-    cantSplit: true,
-    children: [new TableCell({
-      columnSpan: 3,
-      children: [new Paragraph({
-        children: docxRuns(text, { bold: true, size: FONT_SIZE }),
-        alignment: AlignmentType.CENTER,
-        keepLines: true,
-      })],
-      shading: cellShade('DBEAFE'),
-      borders: allBorders(),
-      margins: DOCX_CELL_MARGINS,
-    })],
-  });
-}
-
-function spec3DataRow(name: string, value: string, unit: string, warning?: string): TableRow {
-  const valText = value + (warning ? ' ⚠️ ' + warning : '');
-  return new TableRow({
-    cantSplit: true,
-    children: [
-      new TableCell({
-        children: [new Paragraph({ children: docxRuns(name, { size: FONT_SIZE }), keepLines: true })],
-        width: { size: 50, type: WidthType.PERCENTAGE },
-        borders: allBorders(),
-        margins: DOCX_CELL_MARGINS,
-      }),
-      new TableCell({
-        children: [new Paragraph({ children: docxRuns(valText, { size: FONT_SIZE }), keepLines: true })],
-        borders: allBorders(),
-        margins: DOCX_CELL_MARGINS,
-      }),
-      new TableCell({
-        children: [new Paragraph({ children: docxRuns(unit, { size: FONT_SIZE }), keepLines: true })],
-        width: { size: 12, type: WidthType.PERCENTAGE },
-        borders: allBorders(),
-        margins: DOCX_CELL_MARGINS,
-      }),
-    ],
-  });
-}
-
 // ── Функция генерации DOCX (структура по шаблону) ────────────────────────────
 async function buildDocx(
   rows: GoodsRow[],
@@ -5880,8 +5987,178 @@ async function buildDocx(
   readinessSummary: ReadinessGateSummary | null = null,
   benchmarkingEnabled = true,
 ): Promise<Blob> {
+  const {
+    AlignmentType,
+    BorderStyle,
+    Document,
+    HeightRule,
+    Packer,
+    Paragraph,
+    ShadingType,
+    Table,
+    TableCell,
+    TableLayoutType,
+    TableRow,
+    TextRun,
+    VerticalAlign,
+    WidthType,
+  } = await import('docx');
   const doneRows = rows.filter((r) => r.status === 'done' && r.specs);
   if (doneRows.length === 0) throw new Error('Нет готовых позиций для экспорта');
+
+  function cellShade(fill: string) {
+    return { fill, type: ShadingType.CLEAR, color: 'auto' };
+  }
+
+  function noBorders() {
+    const none = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+    return { top: none, bottom: none, left: none, right: none, insideHorizontal: none, insideVertical: none };
+  }
+
+  function docxRuns(text: string, opts: { bold?: boolean; color?: string; size?: number; italics?: boolean } = {}) {
+    const parts = String(text || '').split('\n');
+    return parts.flatMap((part, idx) => {
+      const runs = [
+        new TextRun({
+          text: part,
+          bold: opts.bold ?? false,
+          color: opts.color,
+          italics: opts.italics ?? false,
+          font: FONT,
+          size: opts.size ?? FONT_SIZE,
+        }),
+      ];
+      if (idx < parts.length - 1) runs.push(new TextRun({ break: 1 }));
+      return runs;
+    });
+  }
+
+  function allBorders() {
+    const b = { style: BorderStyle.SINGLE, size: 4, color: 'A0AEC0' };
+    return { top: b, bottom: b, left: b, right: b, insideHorizontal: b, insideVertical: b };
+  }
+
+  function hCell(
+    text: string,
+    opts: {
+      span?: number;
+      w?: number;
+      size?: number;
+      margins?: { top: number; bottom: number; left: number; right: number };
+    } = {},
+  ) {
+    return new TableCell({
+      children: [new Paragraph({
+        children: docxRuns(text, { bold: true, color: 'FFFFFF', size: opts.size ?? FONT_SIZE }),
+        alignment: AlignmentType.CENTER,
+        keepLines: true,
+      })],
+      columnSpan: opts.span,
+      width: opts.w ? { size: opts.w, type: WidthType.DXA } : undefined,
+      shading: cellShade('1F5C8B'),
+      verticalAlign: VerticalAlign.CENTER,
+      borders: allBorders(),
+      margins: opts.margins ?? DOCX_CELL_MARGINS,
+    });
+  }
+
+  function dCell(
+    text: string,
+    opts: {
+      span?: number;
+      w?: number;
+      align?: string;
+      size?: number;
+      margins?: { top: number; bottom: number; left: number; right: number };
+    } = {},
+  ) {
+    return new TableCell({
+      children: [new Paragraph({
+        children: docxRuns(text || '—', { size: opts.size ?? FONT_SIZE }),
+        alignment: opts.align ?? AlignmentType.CENTER,
+        keepLines: true,
+      })],
+      columnSpan: opts.span,
+      width: opts.w ? { size: opts.w, type: WidthType.DXA } : undefined,
+      verticalAlign: VerticalAlign.CENTER,
+      borders: allBorders(),
+      margins: opts.margins ?? DOCX_CELL_MARGINS,
+    });
+  }
+
+  function buildDocxSectionTable(
+    rows0: SectionTableRow[],
+    headers: [string, string] = ['Пункт', 'Содержание'],
+    widths: { left?: number; right?: number } = {},
+  ) {
+    const leftWidth = widths.left ?? DOCX_SECTION_LEFT_WIDTH;
+    const rightWidth = widths.right ?? DOCX_SECTION_RIGHT_WIDTH;
+    return new Table({
+      layout: TableLayoutType.FIXED,
+      width: { size: DOCX_TEXT_WIDTH, type: WidthType.DXA },
+      rows: [
+        new TableRow({
+          tableHeader: true,
+          cantSplit: true,
+          height: { value: 400, rule: HeightRule.ATLEAST },
+          children: [
+            hCell(headers[0], { w: leftWidth }),
+            hCell(headers[1], { w: rightWidth }),
+          ],
+        }),
+        ...rows0.map((row) => new TableRow({
+          cantSplit: true,
+          children: [
+            dCell(row.label, { w: leftWidth, align: AlignmentType.CENTER }),
+            dCell(row.value, { w: rightWidth, align: AlignmentType.LEFT }),
+          ],
+        })),
+      ],
+    });
+  }
+
+  function specGroupRow3(text: string) {
+    return new TableRow({
+      cantSplit: true,
+      children: [new TableCell({
+        columnSpan: 3,
+        children: [new Paragraph({
+          children: docxRuns(text, { bold: true, size: FONT_SIZE }),
+          alignment: AlignmentType.CENTER,
+          keepLines: true,
+        })],
+        shading: cellShade('DBEAFE'),
+        borders: allBorders(),
+        margins: DOCX_CELL_MARGINS,
+      })],
+    });
+  }
+
+  function spec3DataRow(name: string, value: string, unit: string, warning?: string) {
+    const valText = value + (warning ? ' ⚠️ ' + warning : '');
+    return new TableRow({
+      cantSplit: true,
+      children: [
+        new TableCell({
+          children: [new Paragraph({ children: docxRuns(name, { size: FONT_SIZE }), keepLines: true })],
+          width: { size: 50, type: WidthType.PERCENTAGE },
+          borders: allBorders(),
+          margins: DOCX_CELL_MARGINS,
+        }),
+        new TableCell({
+          children: [new Paragraph({ children: docxRuns(valText, { size: FONT_SIZE }), keepLines: true })],
+          borders: allBorders(),
+          margins: DOCX_CELL_MARGINS,
+        }),
+        new TableCell({
+          children: [new Paragraph({ children: docxRuns(unit, { size: FONT_SIZE }), keepLines: true })],
+          width: { size: 12, type: WidthType.PERCENTAGE },
+          borders: allBorders(),
+          margins: DOCX_CELL_MARGINS,
+        }),
+      ],
+    });
+  }
 
   const children: (Paragraph | Table)[] = [];
   const docSections = buildDocumentSectionBundle(doneRows, lawMode, readinessSummary, benchmarkingEnabled);
@@ -6423,7 +6700,16 @@ type Props = {
   automationSettings: AutomationSettings;
   platformSettings: PlatformIntegrationSettings;
   enterpriseSettings: EnterpriseSettings;
-  backendUser?: { email: string; role: string; tz_count: number; tz_limit: number; trial_active?: boolean; trial_days_left?: number } | null;
+  backendUser?: {
+    email: string;
+    role: string;
+    tz_count: number;
+    tz_limit: number;
+    trial_active?: boolean;
+    trial_days_left?: number;
+    payment_required?: boolean;
+    access_tier?: 'admin' | 'pro' | 'trial' | 'payment_required';
+  } | null;
 };
 
 export function Workspace({ automationSettings, platformSettings, enterpriseSettings, backendUser }: Props) {
@@ -6452,6 +6738,10 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [focusedRowId, setFocusedRowId] = useState<number | null>(null);
   const [rowActionState, setRowActionState] = useState<{ rowId: number; source: 'internet' | 'eis' | 'classify' } | null>(null);
   const [publicationAutopilotRunning, setPublicationAutopilotRunning] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);
+  const [splitSourceRows, setSplitSourceRows] = useState<GoodsRow[] | null>(null);
+  const [activeSplitGroupKey, setActiveSplitGroupKey] = useState<ProcurementPurposeKey | null>(null);
+  const [splitSaving, setSplitSaving] = useState(false);
   // Inline spec editing
   const [editingRowId, setEditingRowId] = useState<number | null>(null);
   const [expandedRowMetaId, setExpandedRowMetaId] = useState<number | null>(null);
@@ -6513,6 +6803,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       const now = Date.now();
       const mappedRows = imported.map((item, idx) => {
         const type = detectFreeformRowType(item.rawType, item.description);
+        const classificationSource = item.importInfo.sourceFormat === 'docx' ? 'docx_import' : 'import';
         return applyAutoCommercialTerms({
           id: now + idx,
           type,
@@ -6523,8 +6814,16 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           termAuto: false,
           qty: item.qty || 1,
           status: 'idle' as const,
+          specs: item.specs,
+          meta: normalizeResolvedMeta(type, {
+            ...(item.meta || {}),
+            classification_source: classificationSource,
+          }),
+          importInfo: item.importInfo,
         });
       });
+      setSplitSourceRows(null);
+      setActiveSplitGroupKey(null);
       setRows((prev) => {
         const isBlankDraft = prev.length === 1 && !prev[0].model.trim() && !prev[0].specs?.length && prev[0].status === 'idle';
         return isBlankDraft ? mappedRows : [...prev, ...mappedRows];
@@ -6532,7 +6831,12 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       if (mappedRows.some((row) => isServiceCatalogType(row.type) || row.type === 'otherGoods' || row.type === 'otherService')) {
         setCatalogMode('general');
       }
-      showToast(`✅ Импортировано ${mappedRows.length} позиций из файла`, true);
+      const seededRows = mappedRows.filter((row) => row.specs?.length).length;
+      const lowConfidenceRows = mappedRows.filter((row) => (row.importInfo?.confidence || 0) < 0.75).length;
+      showToast(
+        `✅ Импортировано ${mappedRows.length} позиций${seededRows ? `, seed-спеки: ${seededRows}` : ''}${lowConfidenceRows ? `, проверьте вручную: ${lowConfidenceRows}` : ''}`,
+        true,
+      );
     } catch (error) {
       showToast(`❌ Ошибка импорта: ${error instanceof Error ? error.message : 'не удалось разобрать файл'}`, false);
     }
@@ -6799,12 +7103,36 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     });
     return { totalRows: ids.size };
   }, [enterpriseSettings.benchmarking, liveLegalSummarySourceRows]);
+  const splitPlannerRows = useMemo(
+    () => (splitSourceRows?.length ? splitSourceRows : rows).filter((row) => row.model.trim() || row.specs?.length),
+    [rows, splitSourceRows],
+  );
+  const splitGroups = useMemo(
+    () => buildProcurementSplitGroups(splitPlannerRows),
+    [splitPlannerRows],
+  );
+  const splitFeatureVisible = splitGroups.length > 1;
 
   const allRowsHaveTemplate = useMemo(() => rows.every((r) => !!lookupCatalog(r.type)?.hardTemplate), [rows]);
-  const canGenerate = useMemo(
-    () => (useBackend || allRowsHaveTemplate) && rows.every((r) => r.model.trim().length > 0 || !!lookupCatalog(r.type)?.hardTemplate),
-    [useBackend, allRowsHaveTemplate, rows]
+  const allRowsSeededFromImport = useMemo(
+    () => rows.every((r) => hasImportedSeedSpecs(r) || !!lookupCatalog(r.type)?.hardTemplate),
+    [rows],
   );
+  const canRunGenerationWithoutAi = useMemo(
+    () => allRowsHaveTemplate || allRowsSeededFromImport,
+    [allRowsHaveTemplate, allRowsSeededFromImport],
+  );
+  const paymentRequired = !!backendUser?.payment_required;
+  const canGenerate = useMemo(
+    () => (useBackend || allRowsHaveTemplate || allRowsSeededFromImport) && rows.every((r) => r.model.trim().length > 0 || !!lookupCatalog(r.type)?.hardTemplate),
+    [useBackend, allRowsHaveTemplate, allRowsSeededFromImport, rows]
+  );
+  const ensurePaidFeatureAccess = useCallback((message?: string) => {
+    if (!paymentRequired) return true;
+    showToast(message || 'Пробный период завершён. Оформите Pro Business для продолжения работы.', false);
+    window.dispatchEvent(new Event('tz:open-pricing'));
+    return false;
+  }, [paymentRequired, showToast]);
   const shouldRunEnterpriseAutopilot = useMemo(() => {
     if (!useBackend) return false;
     if (enterpriseSettings.simulationMode) return true;
@@ -7185,6 +7513,9 @@ ${hint || '- Используй детальные, проверяемые эк�
   }, []);
 
   const saveTZ = useCallback(async () => {
+    if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business, чтобы сохранять ТЗ в историю.')) {
+      return;
+    }
     const doneRows = rows.filter((r) => r.status === 'done');
     if (doneRows.length === 0) {
       showToast('❌ Нет готовых позиций для сохранения', false);
@@ -7209,6 +7540,7 @@ ${hint || '- Используй детальные, проверяемые эк�
           specs: r.specs ?? [],
           meta: r.meta ?? {},
           benchmark: r.benchmark ?? null,
+          import_info: r.importInfo ?? null,
         })),
         compliance_score: complianceReport?.score ?? null,
         readiness: buildStoredReadinessPayload(saveReadiness),
@@ -7223,6 +7555,12 @@ ${hint || '- Используй детальные, проверяемые эк�
           return;
         }
       } catch (remoteErr) {
+        const message = remoteErr instanceof Error ? remoteErr.message : String(remoteErr || '');
+        if (message.includes('Пробный период') || message.includes('подписку Pro') || message.includes('402')) {
+          showToast('Пробный период завершён. Оформите Pro Business, чтобы сохранять ТЗ в историю.', false);
+          window.dispatchEvent(new Event('tz:open-pricing'));
+          return;
+        }
         console.warn('Remote TZ save failed, falling back to local history:', remoteErr);
       }
       const localRes = await saveTZDocumentLocal(payload);
@@ -7234,7 +7572,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     } catch (err) {
       showToast(`❌ Ошибка сохранения: ${err instanceof Error ? err.message : 'неизвестная'}`, false);
     }
-  }, [rows, lawMode, complianceReport, enterpriseSettings.benchmarking, loadHistory]);
+  }, [complianceReport, enterpriseSettings.benchmarking, ensurePaidFeatureAccess, lawMode, loadHistory, rows, showToast]);
 
   const loadTZ = useCallback(async (docId: string) => {
     try {
@@ -7256,15 +7594,19 @@ ${hint || '- Используй детальные, проверяемые эк�
         licenseTypeAuto: false,
         termAuto: false,
         qty: r.qty || 1,
-        status: 'done' as const,
+        status: (r.status && ['idle', 'loading', 'done', 'error'].includes(r.status) ? r.status : ((r.specs as SpecItem[])?.length ? 'done' : 'idle')) as GoodsRow['status'],
+        error: r.error || '',
         specs: (r.specs as SpecItem[]) ?? [],
         meta: r.meta ?? {},
         benchmark: (r as { benchmark?: RowBenchmarkEvidence | null }).benchmark ?? undefined,
+        importInfo: (r as { import_info?: ImportedRowImportInfo | null }).import_info ?? undefined,
       }));
       if (loadedRows.length > 0) {
+        setSplitSourceRows(null);
+        setActiveSplitGroupKey(null);
         setRows(loadedRows);
         setCurrentDocId(docId);
-        setDocxReady(true);
+        setDocxReady(loadedRows.some((row) => row.status === 'done' && !!row.specs?.length));
         runComplianceGate(loadedRows);
         showToast(`✅ Загружено: ${doc.title}`, true);
         setHistoryOpen(false);
@@ -7324,6 +7666,9 @@ ${hint || '- Используй детальные, проверяемые эк�
         law175Status: getLaw175MeasureLabel(r.meta?.law175_status || '', r.meta?.nac_regime || getUnifiedNacRegime(r.type)),
         law175Basis: r.meta?.law175_basis || '',
         classificationSource: getClassificationSourceLabel(r.meta, r.type),
+        importSource: r.importInfo?.sourceKind || '',
+        importConfidence: r.importInfo ? Math.round((r.importInfo.confidence || 0) * 100) : null,
+        importNeedsReview: !!r.importInfo?.needsReview,
         benchmarkSource: r.benchmark?.sourceCompareLabel || '',
         benchmarkMatched: r.benchmark && r.specs ? buildDraftSourceComparison(r.benchmark.sourceSpecs, r.specs, r.type).matched.length : 0,
         benchmarkChanged: r.benchmark && r.specs ? buildDraftSourceComparison(r.benchmark.sourceSpecs, r.specs, r.type).changed.length : 0,
@@ -7341,6 +7686,9 @@ ${hint || '- Используй детальные, проверяемые эк�
   ]);
 
   const exportPackage = useCallback((sourceRows: GoodsRow[] = rows, sourceComplianceReport: ComplianceReport | null = complianceReport): boolean => {
+    if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для экспорта пакета ТЗ.')) {
+      return false;
+    }
     const exportReadiness = buildReadinessGateSummary(sourceRows, sourceComplianceReport, enterpriseSettings.benchmarking);
     const publicationDossier = buildStoredPublicationDossierPayload(sourceRows, enterpriseSettings.benchmarking);
     const exportBlockers = exportReadiness.blockers.filter((issue) => issue.key !== 'antifas-critical' || enterpriseSettings.antiFasStrictMode);
@@ -7389,6 +7737,9 @@ ${hint || '- Используй детальные, проверяемые эк�
         law175Status: getLaw175MeasureLabel(r.meta?.law175_status || '', r.meta?.nac_regime || getUnifiedNacRegime(r.type)),
         law175Basis: r.meta?.law175_basis || '',
         classificationSource: getClassificationSourceLabel(r.meta, r.type),
+        importSource: r.importInfo?.sourceKind || '',
+        importConfidence: r.importInfo ? Math.round((r.importInfo.confidence || 0) * 100) : null,
+        importNeedsReview: !!r.importInfo?.needsReview,
         benchmarkSource: r.benchmark?.sourceCompareLabel || '',
         benchmarkMatched: r.benchmark && r.specs ? buildDraftSourceComparison(r.benchmark.sourceSpecs, r.specs, r.type).matched.length : 0,
         benchmarkChanged: r.benchmark && r.specs ? buildDraftSourceComparison(r.benchmark.sourceSpecs, r.specs, r.type).changed.length : 0,
@@ -7406,6 +7757,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     return true;
   }, [
     complianceReport,
+    ensurePaidFeatureAccess,
     enterpriseSettings.antiFasStrictMode,
     enterpriseSettings.benchmarking,
     enterpriseSettings.blockExportsOnFail,
@@ -7638,6 +7990,9 @@ ${hint || '- Используй детальные, проверяемые эк�
 
   const mutation = useMutation({
     mutationFn: async (options?: GenerateOptions) => {
+      if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для генерации ТЗ.')) {
+        return;
+      }
       const autopilotEnabled = !!options?.forceAutopilot;
       if (!rows.every((r) => r.model.trim().length > 0 || !!lookupCatalog(r.type)?.hardTemplate)) {
         showToast('❌ Заполните поле «Модель / описание» для всех строк', false);
@@ -7646,26 +8001,87 @@ ${hint || '- Используй детальные, проверяемые эк�
       // Allow generation if all rows have hardTemplate (no API key needed)
       const allHaveTemplate = rows.every((r) => !!lookupCatalog(r.type)?.hardTemplate);
       if (!useBackend && !hasUserApiKey && !allHaveTemplate) {
-        showToast('❌ Нужен вход в аккаунт или API-ключ', false);
-        return;
+        const allRowsCanUseSeedSpecs = rows.every((r) => hasImportedSeedSpecs(r) || !!lookupCatalog(r.type)?.hardTemplate);
+        if (!allRowsCanUseSeedSpecs) {
+          showToast('❌ Нужен вход в аккаунт или API-ключ', false);
+          return;
+        }
       }
 
       const next = [...rows];
-      const sourceStats = { template: 0, internet: 0, eis: 0, ai: 0, error: 0 };
+      const sourceStats = { template: 0, imported: 0, internet: 0, eis: 0, ai: 0, error: 0 };
       const hasUniversalRows = next.some((row) => isUniversalGoodsType(row.type));
+      const batchSize = next.length >= 240
+        ? 24
+        : next.length >= 160
+          ? 20
+          : next.length >= 100
+            ? 16
+            : next.length >= 60
+              ? 12
+              : next.length >= 30
+                ? 8
+                : Math.max(1, next.length);
+      const totalBatches = Math.max(1, Math.ceil(next.length / batchSize));
 
       if (autopilotEnabled || hasUniversalRows) {
         setInternetSearching(true);
         setEisSearching(true);
       }
+      setGenerationProgress({
+        current: 0,
+        total: next.length,
+        batchSize,
+        batchIndex: next.length > 0 ? 1 : 0,
+        totalBatches,
+      });
       setDocxReady(false);
       try {
         for (let i = 0; i < next.length; i++) {
+          setGenerationProgress({
+            current: i,
+            total: next.length,
+            batchSize,
+            batchIndex: Math.floor(i / batchSize) + 1,
+            totalBatches,
+          });
           next[i] = { ...next[i], status: 'loading', error: '' };
           setRows([...next]);
 
           const currentRow = next[i];
           const g = lookupCatalog(currentRow.type);
+
+          if (hasImportedSeedSpecs(currentRow)) {
+            const baseMeta = normalizeResolvedMeta(currentRow.type, {
+              okpd2_code: currentRow.meta?.okpd2_code || g.okpd2,
+              okpd2_name: currentRow.meta?.okpd2_name || g.okpd2name,
+              ktru_code: currentRow.meta?.ktru_code || g.ktruFixed || '',
+              ...(currentRow.meta || {}),
+              classification_source: currentRow.meta?.classification_source || (currentRow.importInfo?.sourceFormat === 'docx' ? 'docx_import' : 'import'),
+            });
+            const resolvedMeta = await resolveUniversalMeta(currentRow, baseMeta, getImportedSourceContext(currentRow));
+            const enrichedSpecs = await expandSpecsToMinimum(
+              currentRow,
+              adjustSpecsForCommercialContext(currentRow, getImportedSpecs(currentRow)),
+              resolvedMeta,
+            );
+            next[i] = {
+              ...currentRow,
+              status: 'done',
+              specs: enrichedSpecs,
+              meta: normalizeResolvedMeta(currentRow.type, {
+                ...resolvedMeta,
+                classification_source: currentRow.meta?.classification_source || (currentRow.importInfo?.sourceFormat === 'docx' ? 'docx_import' : 'import'),
+              }),
+              benchmark: undefined,
+            };
+            sourceStats.imported += 1;
+            setRows([...next]);
+            if ((i + 1) % batchSize === 0 && i < next.length - 1) {
+              await new Promise((resolve) => window.setTimeout(resolve, 0));
+            }
+            continue;
+          }
 
           const deterministicSpecs = getAstraDeterministicSpecs(currentRow);
           if (deterministicSpecs && deterministicSpecs.length > 0) {
@@ -7786,12 +8202,15 @@ ${hint || '- Используй детальные, проверяемые эк�
             sourceStats.ai += 1;
           } catch (e) {
             const msg = e instanceof Error ? e.message : 'generation_error';
-            // Detect 402 Payment Required — free tier limit reached
-            const is402 = msg.includes('402') || msg.includes('лимит') || msg.includes('Достигнут лимит');
+            const is402 = msg.includes('402')
+              || msg.includes('лимит')
+              || msg.includes('Достигнут лимит')
+              || msg.includes('Пробный период')
+              || msg.includes('подписку Pro');
             if (is402) {
-              showToast('Лимит ТЗ исчерпан. Оформите Pro для безлимитного доступа.', false);
+              showToast('Пробный период завершён. Оформите Pro Business для продолжения работы.', false);
               window.dispatchEvent(new Event('tz:open-pricing'));
-              next[i] = { ...currentRow, status: 'error', error: 'Лимит бесплатных ТЗ исчерпан' };
+              next[i] = { ...currentRow, status: 'error', error: 'Требуется активная подписка Pro Business' };
               sourceStats.error += 1;
               setRows([...next]);
               break; // Stop generating remaining rows
@@ -7800,6 +8219,16 @@ ${hint || '- Используй детальные, проверяемые эк�
             sourceStats.error += 1;
           }
           setRows([...next]);
+          setGenerationProgress({
+            current: i + 1,
+            total: next.length,
+            batchSize,
+            batchIndex: Math.floor(i / batchSize) + 1,
+            totalBatches,
+          });
+          if ((i + 1) % batchSize === 0 && i < next.length - 1) {
+            await new Promise((resolve) => window.setTimeout(resolve, 0));
+          }
         }
 
         const doneRows = next.filter((r) => r.status === 'done');
@@ -7908,7 +8337,7 @@ ${hint || '- Используй детальные, проверяемые эк�
           at: new Date().toISOString(),
           event: eventName,
           ok: doneRows.length > 0 && integrationsOk,
-          note: `rows=${next.length}; done=${doneRows.length}; src=t${sourceStats.template}/i${sourceStats.internet}/e${sourceStats.eis}/a${sourceStats.ai}/err${sourceStats.error}`,
+          note: `rows=${next.length}; done=${doneRows.length}; src=t${sourceStats.template}/d${sourceStats.imported}/i${sourceStats.internet}/e${sourceStats.eis}/a${sourceStats.ai}/err${sourceStats.error}`,
         });
 
         setDocxReady(doneRows.length > 0);
@@ -7930,6 +8359,7 @@ ${hint || '- Используй детальные, проверяемые эк�
           showToast('❌ Не удалось сформировать ТЗ', false);
         }
       } finally {
+        setGenerationProgress(null);
         if (autopilotEnabled || hasUniversalRows) {
           setInternetSearching(false);
           setEisSearching(false);
@@ -7941,19 +8371,110 @@ ${hint || '- Используй детальные, проверяемые эк�
   useEffect(() => {
     const runAutopilot = () => {
       if (mutation.isPending) return;
+      if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для автодоводки и публикации.')) return;
       mutation.mutate({ forceAutopilot: true, trigger: 'autopilot_button' });
     };
     window.addEventListener('tz:autopilot:run', runAutopilot as EventListener);
     return () => window.removeEventListener('tz:autopilot:run', runAutopilot as EventListener);
-  }, [mutation.isPending, mutation.mutate]);
+  }, [ensurePaidFeatureAccess, mutation.isPending, mutation.mutate]);
 
   const addRow = () => {
     const nextType = catalogMode === 'general' ? 'otherGoods' : 'pc';
+    setSplitSourceRows(null);
+    setActiveSplitGroupKey(null);
     setRows((prev) => [...prev, { id: Date.now(), type: nextType, model: '', licenseType: '', term: '', licenseTypeAuto: false, termAuto: false, qty: 1, status: 'idle' }]);
   };
 
+  const replaceWorkspaceRows = useCallback((nextRows: GoodsRow[]) => {
+    setRows(nextRows);
+    setCurrentDocId(null);
+    setExpandedRowMetaId(null);
+    setEditingRowId(null);
+    setFocusedRowId(null);
+    setTypeSuggestions(null);
+    setRowActionState(null);
+    setAutoDetectedRow(null);
+    const hasServices = nextRows.some((row) => isServiceCatalogType(row.type) || row.type === 'otherService');
+    setCatalogMode(hasServices ? 'general' : nextRows.some((row) => row.type === 'otherGoods') ? 'general' : 'it');
+    runComplianceGate(nextRows);
+    setDocxReady(nextRows.some((row) => row.status === 'done' && !!row.specs?.length));
+  }, [runComplianceGate]);
+
+  const openSplitGroup = useCallback((groupKey: ProcurementPurposeKey) => {
+    const sourceRows = splitSourceRows?.length ? splitSourceRows : rows;
+    const groups = buildProcurementSplitGroups(sourceRows);
+    const target = groups.find((group) => group.key === groupKey);
+    if (!target) {
+      showToast('❌ Группа для отдельного ТЗ не найдена', false);
+      return;
+    }
+    if (!splitSourceRows?.length) {
+      setSplitSourceRows(cloneGoodsRows(sourceRows));
+    }
+    setActiveSplitGroupKey(groupKey);
+    const base = Date.now();
+    replaceWorkspaceRows(cloneGoodsRows(target.rows).map((row, idx) => ({ ...row, id: base + idx })));
+    showToast(`✅ Открыто отдельное ТЗ: ${target.title}`, true);
+  }, [replaceWorkspaceRows, rows, showToast, splitSourceRows]);
+
+  const restoreSplitGroupsSource = useCallback(() => {
+    if (!splitSourceRows?.length) return;
+    const base = Date.now();
+    replaceWorkspaceRows(cloneGoodsRows(splitSourceRows).map((row, idx) => ({ ...row, id: base + idx })));
+    setSplitSourceRows(null);
+    setActiveSplitGroupKey(null);
+    showToast('✅ Восстановлен полный список позиций из исходного файла', true);
+  }, [replaceWorkspaceRows, showToast, splitSourceRows]);
+
+  const saveSplitGroupsLocally = useCallback(async () => {
+    if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для сохранения отдельных ТЗ.')) {
+      return;
+    }
+    const sourceRows = splitSourceRows?.length ? splitSourceRows : rows;
+    const groups = buildProcurementSplitGroups(sourceRows);
+    if (groups.length < 2) {
+      showToast('ℹ️ Для разбиения нужен хотя бы один файл с несколькими группами позиций', false);
+      return;
+    }
+    setSplitSaving(true);
+    try {
+      for (const group of groups) {
+        await saveTZDocumentLocal({
+          title: group.title,
+          law_mode: lawMode,
+          rows: group.rows.map((row) => ({
+            type: row.type,
+            model: row.model,
+            licenseType: row.licenseType,
+            term: row.term,
+            qty: row.qty,
+            status: row.status,
+            error: row.error || '',
+            specs: row.specs ?? [],
+            meta: row.meta ?? {},
+            benchmark: row.benchmark ?? null,
+            import_info: row.importInfo ?? null,
+            split_group: group.key,
+          })),
+          compliance_score: null,
+          readiness: null,
+          publication_dossier: null,
+        });
+      }
+      void loadHistory();
+      showToast(`✅ Разбиение сохранено: ${groups.length} отдельных ТЗ`, true);
+    } catch (error) {
+      showToast(`❌ Не удалось сохранить разбивку: ${error instanceof Error ? error.message : 'ошибка'}`, false);
+    } finally {
+      setSplitSaving(false);
+    }
+  }, [ensurePaidFeatureAccess, lawMode, loadHistory, rows, showToast, splitSourceRows]);
+
   // ── Подтянуть реальные характеристики товара ────────────────────────────────
   const enrichFromInternet = useCallback(async () => {
+    if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для поиска характеристик в интернете.')) {
+      return;
+    }
     const filledRows = rows.filter((r) => r.model.trim().length > 0);
     if (filledRows.length === 0) {
       alert('Заполните поле «Модель / описание» хотя бы в одной строке');
@@ -8003,10 +8524,13 @@ ${hint || '- Используй детальные, проверяемые эк�
         false
       );
     }
-  }, [useBackend, rows, apiKey, fetchInternetCandidateForRow, runComplianceGate, showToast, scrollToPreview, enterpriseSettings.benchmarking]);
+  }, [apiKey, enterpriseSettings.benchmarking, ensurePaidFeatureAccess, fetchInternetCandidateForRow, rows, runComplianceGate, scrollToPreview, showToast, useBackend]);
 
   // ── Найти ТЗ в ЕИС (zakupki.gov.ru) ─────────────────────────────────────────
   const searchZakupki = useCallback(async () => {
+    if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для поиска ТЗ в ЕИС.')) {
+      return;
+    }
     const filledRows = rows.filter((r) => r.model.trim().length > 0);
     if (filledRows.length === 0) {
       alert('Заполните поле «Модель / описание» хотя бы в одной строке');
@@ -8058,8 +8582,11 @@ ${hint || '- Используй детальные, проверяемые эк�
         false
       );
     }
-  }, [useBackend, rows, apiKey, fetchEisCandidateForRow, runComplianceGate, showToast, scrollToPreview, enterpriseSettings.benchmarking]);
+  }, [apiKey, enterpriseSettings.benchmarking, ensurePaidFeatureAccess, fetchEisCandidateForRow, rows, runComplianceGate, scrollToPreview, showToast, useBackend]);
   const refreshRowFromSource = useCallback(async (rowId: number, source: 'internet' | 'eis') => {
+    if (!ensurePaidFeatureAccess(`Пробный период завершён. Оформите Pro Business для ${source === 'eis' ? 'поиска в ЕИС' : 'подтягивания источников'}.`)) {
+      return;
+    }
     const currentRow = rows.find((row) => row.id === rowId);
     if (!currentRow) return;
     if (!currentRow.model.trim()) {
@@ -8113,6 +8640,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     }
   }, [
     rows,
+    ensurePaidFeatureAccess,
     useBackend,
     apiKey,
     fetchEisCandidateForRow,
@@ -8204,6 +8732,9 @@ ${hint || '- Используй детальные, проверяемые эк�
     resolveUniversalMeta,
   ]);
   const refreshRowClassification = useCallback(async (rowId: number) => {
+    if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для уточнения классификации.')) {
+      return;
+    }
     const currentRow = rows.find((row) => row.id === rowId);
     if (!currentRow) return;
     if (!currentRow.model.trim()) {
@@ -8250,8 +8781,11 @@ ${hint || '- Используй детальные, проверяемые эк�
     } finally {
       setRowActionState(null);
     }
-  }, [assistClassificationForRow, canUseAiAssist, focusRow, rows, runComplianceGate, showToast]);
+  }, [assistClassificationForRow, canUseAiAssist, ensurePaidFeatureAccess, focusRow, rows, runComplianceGate, showToast]);
   const refreshClassificationBulk = useCallback(async (mode: 'missing' | 'review' | 'all' = 'all') => {
+    if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для пакетной классификации.')) {
+      return;
+    }
     const sourceRows = [...rows];
     const targets = sourceRows.filter((row) => {
       if (!row.model.trim()) return false;
@@ -8312,8 +8846,11 @@ ${hint || '- Используй детальные, проверяемые эк�
       return;
     }
     showToast(`✅ Классификация обновлена: ${updated}; закрыто без ОКПД2 — ${filledOkpd2}; снято ручных проверок — ${clearedReview}`, true);
-  }, [assistClassificationForRow, canUseAiAssist, rows, runComplianceGate, showToast]);
+  }, [assistClassificationForRow, canUseAiAssist, ensurePaidFeatureAccess, rows, runComplianceGate, showToast]);
   const runPublicationAutopilot = useCallback(async () => {
+    if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для publication autopilot.')) {
+      return;
+    }
     const sourceRows = [...rows];
     if (sourceRows.length === 0) {
       showToast('ℹ️ Нет строк для доведения до публикации', true);
@@ -8441,6 +8978,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     appendAutomationLog,
     assistClassificationForRow,
     canUseAiAssist,
+    ensurePaidFeatureAccess,
     enterpriseSettings.benchmarking,
     rows,
     runComplianceGate,
@@ -8598,6 +9136,9 @@ ${hint || '- Используй детальные, проверяемые эк�
   }, [applyBenchmarkPatch, applyLegalReadinessPatch, applyServiceReadinessPatch, focusRow, refreshRowClassification, refreshRowFromSource]);
 
   const exportDocx = async () => {
+    if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для экспорта DOCX.')) {
+      return;
+    }
     if (exportsBlockedByReadiness) {
       const preview = buildReadinessIssuePreview(exportBlockingIssues);
       showToast(`❌ Экспорт DOCX заблокирован: ${preview}`, false);
@@ -8627,7 +9168,10 @@ ${hint || '- Используй детальные, проверяемые эк�
     }
   };
 
-  const exportPdf = () => {
+  const exportPdf = async () => {
+    if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для экспорта PDF.')) {
+      return;
+    }
     if (exportsBlockedByReadiness) {
       const preview = buildReadinessIssuePreview(exportBlockingIssues);
       showToast(`❌ Экспорт PDF заблокирован: ${preview}`, false);
@@ -8653,6 +9197,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       return;
     }
 
+    const { jsPDF } = await import('jspdf');
     const docSections = buildDocumentSectionBundle(done, lawMode, readinessGate, enterpriseSettings.benchmarking);
     const doc = new jsPDF({ unit: 'pt', format: 'a4', putOnlyUsedFonts: true });
     const margin = 42;
@@ -9098,18 +9643,25 @@ ${hint || '- Используй детальные, проверяемые эк�
             {publicationStatusLabel}
           </span>
           <div className="workspace-progress-main">
-            <strong>{readyRowsCount}/{draftedRowsCount || rows.length} позиций готовы к публикационному контуру</strong>
-            <span>{publicationLeadText}</span>
+            <strong>
+              {mutation.isPending && generationProgress
+                ? `Генерация ${generationProgress.current}/${generationProgress.total} · batch ${generationProgress.batchIndex}/${generationProgress.totalBatches}`
+                : `${readyRowsCount}/${draftedRowsCount || rows.length} позиций готовы к публикационному контуру`}
+            </strong>
+            <span>{mutation.isPending && generationProgress ? `Пакетная обработка включена, размер батча: ${generationProgress.batchSize}.` : publicationLeadText}</span>
           </div>
         </div>
         <div className="workspace-progress-actions">
           <span className="workspace-mini-chip is-block">Block: {readinessGate.blockers.length}</span>
           <span className="workspace-mini-chip is-warn">Warn: {readinessGate.warnings.length}</span>
+          {generationProgress && (
+            <span className="workspace-mini-chip">Batch: {generationProgress.batchIndex}/{generationProgress.totalBatches}</span>
+          )}
           {publicationAutopilotActions.totalRows > 0 && (
             <button
               type="button"
               onClick={() => void runPublicationAutopilot()}
-              disabled={publicationAutopilotRunning || !!rowActionState}
+              disabled={paymentRequired || publicationAutopilotRunning || !!rowActionState}
               className="workspace-progress-primary"
             >
               {publicationAutopilotRunning ? '⏳ Автодоводка...' : `Автодовести до публикации (${publicationAutopilotActions.totalRows})`}
@@ -9166,7 +9718,7 @@ ${hint || '- Используй детальные, проверяемые эк�
           <input
             ref={importFileInputRef}
             type="file"
-            accept=".csv,.tsv,.txt,.xlsx"
+            accept=".csv,.tsv,.txt,.xlsx,.docx"
             style={{ display: 'none' }}
             onChange={(event) => {
               const file = event.target.files?.[0];
@@ -9176,30 +9728,101 @@ ${hint || '- Используй детальные, проверяемые эк�
           />
           <button
             type="button"
-            disabled={!canGenerate || mutation.isPending || !canUseAiAssist || publicationAutopilotRunning}
-            onClick={() => canUseAiAssist ? mutation.mutate({ trigger: 'manual' }) : undefined}
-            style={{ background: canGenerate && !mutation.isPending && canUseAiAssist && !publicationAutopilotRunning ? '#1F5C8B' : undefined, color: canGenerate && !mutation.isPending && canUseAiAssist && !publicationAutopilotRunning ? '#fff' : undefined }}
-            title={!canUseAiAssist ? 'Требуется доступ к backend/AI для генерации ТЗ' : undefined}
+            disabled={paymentRequired || !canGenerate || mutation.isPending || (!canUseAiAssist && !canRunGenerationWithoutAi) || publicationAutopilotRunning}
+            onClick={() => (canUseAiAssist || canRunGenerationWithoutAi) ? mutation.mutate({ trigger: 'manual' }) : undefined}
+            style={{ background: !paymentRequired && canGenerate && !mutation.isPending && (canUseAiAssist || canRunGenerationWithoutAi) && !publicationAutopilotRunning ? '#1F5C8B' : undefined, color: !paymentRequired && canGenerate && !mutation.isPending && (canUseAiAssist || canRunGenerationWithoutAi) && !publicationAutopilotRunning ? '#fff' : undefined }}
+            title={paymentRequired ? 'Trial завершён: оформите Pro Business' : !canUseAiAssist && !canRunGenerationWithoutAi ? 'Требуется доступ к backend/AI для генерации ТЗ' : undefined}
           >
-            {mutation.isPending ? '⏳ Генерация...' : publicationAutopilotRunning ? '⏳ Publication autopilot...' : !canUseAiAssist ? '🔐 Нет доступа к AI' : '🚀 Сгенерировать ТЗ'}
+            {mutation.isPending && generationProgress
+              ? `⏳ Генерация ${generationProgress.current}/${generationProgress.total}`
+              : mutation.isPending
+                ? '⏳ Генерация...'
+                : publicationAutopilotRunning
+                  ? '⏳ Publication autopilot...'
+                  : paymentRequired
+                    ? '🔒 Trial завершён'
+                  : !canUseAiAssist && !canRunGenerationWithoutAi
+                    ? '🔐 Нет доступа к AI'
+                    : !canUseAiAssist && canRunGenerationWithoutAi
+                      ? '📄 Сгенерировать по импортированным данным'
+                    : '🚀 Сгенерировать ТЗ'}
           </button>
           <button
             type="button"
             onClick={() => void enrichFromInternet()}
-            disabled={internetSearching || !canUseAiAssist || publicationAutopilotRunning}
-            title={!canUseAiAssist ? 'Требуется доступ к backend/AI для поиска' : 'ИИ ищет реальные технические характеристики именно этой модели и заполняет ТЗ'}
+            disabled={paymentRequired || internetSearching || !canUseAiAssist || publicationAutopilotRunning}
+            title={paymentRequired ? 'Trial завершён: оформите Pro Business' : !canUseAiAssist ? 'Требуется доступ к backend/AI для поиска' : 'ИИ ищет реальные технические характеристики именно этой модели и заполняет ТЗ'}
           >
-            {internetSearching ? '⏳ Ищу характеристики...' : '🌐 Подтянуть из интернета'}
+            {internetSearching ? '⏳ Ищу характеристики...' : paymentRequired ? '🔒 Интернет-поиск закрыт' : '🌐 Подтянуть из интернета'}
           </button>
           <button
             type="button"
             onClick={() => void searchZakupki()}
-            disabled={eisSearching || !canUseAiAssist || publicationAutopilotRunning}
-            title={!canUseAiAssist ? 'Требуется доступ к backend/AI для поиска в ЕИС и реестрах' : 'Ищет похожие закупки и характеристики в ЕИС и реестровых источниках'}
+            disabled={paymentRequired || eisSearching || !canUseAiAssist || publicationAutopilotRunning}
+            title={paymentRequired ? 'Trial завершён: оформите Pro Business' : !canUseAiAssist ? 'Требуется доступ к backend/AI для поиска в ЕИС и реестрах' : 'Ищет похожие закупки и характеристики в ЕИС и реестровых источниках'}
           >
-            {eisSearching ? '⏳ Ищу в ЕИС...' : '🏛️ Найти ТЗ в ЕИС'}
+            {eisSearching ? '⏳ Ищу в ЕИС...' : paymentRequired ? '🔒 ЕИС-поиск закрыт' : '🏛️ Найти ТЗ в ЕИС'}
           </button>
         </div>
+        {splitFeatureVisible && (
+          <div className="workspace-split-planner">
+            <div className="workspace-side-head workspace-side-head--split">
+              <div>
+                <div className="micro-label">Split</div>
+                <strong>Разбивка на отдельные ТЗ по назначению</strong>
+              </div>
+              <span className="workspace-side-meta">{splitGroups.length} групп</span>
+            </div>
+            <div className="workspace-inline-note">
+              Файл содержит разнотипные позиции. Можно открыть отдельное ТЗ только для нужной группы: сеть, комплектующие, периферия, услуги и т.д.
+            </div>
+            <div className="workspace-chip-row workspace-chip-row--dense">
+              {splitGroups.map((group) => (
+                <span
+                  key={group.key}
+                  className={`workspace-mini-chip ${activeSplitGroupKey === group.key ? 'is-ready' : ''}`}
+                >
+                  {group.label}: {group.count}
+                </span>
+              ))}
+            </div>
+            <div className="workspace-split-grid">
+              {splitGroups.map((group) => (
+                <div
+                  key={group.key}
+                  className={`workspace-split-card ${activeSplitGroupKey === group.key ? 'is-active' : ''}`}
+                >
+                  <div className="workspace-split-card-head">
+                    <strong>{group.title}</strong>
+                    <span>{group.count} поз.</span>
+                  </div>
+                  <div className="workspace-split-card-copy">{group.preview || 'Без явного примера позиции'}</div>
+                  <button
+                    type="button"
+                    className="row-detail-toggle"
+                    onClick={() => openSplitGroup(group.key)}
+                  >
+                    {activeSplitGroupKey === group.key ? 'Открыто в работе' : 'Открыть как отдельное ТЗ'}
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="workspace-action-grid workspace-action-grid--toolbar workspace-action-grid--split">
+              <button
+                type="button"
+                onClick={() => void saveSplitGroupsLocally()}
+                disabled={paymentRequired || splitSaving}
+              >
+                {splitSaving ? '⏳ Сохраняю группы...' : `🗂️ Сохранить ${splitGroups.length} отдельных ТЗ`}
+              </button>
+              {splitSourceRows?.length ? (
+                <button type="button" onClick={restoreSplitGroupsSource}>
+                  ↩️ Вернуть полный список позиций
+                </button>
+              ) : null}
+            </div>
+          </div>
+        )}
         <div className="workspace-side-note">
           Сначала задайте позиции, затем при необходимости доберите внешний источник или классификацию. Правая колонка оставлена только для готовности к публикации и выгрузки.
         </div>
@@ -9215,7 +9838,7 @@ ${hint || '- Используй детальные, проверяемые эк�
               Доступ и лимиты
             </span>
             <span className="workspace-auth-toggle-meta">
-              {backendUser ? (backendUser.role === 'pro' || backendUser.role === 'admin' ? 'Pro' : backendUser.trial_active ? 'Trial' : 'Free') : 'Требуется вход'}
+              {backendUser ? (backendUser.role === 'pro' || backendUser.role === 'admin' ? 'Pro' : backendUser.payment_required ? 'Оплата нужна' : backendUser.trial_active ? 'Trial' : 'Trial') : 'Требуется вход'}
             </span>
             <span className={`workspace-auth-toggle-chevron ${authPanelOpen ? 'open' : ''}`} aria-hidden="true">▾</span>
           </button>
@@ -9228,11 +9851,19 @@ ${hint || '- Используй детальные, проверяемые эк�
                     ✅ {backendUser.email}
                   </span>
                   <span style={{ color: '#4ADE80', fontSize: 12, fontWeight: 600 }}>
-                    {backendUser.role === 'admin' ? 'Безлимит (Admin)' : backendUser.role === 'pro' ? '♾️ Pro — безлимитные ТЗ' : backendUser.trial_active ? `⚡ Trial (${backendUser.trial_days_left} дн.) — безлимит` : `Free — ${backendUser.tz_count ?? 0}/${backendUser.tz_limit ?? 3} ТЗ в этом месяце`}
+                    {backendUser.role === 'admin'
+                      ? 'Безлимит (Admin)'
+                      : backendUser.role === 'pro'
+                        ? '♾️ Pro Business — безлимитные ТЗ'
+                        : backendUser.payment_required
+                          ? '⛔ Trial завершён — требуется оплата'
+                          : backendUser.trial_active
+                            ? `⚡ Trial (${backendUser.trial_days_left} дн.) — полный доступ`
+                            : 'Trial'}
                   </span>
-                  {backendUser.role === 'free' && !backendUser.trial_active && (
+                  {backendUser.role === 'free' && backendUser.payment_required && (
                     <span style={{ marginLeft: 'auto', fontSize: 12, color: '#FBBF24' }}>
-                      Хотите больше? <strong style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { const evt = new CustomEvent('tz:open-pricing'); window.dispatchEvent(evt); }}>Оформите Pro</strong>
+                      Доступ закрыт? <strong style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => { const evt = new CustomEvent('tz:open-pricing'); window.dispatchEvent(evt); }}>Оформите Pro Business</strong>
                     </span>
                   )}
                 </div>
@@ -9243,7 +9874,7 @@ ${hint || '- Используй детальные, проверяемые эк�
                   </div>
                   <div style={{ fontSize: 13, color: '#94A3B8', marginBottom: 12 }}>
                     Войдите или зарегистрируйтесь (кнопка «Войти» вверху справа).<br/>
-                    Новым пользователям — <strong style={{ color: '#FBBF24' }}>7 дней бесплатного Pro</strong>.
+                    Новым пользователям — <strong style={{ color: '#FBBF24' }}>14 дней полного Pro-trial</strong>.
                   </div>
                 </div>
               )}
@@ -9300,85 +9931,91 @@ ${hint || '- Используй детальные, проверяемые эк�
       </div>
 
       <aside className="workspace-sidecar">
-        <WorkspaceSidePanels
-          publicationStatusTone={publicationStatusTone}
-          publicationStatusLabel={publicationStatusLabel}
-          publicationLeadText={publicationLeadText}
-          readinessGate={readinessGate}
-          readyRowsCount={readyRowsCount}
-          loggedIn={isLoggedIn()}
-          historyOpen={historyOpen}
-          historyLoading={historyLoading}
-          historyItems={historyItems}
-          currentDocId={currentDocId}
-          docxReady={docxReady}
-          exportReadinessTitle={exportReadinessTitle}
-          exportsBlockedByReadiness={exportsBlockedByReadiness}
-          onExportPackage={() => exportPackage()}
-          onExportDocx={() => { void exportDocx(); }}
-          onExportPdf={exportPdf}
-          onSaveTZ={() => { void saveTZ(); }}
-          onToggleHistory={() => {
-            setHistoryOpen((v) => !v);
-            if (!historyOpen) void loadHistory();
-          }}
-          onCloseHistory={() => setHistoryOpen(false)}
-          onLoadHistoryItem={(docId) => { void loadTZ(docId); }}
-          onDeleteHistoryItem={(docId) => { void deleteTZ(docId); }}
-        />
+        <Suspense fallback={<div className="workspace-inline-note">Загружаю панель публикации…</div>}>
+          <WorkspaceSidePanels
+            publicationStatusTone={publicationStatusTone}
+            publicationStatusLabel={publicationStatusLabel}
+            publicationLeadText={publicationLeadText}
+            readinessGate={readinessGate}
+            readyRowsCount={readyRowsCount}
+            loggedIn={isLoggedIn()}
+            historyOpen={historyOpen}
+            historyLoading={historyLoading}
+            historyItems={historyItems}
+            currentDocId={currentDocId}
+            docxReady={docxReady}
+            exportReadinessTitle={exportReadinessTitle}
+            exportsBlockedByReadiness={exportsBlockedByReadiness}
+            onExportPackage={() => exportPackage()}
+            onExportDocx={() => { void exportDocx(); }}
+            onExportPdf={exportPdf}
+            onSaveTZ={() => { void saveTZ(); }}
+            onToggleHistory={() => {
+              setHistoryOpen((v) => !v);
+              if (!historyOpen) void loadHistory();
+            }}
+            onCloseHistory={() => setHistoryOpen(false)}
+            onLoadHistoryItem={(docId) => { void loadTZ(docId); }}
+            onDeleteHistoryItem={(docId) => { void deleteTZ(docId); }}
+          />
+        </Suspense>
       </aside>
       </div>
 
-      <WorkspaceReviewSections
-        showPublicationControl={liveLegalSummarySourceRows.length > 0}
-        publicationStatusTone={publicationStatusTone}
-        publicationStatusLabel={publicationStatusLabel}
-        readinessGate={readinessGate}
-        publicationAutopilotActions={publicationAutopilotActions}
-        publicationAutopilotRunning={publicationAutopilotRunning}
-        rowActionBusy={!!rowActionState}
-        readinessAutofixActions={readinessAutofixActions}
-        legalBulkActions={legalBulkActions}
-        classificationBulkActions={classificationBulkActions}
-        benchmarkBulkActions={benchmarkBulkActions}
-        serviceBulkActions={serviceBulkActions}
-        canUseAiAssist={canUseAiAssist}
-        onRunPublicationAutopilot={() => void runPublicationAutopilot()}
-        onApplyReadinessSafeAutofix={applyReadinessSafeAutofix}
-        onApplyLegalReadinessPatchBulk={applyLegalReadinessPatchBulk}
-        onRefreshClassificationBulk={(mode) => { void refreshClassificationBulk(mode); }}
-        onApplyBenchmarkPatchBulk={applyBenchmarkPatchBulk}
-        onApplyServiceReadinessPatchBulk={applyServiceReadinessPatchBulk}
-        onHandleReadinessIssueAction={handleReadinessIssueAction}
-        complianceReport={complianceReport}
-        evidenceRows={liveLegalSummaryRows}
-        evidenceSummaryText={buildLegalSummaryText(liveLegalSummarySourceRows)}
-        showBenchmarking={enterpriseSettings.benchmarking}
-        benchmarkSummary={liveBenchmarkGate}
-        benchmarkRows={liveBenchmarkPanelRows}
-        onApplyBenchmarkPatch={applyBenchmarkPatch}
-        readyRowsCount={readyRowsCount}
-        previewRef={previewRef}
-        previewContent={previewDocSections ? (
-          <WorkspacePreview
-            doneRows={previewDoneRows}
-            docSections={previewDocSections}
-            publicationSummaryText={previewPublicationSummaryText}
-            lookupCatalog={lookupCatalog}
-            getResolvedCommercialContext={getResolvedCommercialContext}
-            getCommercialValue={getCommercialValue}
-            getRowQtyUnitShort={getRowQtyUnitShort}
-            getResolvedOkpd2Code={getResolvedOkpd2Code}
-            getUnifiedNacRegime={getUnifiedNacRegime}
-            getPublicationDossierRowStatusLabel={getPublicationDossierRowStatusLabel}
-            buildAppendixPassportRows={buildAppendixPassportRows}
-            buildBenchmarkAppendixRows={buildBenchmarkAppendixRows}
-            onUpdateSpec={updateSpec}
-            onDeleteSpec={deleteSpec}
-            onAddSpec={(rowId) => addSpec(rowId)}
-          />
-        ) : null}
-      />
+      <Suspense fallback={<div className="workspace-inline-note">Загружаю контроль публикации…</div>}>
+        <WorkspaceReviewSections
+          showPublicationControl={liveLegalSummarySourceRows.length > 0}
+          publicationStatusTone={publicationStatusTone}
+          publicationStatusLabel={publicationStatusLabel}
+          readinessGate={readinessGate}
+          publicationAutopilotActions={publicationAutopilotActions}
+          publicationAutopilotRunning={publicationAutopilotRunning}
+          rowActionBusy={!!rowActionState}
+          readinessAutofixActions={readinessAutofixActions}
+          legalBulkActions={legalBulkActions}
+          classificationBulkActions={classificationBulkActions}
+          benchmarkBulkActions={benchmarkBulkActions}
+          serviceBulkActions={serviceBulkActions}
+          canUseAiAssist={canUseAiAssist}
+          onRunPublicationAutopilot={() => void runPublicationAutopilot()}
+          onApplyReadinessSafeAutofix={applyReadinessSafeAutofix}
+          onApplyLegalReadinessPatchBulk={applyLegalReadinessPatchBulk}
+          onRefreshClassificationBulk={(mode) => { void refreshClassificationBulk(mode); }}
+          onApplyBenchmarkPatchBulk={applyBenchmarkPatchBulk}
+          onApplyServiceReadinessPatchBulk={applyServiceReadinessPatchBulk}
+          onHandleReadinessIssueAction={handleReadinessIssueAction}
+          complianceReport={complianceReport}
+          evidenceRows={liveLegalSummaryRows}
+          evidenceSummaryText={buildLegalSummaryText(liveLegalSummarySourceRows)}
+          showBenchmarking={enterpriseSettings.benchmarking}
+          benchmarkSummary={liveBenchmarkGate}
+          benchmarkRows={liveBenchmarkPanelRows}
+          onApplyBenchmarkPatch={applyBenchmarkPatch}
+          readyRowsCount={readyRowsCount}
+          previewRef={previewRef}
+          previewContent={previewDocSections ? (
+            <Suspense fallback={<div className="workspace-inline-note">Готовлю предпросмотр ТЗ…</div>}>
+              <WorkspacePreview
+                doneRows={previewDoneRows}
+                docSections={previewDocSections}
+                publicationSummaryText={previewPublicationSummaryText}
+                lookupCatalog={lookupCatalog}
+                getResolvedCommercialContext={getResolvedCommercialContext}
+                getCommercialValue={getCommercialValue}
+                getRowQtyUnitShort={getRowQtyUnitShort}
+                getResolvedOkpd2Code={getResolvedOkpd2Code}
+                getUnifiedNacRegime={getUnifiedNacRegime}
+                getPublicationDossierRowStatusLabel={getPublicationDossierRowStatusLabel}
+                buildAppendixPassportRows={buildAppendixPassportRows}
+                buildBenchmarkAppendixRows={buildBenchmarkAppendixRows}
+                onUpdateSpec={updateSpec}
+                onDeleteSpec={deleteSpec}
+                onAddSpec={(rowId) => addSpec(rowId)}
+              />
+            </Suspense>
+          ) : null}
+        />
+      </Suspense>
 
       {mutation.isError && (
         <div className="warn" style={{ marginTop: 8 }}>

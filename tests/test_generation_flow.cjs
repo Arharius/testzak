@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 
 const componentDir = path.join(__dirname, '..', 'frontend-react', 'src', 'components');
+const utilsDir = path.join(__dirname, '..', 'frontend-react', 'src', 'utils');
+const libDir = path.join(__dirname, '..', 'frontend-react', 'src', 'lib');
 const workspace = [
   path.join(componentDir, 'Workspace.tsx'),
   path.join(componentDir, 'WorkspacePanels.tsx'),
@@ -17,6 +19,8 @@ const workspace = [
   path.join(componentDir, 'WorkspaceTypeSuggestions.tsx'),
   path.join(componentDir, 'workspace-panels.types.ts'),
   path.join(componentDir, 'workspace-publication.ts'),
+  path.join(utilsDir, 'row-import.ts'),
+  path.join(libDir, 'backendApi.ts'),
 ].map((filePath) => fs.readFileSync(filePath, 'utf-8')).join('\n');
 
 const checks = [
@@ -89,6 +93,47 @@ const checks = [
       && workspace.includes('Паспорт публикации')
       && workspace.includes('publication_dossier: publicationDossier')
       && workspace.includes('publicationDossier,'),
+  },
+  {
+    name: 'Import supports DOCX tables, appendices and enumerated license lists',
+    ok: workspace.includes("accept=\".csv,.tsv,.txt,.xlsx,.docx\"")
+      && workspace.includes("lowerName.endsWith('.docx')")
+      && workspace.includes('word/document.xml')
+      && workspace.includes('parseDocxAppendixRows')
+      && workspace.includes('parseDocxEnumeratedRows')
+      && workspace.includes('нумерованные перечни лицензий'),
+  },
+  {
+    name: 'DOCX import carries confidence, source context and seed specs into rows',
+    ok: workspace.includes('type ImportedRowImportInfo = {')
+      && workspace.includes('confidenceLabel')
+      && workspace.includes('sourceContextText')
+      && workspace.includes('specs?: SpecItem[];')
+      && workspace.includes('Импорт: ')
+      && workspace.includes('Уверенность импорта:'),
+  },
+  {
+    name: 'Generation uses imported seed specs and batch progress for large files',
+    ok: workspace.includes('const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);')
+      && workspace.includes('if (hasImportedSeedSpecs(currentRow)) {')
+      && workspace.includes('sourceStats.imported += 1;')
+      && workspace.includes('Пакетная обработка включена, размер батча')
+      && workspace.includes('Генерация ${generationProgress.current}/${generationProgress.total}'),
+  },
+  {
+    name: 'Imported diagnostics are persisted through save and load history',
+    ok: workspace.includes('import_info: r.importInfo ?? null')
+      && workspace.includes("importInfo: (r as { import_info?: ImportedRowImportInfo | null }).import_info ?? undefined")
+      && workspace.includes('import_info?: unknown | null;'),
+  },
+  {
+    name: 'Workspace can split one import into separate TZ drafts by purpose',
+    ok: workspace.includes('type ProcurementPurposeKey =')
+      && workspace.includes('function buildProcurementSplitGroups')
+      && workspace.includes('const openSplitGroup = useCallback')
+      && workspace.includes('const restoreSplitGroupsSource = useCallback')
+      && workspace.includes('const saveSplitGroupsLocally = useCallback')
+      && workspace.includes('Разбивка на отдельные ТЗ по назначению'),
   },
 ];
 

@@ -34,7 +34,9 @@ def _safe_int(value: str, default: int) -> int:
     except Exception:
         return default
 
-FREE_TZ_LIMIT = _safe_int(os.getenv("FREE_TZ_LIMIT", "3"), 3)
+FREE_TZ_LIMIT = max(0, _safe_int(os.getenv("FREE_TZ_LIMIT", "0"), 0))
+TRIAL_DAYS = max(0, _safe_int(os.getenv("TRIAL_DAYS", "14"), 14))
+POST_TRIAL_TZ_LIMIT = max(0, _safe_int(os.getenv("POST_TRIAL_TZ_LIMIT", str(FREE_TZ_LIMIT)), FREE_TZ_LIMIT))
 
 def _csv_emails(value: str) -> list[str]:
     return [s.strip().lower() for s in str(value or "").split(",") if s.strip()]
@@ -70,6 +72,25 @@ def trial_days_left(user: User) -> int:
     return max(0, delta.days + (1 if delta.seconds > 0 else 0))
 
 
+def is_payment_required(user: User) -> bool:
+    """Return True when user must purchase Pro to continue working."""
+    if user.role in {"admin", "pro"}:
+        return False
+    return not is_trial_active(user)
+
+
+def payment_required_message(user: User) -> str:
+    """Human-readable payment gate reason."""
+    if user.role in {"admin", "pro"}:
+        return ""
+    if user.trial_ends_at:
+        return (
+            f"Пробный период {TRIAL_DAYS} дней завершён. "
+            "Оформите подписку Pro для продолжения работы."
+        )
+    return "Требуется активная подписка Pro для продолжения работы."
+
+
 def sync_user_entitlements(user: User) -> bool:
     """Bring DB user role/limits in line with env-configured entitlements."""
     changed = False
@@ -93,8 +114,8 @@ def sync_user_entitlements(user: User) -> bool:
                 user.tz_limit = -1
                 changed = True
         else:
-            # Trial expired or no trial → standard free limit
-            desired_limit = max(1, FREE_TZ_LIMIT)
+            # Trial expired or absent → hard stop by default, unless explicitly overridden.
+            desired_limit = POST_TRIAL_TZ_LIMIT
             if user.tz_limit != desired_limit:
                 user.tz_limit = desired_limit
                 changed = True
@@ -155,16 +176,13 @@ def verify_magic_token(token: str, db) -> str | None:
     db.commit()
     return mt.email
 
-TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
-
-
 def get_or_create_user(email: str, db) -> User:
     email = email.lower().strip()
     user = db.query(User).filter_by(email=email).first()
     if not user:
         role = "admin" if is_admin_email(email) else "free"
         trial_end = None
-        effective_limit = max(1, FREE_TZ_LIMIT)
+        effective_limit = POST_TRIAL_TZ_LIMIT
         if role == "admin":
             effective_limit = -1
         elif TRIAL_DAYS > 0:

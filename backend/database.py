@@ -19,11 +19,11 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     username = Column(String, unique=True, nullable=True, index=True)  # for login/password auth
     password_hash = Column(String, nullable=True)  # PBKDF2-SHA256 hash
-    role = Column(String, default="free")  # free | pro | admin
+    role = Column(String, default="free")  # free (trial / payment required) | pro | admin
     tz_count = Column(Integer, default=0)
-    tz_limit = Column(Integer, default=3)  # free = 3/month, pro/admin = -1 (unlimited)
+    tz_limit = Column(Integer, default=0)  # post-trial default = 0, pro/admin = -1 (unlimited)
     tz_month_start = Column(DateTime, nullable=True)  # track monthly reset
-    trial_ends_at = Column(DateTime, nullable=True)  # 7-day PRO trial end
+    trial_ends_at = Column(DateTime, nullable=True)  # PRO trial end
     subscription_id = Column(String, nullable=True)
     subscription_until = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

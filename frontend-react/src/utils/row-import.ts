@@ -1,4 +1,20 @@
 import JSZip from 'jszip';
+import type { SpecItem } from './spec-processor';
+
+export type ImportedRowConfidenceLabel = 'high' | 'medium' | 'low';
+export type ImportedRowSourceKind = 'table' | 'appendix' | 'enumerated' | 'fallback' | 'delimited';
+
+export type ImportedRowImportInfo = {
+  sourceFormat: 'docx' | 'xlsx' | 'text';
+  sourceKind: ImportedRowSourceKind;
+  confidence: number;
+  confidenceLabel: ImportedRowConfidenceLabel;
+  needsReview: boolean;
+  notes: string[];
+  ignoredBlocks: number;
+  sourcePreview: string;
+  sourceContextText?: string;
+};
 
 export type ImportedProcurementRow = {
   rawType: string;
@@ -6,6 +22,9 @@ export type ImportedProcurementRow = {
   licenseType: string;
   term: string;
   qty: number;
+  meta?: Record<string, string>;
+  specs?: SpecItem[];
+  importInfo: ImportedRowImportInfo;
 };
 
 type HeaderMap = {
@@ -14,6 +33,19 @@ type HeaderMap = {
   licenseType?: number;
   term?: number;
   qty?: number;
+  okpd2?: number;
+};
+
+type DocxBlock = {
+  kind: 'paragraph' | 'table';
+  text?: string;
+  rows?: string[][];
+};
+
+type ParsedDocxContent = {
+  paragraphs: string[];
+  tables: string[][][];
+  blocks: DocxBlock[];
 };
 
 const HEADER_ALIASES: Record<keyof HeaderMap, string[]> = {
@@ -22,11 +54,25 @@ const HEADER_ALIASES: Record<keyof HeaderMap, string[]> = {
   licenseType: ['тип лицензии', 'лицензия', 'вид лицензии', 'тип сертификата', 'тип права'],
   term: ['срок', 'срок действия', 'срок лицензии', 'срок действия лицензии', 'срок поддержки', 'период'],
   qty: ['кол-во', 'количество', 'qty', 'кол', 'объем', 'объём'],
+  okpd2: ['окпд2', 'окпд 2', 'код окпд2', 'код окпд 2'],
 };
+
+const DOCX_QTY_UNITS =
+  '(?:шт\\.?|штук(?:а|и)?|компл(?:ект(?:а|ов)?)?\\.?|комплект(?:а|ов)?|кор\\.?|короб(?:ка|ки)?|наб\\.?|набор(?:а|ов)?|лиц(?:енз(?:ия|ий))?\\.?|усл\\.?|услуг[аи]?|экз\\.?|пар(?:а|ы)?|пользовател(?:я|ей)|рабоч(?:ая|их)\\s+станц(?:ия|ии|ий)|мест(?:о|а)?|сервер(?:а|ов)?|контроллер(?:а|ов)?|устройств(?:о|а)?|медосмотр(?:а|ов)?)';
+const DOCX_TRAILING_QTY_RE = new RegExp(
+  `(\\d+(?:[.,]\\d+)?)\\s*(?:\\([^)]*\\)\\s*)?${DOCX_QTY_UNITS}(?=\\s*(?:[.;]|$))`,
+  'giu',
+);
+const DOCX_IMPORT_STOP_RE = /^(код окпд2|наименование характеристики|значение характеристики|единица измерения характеристики|спецификация\b|требования к|составил:|согласовано:|утверждаю\b|техническое задание\b)/i;
+const DOCX_SECTION_HEADING_RE = /^(\d+(?:\.\d+)*\.?\s+|приложение\b|раздел\b|глава\b|составил:|согласовано:|утверждаю\b)/i;
+const OKPD2_RE = /\b\d{2}(?:\.\d{2}){2}\.\d{3}\b/;
+const NORMATIVE_TEXT_RE = /\b(постановлени|приказ|федеральн(ый|ого)|трудового кодекса|гост|фстэк|фсб|министерств|минздрава|стать[яи]|решени[ея]|реестр|minцифр|правительств)\b/i;
+const REQUIREMENT_TEXT_RE = /\b(должен|должна|должны|обязан|обязана|обязаны|требования|осуществляется|обеспечивает|соответств|гаранти|сроки оказания|место проведения|приемк|приёмк|документац)\b/i;
 
 function normalizeCell(value: string): string {
   return String(value || '')
     .replace(/\u00a0/g, ' ')
+    .replace(/[\u2000-\u200d\u2028\u2029]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -36,6 +82,44 @@ function normalizeHeader(value: string): string {
     .toLowerCase()
     .replace(/ё/g, 'е')
     .replace(/[.:;"'()]/g, '');
+}
+
+function normalizeDocxLine(value: string): string {
+  return normalizeCell(
+    value
+      .replace(/[‐‑‒–—]/g, '-')
+      .replace(/^[•▪●◦]\s*/u, '')
+      .replace(/^\d+\)\s*/, '')
+      .replace(/^\d+\.\s+/, ''),
+  );
+}
+
+function trimPreviewText(value: string, maxLen = 220): string {
+  const source = normalizeCell(value);
+  if (source.length <= maxLen) return source;
+  return `${source.slice(0, Math.max(0, maxLen - 1))}…`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function detectConfidenceLabel(value: number): ImportedRowConfidenceLabel {
+  if (value >= 0.9) return 'high';
+  if (value >= 0.75) return 'medium';
+  return 'low';
+}
+
+function extractOkpd2Code(text: string): string {
+  return normalizeCell(text).match(OKPD2_RE)?.[0] || '';
+}
+
+function looksLikeNormativeText(text: string): boolean {
+  return NORMATIVE_TEXT_RE.test(text);
+}
+
+function looksLikeRequirementText(text: string): boolean {
+  return REQUIREMENT_TEXT_RE.test(text);
 }
 
 function chooseDelimiter(sample: string): string {
@@ -53,7 +137,7 @@ function parseDelimitedLine(line: string, delimiter: string): string[] {
   const result: string[] = [];
   let current = '';
   let quoted = false;
-  for (let i = 0; i < line.length; i++) {
+  for (let i = 0; i < line.length; i += 1) {
     const char = line[i];
     if (char === '"') {
       if (quoted && line[i + 1] === '"') {
@@ -86,7 +170,7 @@ function parseDelimitedText(text: string): string[][] {
 
 function columnRefToIndex(ref: string): number {
   let value = 0;
-  for (let i = 0; i < ref.length; i++) {
+  for (let i = 0; i < ref.length; i += 1) {
     value = value * 26 + (ref.charCodeAt(i) - 64);
   }
   return value - 1;
@@ -137,33 +221,333 @@ function parseXlsxRows(buffer: ArrayBuffer): Promise<string[][]> {
 
     const worksheetXml = new DOMParser().parseFromString(await worksheetFile.async('text'), 'application/xml');
     const rows = Array.from(worksheetXml.getElementsByTagName('row'));
-    return rows.map((row) => {
-      const values: string[] = [];
-      const cells = Array.from(row.getElementsByTagName('c'));
-      for (const cell of cells) {
-        const ref = cell.getAttribute('r') || '';
-        const refLetters = (ref.match(/[A-Z]+/i)?.[0] || '').toUpperCase();
-        const idx = refLetters ? columnRefToIndex(refLetters) : values.length;
-        const type = cell.getAttribute('t') || '';
-        let value = '';
-        if (type === 'inlineStr') {
-          value = normalizeCell(
-            Array.from(cell.getElementsByTagName('t'))
-              .map((node) => node.textContent || '')
-              .join(''),
-          );
-        } else {
-          const raw = cell.getElementsByTagName('v')[0]?.textContent || '';
-          if (type === 's') {
-            value = normalizeCell(sharedStrings[Number(raw)] || '');
+    return rows
+      .map((row) => {
+        const values: string[] = [];
+        const cells = Array.from(row.getElementsByTagName('c'));
+        for (const cell of cells) {
+          const ref = cell.getAttribute('r') || '';
+          const refLetters = (ref.match(/[A-Z]+/i)?.[0] || '').toUpperCase();
+          const idx = refLetters ? columnRefToIndex(refLetters) : values.length;
+          const type = cell.getAttribute('t') || '';
+          let value = '';
+          if (type === 'inlineStr') {
+            value = normalizeCell(
+              Array.from(cell.getElementsByTagName('t'))
+                .map((node) => node.textContent || '')
+                .join(''),
+            );
           } else {
-            value = normalizeCell(raw);
+            const raw = cell.getElementsByTagName('v')[0]?.textContent || '';
+            if (type === 's') {
+              value = normalizeCell(sharedStrings[Number(raw)] || '');
+            } else {
+              value = normalizeCell(raw);
+            }
           }
+          values[idx] = value;
         }
-        values[idx] = value;
+        return values.map((entry) => normalizeCell(entry || ''));
+      })
+      .filter((row) => row.some(Boolean));
+  });
+}
+
+function getNodeLocalName(node: Node): string {
+  if (node.nodeType !== 1) return '';
+  const element = node as Element;
+  return element.localName || element.nodeName.split(':').pop() || '';
+}
+
+function getChildElements(node: ParentNode, localName?: string): Element[] {
+  return Array.from(node.childNodes).filter((child): child is Element => {
+    if (child.nodeType !== 1) return false;
+    return !localName || getNodeLocalName(child) === localName;
+  });
+}
+
+function collectDocxInlineText(node: Node, parts: string[]): void {
+  if (node.nodeType !== 1) return;
+  const localName = getNodeLocalName(node);
+  if (localName === 't') {
+    parts.push(node.textContent || '');
+    return;
+  }
+  if (localName === 'tab') {
+    parts.push('\t');
+    return;
+  }
+  if (localName === 'br' || localName === 'cr') {
+    parts.push('\n');
+    return;
+  }
+  Array.from(node.childNodes).forEach((child) => collectDocxInlineText(child, parts));
+}
+
+function extractDocxParagraphText(paragraph: Element): string {
+  const parts: string[] = [];
+  Array.from(paragraph.childNodes).forEach((child) => collectDocxInlineText(child, parts));
+  return normalizeCell(parts.join('').replace(/\s*\n\s*/g, ' '));
+}
+
+function extractDocxCellText(cell: Element): string {
+  return normalizeCell(
+    getChildElements(cell, 'p')
+      .map((paragraph) => extractDocxParagraphText(paragraph))
+      .filter(Boolean)
+      .join(' '),
+  );
+}
+
+async function parseDocxContent(buffer: ArrayBuffer): Promise<ParsedDocxContent> {
+  const zip = await JSZip.loadAsync(buffer);
+  const documentFile = zip.file('word/document.xml');
+  if (!documentFile) throw new Error('Файл DOCX не содержит word/document.xml');
+
+  const xml = new DOMParser().parseFromString(await documentFile.async('text'), 'application/xml');
+  const body = Array.from(xml.getElementsByTagName('*')).find((node) => node.localName === 'body');
+  if (!body) throw new Error('Не удалось прочитать содержимое DOCX');
+
+  const paragraphs: string[] = [];
+  const tables: string[][][] = [];
+  const blocks: DocxBlock[] = [];
+  for (const child of getChildElements(body)) {
+    const localName = getNodeLocalName(child);
+    if (localName === 'p') {
+      const text = extractDocxParagraphText(child);
+      if (text) {
+        paragraphs.push(text);
+        blocks.push({ kind: 'paragraph', text });
       }
-      return values.map((entry) => normalizeCell(entry || ''));
-    }).filter((row) => row.some(Boolean));
+      continue;
+    }
+    if (localName === 'tbl') {
+      const rows = getChildElements(child, 'tr')
+        .map((row) => getChildElements(row, 'tc').map((cell) => extractDocxCellText(cell)))
+        .map((row) => row.map((cell) => normalizeCell(cell)))
+        .filter((row) => row.some(Boolean));
+      if (rows.length > 0) {
+        tables.push(rows);
+        blocks.push({ kind: 'table', rows });
+      }
+    }
+  }
+  return { paragraphs, tables, blocks };
+}
+
+function findTrailingQty(text: string): { qty: number; index: number } | null {
+  const matches = Array.from(text.matchAll(DOCX_TRAILING_QTY_RE));
+  const last = matches[matches.length - 1];
+  if (!last || last.index === undefined) return null;
+  return { qty: parseQty(last[1] || '1'), index: last.index };
+}
+
+function parseCommercialMeta(text: string): Pick<ImportedProcurementRow, 'licenseType' | 'term'> {
+  const normalized = normalizeCell(text);
+  const termMatch = normalized.match(/(\d+\s*(?:мес(?:\.|яц(?:а|ев)?)?|год(?:а|ов)?|лет))/i);
+  let licenseType = '';
+  if (/на срок действия исключительного права/i.test(normalized)) {
+    licenseType = 'на срок действия исключительного права';
+  } else if (/подписк/i.test(normalized)) {
+    licenseType = 'подписка';
+  } else if (/лиценз/i.test(normalized)) {
+    licenseType = 'лицензия';
+  }
+  return {
+    licenseType,
+    term: termMatch ? normalizeCell(termMatch[1]) : '',
+  };
+}
+
+function buildImportInfo(
+  sourceFormat: ImportedRowImportInfo['sourceFormat'],
+  sourceKind: ImportedRowSourceKind,
+  sourceText: string,
+  description: string,
+  notes: string[],
+  options: {
+    qty?: number;
+    specs?: SpecItem[];
+    meta?: Record<string, string>;
+    ignoredBlocks?: number;
+    sourceContextText?: string;
+  } = {},
+): ImportedRowImportInfo {
+  const baseByKind: Record<ImportedRowSourceKind, number> = {
+    table: 0.96,
+    appendix: 0.92,
+    enumerated: 0.87,
+    fallback: 0.72,
+    delimited: 0.9,
+  };
+  let confidence = baseByKind[sourceKind];
+  const noteSet = new Set(notes.filter(Boolean));
+  if (!options.qty || options.qty <= 0) {
+    confidence -= 0.12;
+    noteSet.add('Количество не выделено явно, подставлено значение по умолчанию.');
+  }
+  if (options.specs && options.specs.length > 0) {
+    confidence += 0.04;
+  }
+  if (options.meta?.okpd2_code) {
+    confidence += 0.03;
+  }
+  if (looksLikeNormativeText(description)) {
+    confidence -= 0.12;
+    noteSet.add('Описание содержит нормативные признаки, нужна проверка, что это именно позиция закупки.');
+  }
+  if (looksLikeRequirementText(description) && sourceKind === 'fallback') {
+    confidence -= 0.1;
+  }
+  if (description.length > 240) {
+    confidence -= 0.08;
+    noteSet.add('Описание получилось очень длинным, лучше проверить границы позиции.');
+  }
+  confidence = clamp(confidence, 0.35, 0.99);
+  const confidenceLabel = detectConfidenceLabel(confidence);
+  const reviewRequired = confidenceLabel !== 'high' || Array.from(noteSet).some((note) => /провер|не выделено|норматив|длинным|шапки/i.test(note));
+  return {
+    sourceFormat,
+    sourceKind,
+    confidence,
+    confidenceLabel,
+    needsReview: reviewRequired,
+    notes: Array.from(noteSet),
+    ignoredBlocks: options.ignoredBlocks || 0,
+    sourcePreview: trimPreviewText(sourceText || description),
+    sourceContextText: options.sourceContextText ? trimPreviewText(options.sourceContextText, 4000) : undefined,
+  };
+}
+
+function makeImportedRow(params: {
+  rawType: string;
+  description: string;
+  licenseType: string;
+  term: string;
+  qty: number;
+  sourceFormat: ImportedRowImportInfo['sourceFormat'];
+  sourceKind: ImportedRowSourceKind;
+  sourceText: string;
+  notes?: string[];
+  meta?: Record<string, string>;
+  specs?: SpecItem[];
+  ignoredBlocks?: number;
+  sourceContextText?: string;
+}): ImportedProcurementRow {
+  const description = normalizeCell(params.description || params.rawType);
+  const notes = [...(params.notes || [])];
+  if (params.specs?.length) {
+    notes.push(`Из исходного файла импортировано характеристик: ${params.specs.length}.`);
+  }
+  if (params.meta?.okpd2_code) {
+    notes.push(`Из исходного файла извлечен ОКПД2: ${params.meta.okpd2_code}.`);
+  }
+  return {
+    rawType: normalizeCell(params.rawType || description),
+    description,
+    licenseType: normalizeCell(params.licenseType),
+    term: normalizeCell(params.term),
+    qty: params.qty > 0 ? params.qty : 1,
+    meta: params.meta,
+    specs: params.specs,
+    importInfo: buildImportInfo(
+      params.sourceFormat,
+      params.sourceKind,
+      params.sourceText,
+      description,
+      notes,
+      {
+        qty: params.qty,
+        specs: params.specs,
+        meta: params.meta,
+        ignoredBlocks: params.ignoredBlocks,
+        sourceContextText: params.sourceContextText,
+      },
+    ),
+  };
+}
+
+function isSpecTable(rows: string[][]): boolean {
+  if (rows.length < 2) return false;
+  const headers = rows[0].map((cell) => normalizeHeader(cell));
+  return headers.some((cell) => cell === 'наименование характеристики')
+    && headers.some((cell) => cell === 'значение характеристики');
+}
+
+function parseSpecTable(rows: string[][]): SpecItem[] {
+  const specs: SpecItem[] = [];
+  let currentGroup = 'Технические характеристики';
+  for (const row of rows.slice(1)) {
+    const name = normalizeCell(row[0] || '');
+    const value = normalizeCell(row[1] || '');
+    const unit = normalizeCell(row[2] || '') || '—';
+    if (!name && !value) continue;
+    if (name && !value && !(row[2] || '').trim()) {
+      currentGroup = name;
+      continue;
+    }
+    specs.push({
+      group: currentGroup,
+      name,
+      value: value || 'Да',
+      unit,
+    });
+  }
+  return specs;
+}
+
+function collectRequirementContext(lines: string[]): { text: string; count: number } {
+  const picked = lines
+    .map((line) => normalizeCell(line))
+    .filter((line) => line.length > 20)
+    .filter((line) => !DOCX_IMPORT_STOP_RE.test(line))
+    .filter((line) => !extractOkpd2Code(line))
+    .filter((line) => looksLikeRequirementText(line) || looksLikeNormativeText(line) || /^•/.test(line))
+    .slice(0, 24);
+  return {
+    text: picked.join('\n'),
+    count: picked.length,
+  };
+}
+
+function buildImportedRowFromText(text: string, sourceKind: Exclude<ImportedRowSourceKind, 'delimited'>, options?: {
+  allowWithoutQty?: boolean;
+  notes?: string[];
+  specs?: SpecItem[];
+  meta?: Record<string, string>;
+  sourceContextText?: string;
+  ignoredBlocks?: number;
+}): ImportedProcurementRow | null {
+  const cleaned = normalizeDocxLine(text).replace(/[-:;,.]+$/u, '').trim();
+  if (!cleaned || DOCX_IMPORT_STOP_RE.test(cleaned)) return null;
+
+  const qtyMatch = findTrailingQty(cleaned);
+  if (!qtyMatch && !options?.allowWithoutQty) return null;
+
+  const description = normalizeDocxLine(qtyMatch ? cleaned.slice(0, qtyMatch.index) : cleaned)
+    .replace(/[-:;,.]+$/u, '')
+    .trim();
+  if (!description || description.length < 4 || DOCX_IMPORT_STOP_RE.test(description)) return null;
+
+  const meta = options?.meta ? { ...options.meta } : {};
+  const inlineOkpd2 = extractOkpd2Code(cleaned);
+  if (inlineOkpd2 && !meta.okpd2_code) meta.okpd2_code = inlineOkpd2;
+
+  const commercial = parseCommercialMeta(cleaned);
+  return makeImportedRow({
+    rawType: description,
+    description,
+    licenseType: commercial.licenseType,
+    term: commercial.term,
+    qty: qtyMatch?.qty || 1,
+    meta,
+    specs: options?.specs,
+    notes: options?.notes,
+    sourceFormat: 'docx',
+    sourceKind,
+    sourceText: cleaned,
+    ignoredBlocks: options?.ignoredBlocks,
+    sourceContextText: options?.sourceContextText,
   });
 }
 
@@ -187,7 +571,11 @@ function parseQty(value: string): number {
   return Math.max(1, Math.round(num));
 }
 
-function mapRows(rawRows: string[][]): ImportedProcurementRow[] {
+function mapRows(
+  rawRows: string[][],
+  sourceFormat: ImportedRowImportInfo['sourceFormat'],
+  sourceKind: ImportedRowSourceKind = 'delimited',
+): ImportedProcurementRow[] {
   if (rawRows.length === 0) return [];
 
   const headerMap = detectHeaderMap(rawRows[0]);
@@ -195,33 +583,299 @@ function mapRows(rawRows: string[][]): ImportedProcurementRow[] {
   const dataRows = hasHeader ? rawRows.slice(1) : rawRows;
   const fallbackMap: HeaderMap = hasHeader
     ? headerMap
-    : { type: 0, description: 1, licenseType: 2, term: 3, qty: 4 };
+    : { type: 0, description: 1, licenseType: 2, term: 3, qty: 4, okpd2: 5 };
 
   return dataRows
     .map((row) => {
-      const rawType = normalizeCell(row[fallbackMap.type ?? 0] || '');
-      const description = normalizeCell(row[fallbackMap.description ?? fallbackMap.type ?? 0] || rawType);
+      const primaryIndex = fallbackMap.type ?? fallbackMap.description ?? 0;
+      const descriptionIndex = fallbackMap.description ?? fallbackMap.type ?? primaryIndex;
+      const rawType = normalizeCell(row[primaryIndex] || '');
+      const description = normalizeCell(row[descriptionIndex] || rawType);
       const licenseType = normalizeCell(row[fallbackMap.licenseType ?? -1] || '');
       const term = normalizeCell(row[fallbackMap.term ?? -1] || '');
       const qty = parseQty(row[fallbackMap.qty ?? -1] || '1');
+      const okpd2 = extractOkpd2Code(row[fallbackMap.okpd2 ?? -1] || '');
       if (!rawType && !description) return null;
-      return {
-        rawType,
+      return makeImportedRow({
+        rawType: rawType || description,
         description,
         licenseType,
         term,
         qty,
-      };
+        sourceFormat,
+        sourceKind,
+        sourceText: row.join(' | '),
+        meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+        notes: hasHeader ? [] : ['Файл не содержал явной шапки колонок, строки распознаны по порядку столбцов.'],
+      });
     })
     .filter((row): row is ImportedProcurementRow => !!row);
+}
+
+function dedupeImportedRows(rows: ImportedProcurementRow[]): ImportedProcurementRow[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => {
+    const key = [
+      normalizeHeader(row.description),
+      row.qty,
+      normalizeHeader(row.licenseType),
+      normalizeHeader(row.term),
+    ].join('|');
+    if (!row.description || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function extractOkpdFromBlocks(blocks: DocxBlock[], fromIndex: number, toIndex: number): string {
+  for (let index = fromIndex; index < toIndex; index += 1) {
+    const block = blocks[index];
+    if (block.kind !== 'paragraph') continue;
+    const code = extractOkpd2Code(block.text || '');
+    if (code) return code;
+  }
+  return '';
+}
+
+function extractFirstSpecTable(blocks: DocxBlock[], fromIndex: number, toIndex: number): SpecItem[] {
+  for (let index = fromIndex; index < toIndex; index += 1) {
+    const block = blocks[index];
+    if (block.kind === 'table' && block.rows && isSpecTable(block.rows)) {
+      return parseSpecTable(block.rows);
+    }
+  }
+  return [];
+}
+
+function findNextBlockIndex(blocks: DocxBlock[], fromIndex: number, predicate: (block: DocxBlock) => boolean): number {
+  for (let index = fromIndex; index < blocks.length; index += 1) {
+    if (predicate(blocks[index])) return index;
+  }
+  return blocks.length;
+}
+
+function parseDocxTableRows(blocks: DocxBlock[]): ImportedProcurementRow[] {
+  const rows: ImportedProcurementRow[] = [];
+  for (const block of blocks) {
+    if (block.kind !== 'table' || !block.rows || block.rows.length < 2 || isSpecTable(block.rows)) continue;
+    rows.push(...mapRows(block.rows, 'docx', 'table'));
+  }
+  return dedupeImportedRows(rows);
+}
+
+function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementRow[] {
+  const rows: ImportedProcurementRow[] = [];
+  const { blocks } = content;
+  for (let i = 0; i < blocks.length; i += 1) {
+    const block = blocks[i];
+    if (block.kind !== 'paragraph' || !/^приложение\b/i.test(block.text || '')) continue;
+    const nextAppendixIndex = findNextBlockIndex(blocks, i + 1, (candidate) => candidate.kind === 'paragraph' && /^приложение\b/i.test(candidate.text || ''));
+    let itemParagraphIndex = -1;
+    for (let j = i + 1; j < Math.min(blocks.length, i + 5); j += 1) {
+      const candidate = blocks[j];
+      if (candidate.kind !== 'paragraph') continue;
+      const text = normalizeCell(candidate.text || '');
+      if (!text || /^код окпд2\b/i.test(text)) break;
+      if (findTrailingQty(normalizeDocxLine(text))) {
+        itemParagraphIndex = j;
+        break;
+      }
+      if (DOCX_IMPORT_STOP_RE.test(text)) break;
+    }
+    if (itemParagraphIndex < 0) continue;
+
+    const itemText = blocks[itemParagraphIndex].text || '';
+    const okpd2 = extractOkpdFromBlocks(blocks, itemParagraphIndex + 1, nextAppendixIndex);
+    const specs = extractFirstSpecTable(blocks, itemParagraphIndex + 1, nextAppendixIndex);
+    const requirementContext = collectRequirementContext(
+      blocks
+        .slice(itemParagraphIndex + 1, nextAppendixIndex)
+        .filter((candidate) => candidate.kind === 'paragraph')
+        .map((candidate) => candidate.text || ''),
+    );
+    const imported = buildImportedRowFromText(itemText, 'appendix', {
+      meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+      specs,
+      notes: requirementContext.count > 0 ? [`В приложении обнаружено текстовых требований: ${requirementContext.count}.`] : [],
+      sourceContextText: requirementContext.text,
+      ignoredBlocks: requirementContext.count,
+    });
+    if (imported) rows.push(imported);
+  }
+  return dedupeImportedRows(rows);
+}
+
+function parseDocxEnumeratedRows(content: ParsedDocxContent): ImportedProcurementRow[] {
+  const rows: ImportedProcurementRow[] = [];
+  const { blocks } = content;
+  let listStarted = false;
+  let listStartIndex = 0;
+  for (let i = 0; i < blocks.length; i += 1) {
+    const block = blocks[i];
+    if (block.kind !== 'paragraph') continue;
+    const text = normalizeCell(block.text || '');
+    if (!listStarted && (/наименование объекта поставки:/i.test(text) || /закупка программного обеспечения/i.test(text))) {
+      listStarted = true;
+      listStartIndex = i;
+    }
+    if (!listStarted) continue;
+    if (/^(?:2\.|3\.|4\.|5\.)\s*(заказчик|исполнитель|требования|сроки|место|гаранти|поставка)/i.test(text)) break;
+    if (/^\d+\)/.test(text)) {
+      const trailingContext = collectRequirementContext(
+        blocks
+          .slice(i + 1)
+          .filter((candidate) => candidate.kind === 'paragraph')
+          .map((candidate) => candidate.text || ''),
+      );
+      const imported = buildImportedRowFromText(text, 'enumerated', {
+        notes: trailingContext.count > 0 ? ['После перечня позиций в документе есть дополнительные требования и нормативные блоки.'] : [],
+        sourceContextText: trailingContext.text,
+        ignoredBlocks: trailingContext.count,
+      });
+      if (imported) rows.push(imported);
+    }
+  }
+  if (rows.length === 0 && listStartIndex > 0) {
+    const trailingContext = collectRequirementContext(
+      blocks
+        .slice(listStartIndex)
+        .filter((candidate) => candidate.kind === 'paragraph')
+        .map((candidate) => candidate.text || ''),
+    );
+    return dedupeImportedRows(rows.map((row) => ({
+      ...row,
+      importInfo: {
+        ...row.importInfo,
+        sourceContextText: trailingContext.text,
+        ignoredBlocks: trailingContext.count,
+      },
+    })));
+  }
+  return dedupeImportedRows(rows);
+}
+
+function findParagraphValue(paragraphs: string[], labelRe: RegExp): string {
+  for (let i = 0; i < paragraphs.length; i += 1) {
+    const text = normalizeCell(paragraphs[i]);
+    if (!labelRe.test(text)) continue;
+    const inlineValue = normalizeCell(text.replace(/^.*?:\s*/u, ''));
+    if (inlineValue && inlineValue !== text) return inlineValue;
+    for (let j = i + 1; j < Math.min(paragraphs.length, i + 4); j += 1) {
+      const next = normalizeCell(paragraphs[j]);
+      if (!next || DOCX_SECTION_HEADING_RE.test(next)) break;
+      if (DOCX_IMPORT_STOP_RE.test(next)) break;
+      return next;
+    }
+  }
+  return '';
+}
+
+function findDocumentQty(paragraphs: string[]): number | null {
+  for (const paragraph of paragraphs) {
+    if (!/количеств|объем оказания услуг|объём оказания услуг/i.test(paragraph)) continue;
+    const qtyMatch = findTrailingQty(normalizeCell(paragraph));
+    if (qtyMatch) return qtyMatch.qty;
+  }
+  return null;
+}
+
+function buildServiceSpecsFromParagraphs(paragraphs: string[]): SpecItem[] {
+  const sections: Array<{ label: RegExp; group: string; name: string }> = [
+    { label: /наименование оказываемых услуг/i, group: 'Общие требования', name: 'Наименование услуги' },
+    { label: /необходимый объем услуг|объем оказываемых услуг/i, group: 'Объем услуг', name: 'Объем услуг' },
+    { label: /сроки оказания услуг/i, group: 'Сроки и SLA', name: 'Срок оказания услуг' },
+    { label: /место проведения медицинских осмотров|место оказания услуг/i, group: 'Организация работ', name: 'Место оказания услуг' },
+    { label: /требования к оказанию услуг/i, group: 'Требования к исполнению', name: 'Требования к оказанию услуг' },
+    { label: /гарантийные обязательства/i, group: 'Гарантийные обязательства', name: 'Гарантийные обязательства' },
+  ];
+  return sections
+    .map((section) => {
+      const value = findParagraphValue(paragraphs, section.label);
+      if (!value) return null;
+      return {
+        group: section.group,
+        name: section.name,
+        value,
+        unit: '—',
+      } satisfies SpecItem;
+    })
+    .filter((item): item is SpecItem => !!item);
+}
+
+function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementRow[] {
+  const { paragraphs, blocks } = content;
+  const serviceName =
+    findParagraphValue(paragraphs, /наименование оказываемых услуг/i) ||
+    paragraphs.find((paragraph) => /^на оказание услуг\b/i.test(normalizeCell(paragraph))) ||
+    '';
+  const requirementContext = collectRequirementContext(
+    paragraphs.filter((paragraph) => looksLikeRequirementText(paragraph) || looksLikeNormativeText(paragraph)),
+  );
+  const okpd2 = paragraphs.map((paragraph) => extractOkpd2Code(paragraph)).find(Boolean) || '';
+  const firstSpecTable = extractFirstSpecTable(blocks, 0, blocks.length);
+
+  if (serviceName) {
+    const description = normalizeCell(serviceName);
+    const serviceSpecs = buildServiceSpecsFromParagraphs(paragraphs);
+    return dedupeImportedRows([
+      makeImportedRow({
+        ...parseCommercialMeta(serviceName),
+        rawType: description,
+        description,
+        qty: findDocumentQty(paragraphs) || 1,
+        sourceFormat: 'docx',
+        sourceKind: 'fallback',
+        sourceText: serviceName,
+        meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+        specs: serviceSpecs.length > 0 ? serviceSpecs : undefined,
+        notes: ['Позиция извлечена из сервисного ТЗ по заголовкам разделов документа.'],
+        ignoredBlocks: requirementContext.count,
+        sourceContextText: requirementContext.text,
+      }),
+    ]);
+  }
+
+  const objectName =
+    findParagraphValue(paragraphs, /наименование объекта поставки/i) ||
+    paragraphs.find((paragraph) => /^на (?:поставку|закупку)\b/i.test(normalizeCell(paragraph))) ||
+    '';
+  const row = buildImportedRowFromText(objectName, 'fallback', {
+    allowWithoutQty: true,
+    meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+    specs: firstSpecTable.length > 0 ? firstSpecTable : undefined,
+    notes: ['Позиция извлечена из заголовка или общего предмета закупки.'],
+    sourceContextText: requirementContext.text,
+    ignoredBlocks: requirementContext.count,
+  });
+  if (row) {
+    return dedupeImportedRows([{ ...row, qty: findDocumentQty(paragraphs) || row.qty || 1 }]);
+  }
+  return [];
+}
+
+async function parseDocxRows(buffer: ArrayBuffer): Promise<ImportedProcurementRow[]> {
+  const content = await parseDocxContent(buffer);
+  const tableRows = parseDocxTableRows(content.blocks);
+  if (tableRows.length > 0) return tableRows;
+
+  const appendixRows = parseDocxAppendixRows(content);
+  if (appendixRows.length > 0) return appendixRows;
+
+  const enumeratedRows = parseDocxEnumeratedRows(content);
+  if (enumeratedRows.length > 0) return enumeratedRows;
+
+  return parseDocxFallbackRows(content);
 }
 
 export async function parseImportedRows(file: File): Promise<ImportedProcurementRow[]> {
   const lowerName = file.name.toLowerCase();
   if (lowerName.endsWith('.xlsx')) {
     const rows = await parseXlsxRows(await file.arrayBuffer());
-    return mapRows(rows);
+    return dedupeImportedRows(mapRows(rows, 'xlsx'));
+  }
+  if (lowerName.endsWith('.docx')) {
+    return parseDocxRows(await file.arrayBuffer());
   }
   const text = await file.text();
-  return mapRows(parseDelimitedText(text));
+  return dedupeImportedRows(mapRows(parseDelimitedText(text), 'text'));
 }

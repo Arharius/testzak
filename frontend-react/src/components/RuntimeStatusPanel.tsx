@@ -113,7 +113,7 @@ export function RuntimeStatusPanel({ backendAvailable, health, readiness, isLoad
             <span className={`runtime-chip runtime-chip--${getTone(readiness?.checks?.payments?.status)}`}>{health?.yookassa ? 'billing on' : 'billing off'}</span>
           </div>
           <strong>{readiness?.checks?.payments?.detail || 'payments pending'}</strong>
-          <small>Free limit {health?.free_tz_limit ?? readiness?.free_tz_limit ?? 0} ТЗ · Email {readiness?.checks?.email?.status || 'n/a'}</small>
+          <small>Post-trial limit {health?.free_tz_limit ?? readiness?.free_tz_limit ?? 0} ТЗ · Email {readiness?.checks?.email?.status || 'n/a'}</small>
         </article>
 
         <article className="runtime-card">

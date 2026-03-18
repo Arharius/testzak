@@ -6,11 +6,86 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 
+let JSZip;
+try {
+  JSZip = require('jszip');
+} catch (_) {
+  JSZip = require(path.join(__dirname, '..', 'frontend-react', 'node_modules', 'jszip'));
+}
+
 const BASE_URL = process.env.E2E_REACT_BASE_URL || 'http://127.0.0.1:4173';
 const ARTIFACTS_DIR = path.resolve(__dirname, 'e2e_artifacts', 'react');
 
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function escapeXml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function paragraphXml(text) {
+  return `<w:p><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
+}
+
+function tableCellXml(text) {
+  return `<w:tc><w:p><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p></w:tc>`;
+}
+
+function tableRowXml(cells) {
+  return `<w:tr>${cells.map((cell) => tableCellXml(cell)).join('')}</w:tr>`;
+}
+
+async function buildDocxBuffer(bodyXml) {
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`);
+  zip.folder('_rels').file('.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`);
+  zip.folder('word').file('document.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    ${bodyXml}
+    <w:sectPr>
+      <w:pgSz w:w="11906" w:h="16838"/>
+      <w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>
+    </w:sectPr>
+  </w:body>
+</w:document>`);
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+async function buildSoftwareImportDocx() {
+  return buildDocxBuffer([
+    paragraphXml('Техническое задание'),
+    paragraphXml('на закупку программного обеспечения'),
+    paragraphXml('1. Наименование объекта поставки: закупка программного обеспечения (далее – Товар):'),
+    paragraphXml('1) Лицензия на операционную систему специального назначения Astra Linux Special Edition, способ передачи электронный, на срок действия исключительного права, с включенными обновлениями Тип 2 на 12 мес. - 50 шт.;'),
+    paragraphXml('2) Лицензия клиентская на программное обеспечение RuPost Standard CAL на 1 пользователя, на срок действия исключительного права, с включенными обновлениями Тип 2 на 12 мес. - 50 шт.;'),
+    paragraphXml('2. Заказчик: ФГУП "НТЦ "Заря".'),
+  ].join(''));
+}
+
+async function buildMaterialsTableDocx() {
+  return buildDocxBuffer(`
+    ${paragraphXml('Служебная записка')}
+    <w:tbl>
+      ${tableRowXml(['№ п/п', 'Наименование', 'Ед. изм.', 'Количество', 'ОКПД 2'])}
+      ${tableRowXml(['1', 'Сверло алмазное по керамограниту d6мм', 'шт.', '1', '25.73.40.119'])}
+      ${tableRowXml(['2', 'Набор адаптеров для торцевых головок 65 мм', 'шт.', '3', '25.73.30.176'])}
+    </w:tbl>
+  `);
 }
 
 function mockedAiPayload() {
@@ -411,9 +486,10 @@ async function run() {
     email: 'e2e@local.test',
     role: 'free',
     tz_count: 0,
-    tz_limit: 3,
+    tz_limit: -1,
     trial_active: true,
-    trial_days_left: 7,
+    trial_days_left: 14,
+    payment_required: false,
   });
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
@@ -444,6 +520,38 @@ async function run() {
   assert.match(authPanelText, /e2e@local\.test/i, 'Stored backend user should be shown in auth panel');
   assert.match(authPanelText, /Trial|безлимит/i, 'Trial access state should be shown in auth panel');
 
+  const importInput = page.locator('input[type="file"]').first();
+  await importInput.setInputFiles({
+    name: 'software-import.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: await buildSoftwareImportDocx(),
+  });
+  await page.waitForFunction(() => {
+    const rows = Array.from(document.querySelectorAll('.rows-table tbody tr'));
+    return rows.length === 2 && /Импортировано 2 позиций/i.test(document.body.innerText || '');
+  }, { timeout: 30000 });
+  const importedSoftwareRows = page.locator('.rows-table tbody tr');
+  await expectInputValue(importedSoftwareRows.nth(0).locator('td').nth(2).locator('input'), /Astra Linux/i, 'DOCX import should extract enumerated software positions');
+  await expectInputValue(importedSoftwareRows.nth(1).locator('td').nth(2).locator('input'), /RuPost/i, 'DOCX import should extract multiple software positions from DOCX');
+
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.rows-table tbody tr', { timeout: 30000 });
+  await importInput.setInputFiles({
+    name: 'materials-table.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: await buildMaterialsTableDocx(),
+  });
+  await page.waitForFunction(() => {
+    const rows = Array.from(document.querySelectorAll('.rows-table tbody tr'));
+    return rows.length === 2 && /Импортировано 2 позиций/i.test(document.body.innerText || '');
+  }, { timeout: 30000 });
+  const importedMaterialsRows = page.locator('.rows-table tbody tr');
+  await expectInputValue(importedMaterialsRows.nth(0).locator('td').nth(2).locator('input'), /Сверло алмазное/i, 'DOCX import should read procurement rows from Word tables');
+  await expectInputValue(importedMaterialsRows.nth(1).locator('td').nth(2).locator('input'), /Набор адаптеров/i, 'DOCX import should preserve table descriptions');
+
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.rows-table tbody tr', { timeout: 30000 });
+
   async function ensurePreviewOpen() {
     const preview = page.locator('.tz-preview');
     if (await preview.count() > 0 && await preview.first().isVisible().catch(() => false)) return;
@@ -466,6 +574,11 @@ async function run() {
     });
   }
 
+  async function expectInputValue(locator, pattern, message) {
+    const value = await locator.inputValue();
+    assert.match(value, pattern, message);
+  }
+
   const firstRow = page.locator('.rows-table tbody tr').first();
   await firstRow.locator('td').nth(1).locator('select').selectOption('keyboardMouseSet');
   await firstRow.locator('td').nth(2).locator('input').fill('комплект клавиатура мышь mk240 nano');
@@ -479,6 +592,10 @@ async function run() {
   const thirdRow = page.locator('.rows-table tbody tr').nth(2);
   await thirdRow.locator('td').nth(1).locator('select').selectOption('otherService');
   await thirdRow.locator('td').nth(2).locator('input').fill('монтаж ЛВС и структурированной кабельной системы');
+
+  const splitPlannerText = await page.locator('.workspace-split-planner').innerText();
+  assert.match(splitPlannerText, /Разбивка на отдельные ТЗ по назначению/i, 'Mixed rows should show split planner');
+  assert.match(splitPlannerText, /Периферия|Сетевое|Услуги/i, 'Split planner should suggest purpose-based groups');
 
   await clickGenerateTZ();
   await page.waitForFunction(() => {

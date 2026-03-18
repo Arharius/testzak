@@ -347,16 +347,16 @@ export function App() {
     : '';
 
   const runtimeLabel = !backendAvailable
-    ? 'Local'
+    ? 'Локально'
     : backendReadinessQuery.isPending
-      ? 'Checking'
+      ? 'Проверка'
       : backendReadinessQuery.isError
-        ? 'Offline'
+        ? 'Недоступен'
         : backendReadinessQuery.data?.status === 'ready'
-          ? 'Ready'
+          ? 'Готов'
         : backendReadinessQuery.data?.status === 'degraded'
-          ? 'Degraded'
-          : 'Not ready';
+          ? 'Ограничения'
+          : 'Настройка';
   const runtimeDisclosureState = !backendAvailable
     ? 'Локальный режим'
     : backendReadinessQuery.isError
@@ -596,13 +596,13 @@ export function App() {
 
       <header className="hero sovereign-hero section-fade section-delay-0">
         <div className="hero-spine" aria-hidden="true"></div>
-        <span className="hero-chip">44/223-ФЗ • Генерация • Проверка • Публикация</span>
-        <h1>Генератор ТЗ, доведённый до публикации без лишнего шума</h1>
-        <p>Позиции, классификация, ПП1875, benchmark, anti-ФАС и экспорт собраны в один рабочий сценарий без лишнего интерфейсного шума.</p>
+        <span className="hero-chip">44/223-ФЗ • Закупочное ТЗ • Проверка • Публикация</span>
+        <h1>Подготовка закупочного ТЗ без ручного хаоса</h1>
+        <p>Импорт позиций, классификация, ПП1875, проверка и выгрузка собраны в один спокойный рабочий контур, которым можно пользоваться каждый день.</p>
         <div className="hero-metrics">
           <div className="hero-metric">
             <span className="hero-metric-label">режим</span>
-            <strong>{backendAvailable ? 'Hybrid' : 'Local'}</strong>
+            <strong>{backendAvailable ? 'Гибридный' : 'Локальный'}</strong>
           </div>
           <div className="hero-metric">
             <span className="hero-metric-label">runtime</span>
@@ -610,11 +610,11 @@ export function App() {
           </div>
           <div className="hero-metric">
             <span className="hero-metric-label">auth</span>
-            <strong>{backendUser ? 'Signed In' : 'Guest'}</strong>
+            <strong>{backendUser ? 'Доступ открыт' : 'Гость'}</strong>
           </div>
           <div className="hero-metric">
             <span className="hero-metric-label">flow</span>
-            <strong>Draft / Verify / Export</strong>
+            <strong>Сборка → Проверка → Выгрузка</strong>
           </div>
         </div>
       </header>

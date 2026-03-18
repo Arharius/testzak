@@ -21,7 +21,7 @@ function runtimeTitle(backendAvailable: boolean, readiness?: BackendReadiness, e
   if (!backendAvailable) return 'Локальный режим';
   if (error) return 'Backend недоступен';
   if (!readiness) return 'Проверка runtime';
-  if (readiness.status === 'ready') return 'Production ready';
+  if (readiness.status === 'ready') return 'Контур готов';
   if (readiness.status === 'degraded') return 'Рабочий, но с ограничениями';
   return 'Контур не готов';
 }
@@ -91,7 +91,7 @@ export function RuntimeStatusPanel({ backendAvailable, health, readiness, isLoad
       <div className="runtime-grid">
         <article className="runtime-card">
           <div className="runtime-card-head">
-            <span className="runtime-card-title">Core</span>
+            <span className="runtime-card-title">Ядро</span>
             <span className={`runtime-chip runtime-chip--${getTone(readiness?.checks?.database?.status)}`}>{readiness?.checks?.database?.status || 'n/a'}</span>
           </div>
           <strong>{readiness?.checks?.database?.detail || 'database probe pending'}</strong>
@@ -100,7 +100,7 @@ export function RuntimeStatusPanel({ backendAvailable, health, readiness, isLoad
 
         <article className="runtime-card">
           <div className="runtime-card-head">
-            <span className="runtime-card-title">AI / Search</span>
+            <span className="runtime-card-title">Поиск и ИИ</span>
             <span className={`runtime-chip runtime-chip--${getTone(readiness?.checks?.ai?.status || readiness?.checks?.search?.status)}`}>{enabledAi.length ? enabledAi.join(', ') : 'no-ai'}</span>
           </div>
           <strong>{readiness?.checks?.search?.detail || health?.search_module || 'search pending'}</strong>
@@ -109,7 +109,7 @@ export function RuntimeStatusPanel({ backendAvailable, health, readiness, isLoad
 
         <article className="runtime-card">
           <div className="runtime-card-head">
-            <span className="runtime-card-title">Commerce</span>
+            <span className="runtime-card-title">Подписка</span>
             <span className={`runtime-chip runtime-chip--${getTone(readiness?.checks?.payments?.status)}`}>{health?.yookassa ? 'billing on' : 'billing off'}</span>
           </div>
           <strong>{readiness?.checks?.payments?.detail || 'payments pending'}</strong>

@@ -6761,7 +6761,7 @@ type Props = {
   } | null;
 };
 
-const APP_BUILD_LABEL = '2026.03.18.3';
+const APP_BUILD_LABEL = '2026.03.18.4';
 
 export function Workspace({ automationSettings, platformSettings, enterpriseSettings, backendUser }: Props) {
   // Hosted mode: use backend when explicit BACKEND_URL is configured.

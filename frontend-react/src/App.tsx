@@ -595,26 +595,36 @@ export function App() {
       </div>
 
       <header className="hero sovereign-hero section-fade section-delay-0">
-        <div className="hero-spine" aria-hidden="true"></div>
-        <span className="hero-chip">44/223-ФЗ • Закупочное ТЗ • Проверка • Публикация</span>
-        <h1>Подготовка закупочного ТЗ без ручного хаоса</h1>
-        <p>Импорт позиций, классификация, ПП1875, проверка и выгрузка собраны в один спокойный рабочий контур, которым можно пользоваться каждый день.</p>
-        <div className="hero-metrics">
-          <div className="hero-metric">
-            <span className="hero-metric-label">режим</span>
-            <strong>{backendAvailable ? 'Гибридный' : 'Локальный'}</strong>
+        <div className="hero-grid">
+          <div className="hero-copy">
+            <div className="hero-spine" aria-hidden="true"></div>
+            <span className="hero-chip">44/223-ФЗ • Закупочное ТЗ • Проверка • Публикация</span>
+            <h1>Подготовка закупочного ТЗ без ручного хаоса</h1>
+            <p>Импорт позиций, классификация, ПП1875, проверка и выгрузка собраны в один спокойный рабочий контур, которым можно пользоваться каждый день.</p>
+            <div className="hero-proof">
+              <span>Импорт DOCX/XLSX</span>
+              <span>ОКПД2 и КТРУ</span>
+              <span>ПП1875 и анти-ФАС</span>
+              <span>DOCX и PDF</span>
+            </div>
           </div>
-          <div className="hero-metric">
-            <span className="hero-metric-label">runtime</span>
-            <strong>{runtimeLabel}</strong>
-          </div>
-          <div className="hero-metric">
-            <span className="hero-metric-label">auth</span>
-            <strong>{backendUser ? 'Доступ открыт' : 'Гость'}</strong>
-          </div>
-          <div className="hero-metric">
-            <span className="hero-metric-label">flow</span>
-            <strong>Сборка → Проверка → Выгрузка</strong>
+          <div className="hero-metrics">
+            <div className="hero-metric">
+              <span className="hero-metric-label">режим</span>
+              <strong>{backendAvailable ? 'Гибридный' : 'Локальный'}</strong>
+            </div>
+            <div className="hero-metric">
+              <span className="hero-metric-label">runtime</span>
+              <strong>{runtimeLabel}</strong>
+            </div>
+            <div className="hero-metric">
+              <span className="hero-metric-label">auth</span>
+              <strong>{backendUser ? 'Доступ открыт' : 'Гость'}</strong>
+            </div>
+            <div className="hero-metric">
+              <span className="hero-metric-label">flow</span>
+              <strong>Сборка → Проверка → Выгрузка</strong>
+            </div>
           </div>
         </div>
       </header>

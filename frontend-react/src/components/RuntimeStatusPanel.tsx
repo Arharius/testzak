@@ -22,7 +22,7 @@ function runtimeTitle(backendAvailable: boolean, readiness?: BackendReadiness, e
   if (error) return 'Backend недоступен';
   if (!readiness) return 'Проверка runtime';
   if (readiness.status === 'ready') return 'Контур готов';
-  if (readiness.status === 'degraded') return 'Рабочий, но с ограничениями';
+  if (readiness.status === 'degraded') return 'Основной контур работает';
   return 'Контур не готов';
 }
 
@@ -40,7 +40,7 @@ function runtimeDescription(backendAvailable: boolean, readiness?: BackendReadin
     return 'Критичные подсистемы доступны. Контур готов к рабочей нагрузке и контролируемому enterprise-использованию.';
   }
   if (readiness.status === 'degraded') {
-    return 'Сервис работает, но часть подсистем настроена не полностью. Генерация ТЗ доступна, отдельные серверные функции ограничены.';
+    return 'Генерация, импорт, проверка и выгрузка доступны. Сейчас ограничены только дополнительные серверные функции, которые не мешают основному сценарию работы.';
   }
   return 'Найден критичный сбой. Использование production-контура рискованно до устранения причины.';
 }

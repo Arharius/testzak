@@ -133,7 +133,15 @@ const checks = [
       && workspace.includes('const openSplitGroup = useCallback')
       && workspace.includes('const restoreSplitGroupsSource = useCallback')
       && workspace.includes('const saveSplitGroupsLocally = useCallback')
-      && workspace.includes('Разбивка на отдельные ТЗ по назначению'),
+      && workspace.includes('Разделить файл на отдельные ТЗ'),
+  },
+  {
+    name: 'DOCX import prefers real enumerated positions and rejects boilerplate tables',
+    ok: workspace.includes('function isLikelyProcurementTable')
+      && workspace.includes('function looksLikeBoilerplateHeading')
+      && workspace.includes('const appendixRows = parseDocxAppendixRows(content);')
+      && workspace.includes('const enumeratedRows = parseDocxEnumeratedRows(content);')
+      && workspace.includes('const tableRows = parseDocxTableRows(content.blocks);'),
   },
 ];
 

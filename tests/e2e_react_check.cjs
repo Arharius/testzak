@@ -594,7 +594,7 @@ async function run() {
   await thirdRow.locator('td').nth(2).locator('input').fill('монтаж ЛВС и структурированной кабельной системы');
 
   const splitPlannerText = await page.locator('.workspace-split-planner').innerText();
-  assert.match(splitPlannerText, /Разбивка на отдельные ТЗ по назначению/i, 'Mixed rows should show split planner');
+  assert.match(splitPlannerText, /Разделить файл на отдельные ТЗ/i, 'Mixed rows should show split planner');
   assert.match(splitPlannerText, /Периферия|Сетевое|Услуги/i, 'Split planner should suggest purpose-based groups');
 
   await clickGenerateTZ();

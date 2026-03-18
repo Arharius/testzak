@@ -36,6 +36,11 @@ type HeaderMap = {
   okpd2?: number;
 };
 
+type QtyParseResult = {
+  qty: number;
+  explicit: boolean;
+};
+
 type DocxBlock = {
   kind: 'paragraph' | 'table';
   text?: string;
@@ -65,6 +70,7 @@ const DOCX_TRAILING_QTY_RE = new RegExp(
 );
 const DOCX_IMPORT_STOP_RE = /^(код окпд2|наименование характеристики|значение характеристики|единица измерения характеристики|спецификация\b|требования к|составил:|согласовано:|утверждаю\b|техническое задание\b)/i;
 const DOCX_SECTION_HEADING_RE = /^(\d+(?:\.\d+)*\.?\s+|приложение\b|раздел\b|глава\b|составил:|согласовано:|утверждаю\b)/i;
+const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии\b|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право)/i;
 const OKPD2_RE = /\b\d{2}(?:\.\d{2}){2}\.\d{3}\b/;
 const NORMATIVE_TEXT_RE = /\b(постановлени|приказ|федеральн(ый|ого)|трудового кодекса|гост|фстэк|фсб|министерств|минздрава|стать[яи]|решени[ея]|реестр|minцифр|правительств)\b/i;
 const REQUIREMENT_TEXT_RE = /\b(должен|должна|должны|обязан|обязана|обязаны|требования|осуществляется|обеспечивает|соответств|гаранти|сроки оказания|место проведения|приемк|приёмк|документац)\b/i;
@@ -120,6 +126,26 @@ function looksLikeNormativeText(text: string): boolean {
 
 function looksLikeRequirementText(text: string): boolean {
   return REQUIREMENT_TEXT_RE.test(text);
+}
+
+function countMeaningfulWords(text: string): number {
+  return normalizeCell(text)
+    .split(/\s+/)
+    .map((part) => part.replace(/^[^a-zA-Zа-яА-Я0-9]+|[^a-zA-Zа-яА-Я0-9]+$/g, ''))
+    .filter((part) => part.length >= 2)
+    .length;
+}
+
+function looksLikeBoilerplateHeading(text: string): boolean {
+  const normalized = normalizeCell(text);
+  if (!normalized) return true;
+  if (DOCX_IMPORT_STOP_RE.test(normalized) || DOCX_SECTION_HEADING_RE.test(normalized) || DOCX_BOILERPLATE_RE.test(normalized)) {
+    return true;
+  }
+  if (countMeaningfulWords(normalized) <= 1 && !findTrailingQty(normalizeDocxLine(normalized))) {
+    return true;
+  }
+  return false;
 }
 
 function chooseDelimiter(sample: string): string {
@@ -367,6 +393,7 @@ function buildImportInfo(
   notes: string[],
   options: {
     qty?: number;
+    qtyExplicit?: boolean;
     specs?: SpecItem[];
     meta?: Record<string, string>;
     ignoredBlocks?: number;
@@ -382,7 +409,7 @@ function buildImportInfo(
   };
   let confidence = baseByKind[sourceKind];
   const noteSet = new Set(notes.filter(Boolean));
-  if (!options.qty || options.qty <= 0) {
+  if (!options.qtyExplicit) {
     confidence -= 0.12;
     noteSet.add('Количество не выделено явно, подставлено значение по умолчанию.');
   }
@@ -425,6 +452,7 @@ function makeImportedRow(params: {
   licenseType: string;
   term: string;
   qty: number;
+  qtyExplicit?: boolean;
   sourceFormat: ImportedRowImportInfo['sourceFormat'];
   sourceKind: ImportedRowSourceKind;
   sourceText: string;
@@ -458,6 +486,7 @@ function makeImportedRow(params: {
       notes,
       {
         qty: params.qty,
+        qtyExplicit: params.qtyExplicit,
         specs: params.specs,
         meta: params.meta,
         ignoredBlocks: params.ignoredBlocks,
@@ -517,6 +546,7 @@ function buildImportedRowFromText(text: string, sourceKind: Exclude<ImportedRowS
   meta?: Record<string, string>;
   sourceContextText?: string;
   ignoredBlocks?: number;
+  qtyExplicit?: boolean;
 }): ImportedProcurementRow | null {
   const cleaned = normalizeDocxLine(text).replace(/[-:;,.]+$/u, '').trim();
   if (!cleaned || DOCX_IMPORT_STOP_RE.test(cleaned)) return null;
@@ -527,7 +557,7 @@ function buildImportedRowFromText(text: string, sourceKind: Exclude<ImportedRowS
   const description = normalizeDocxLine(qtyMatch ? cleaned.slice(0, qtyMatch.index) : cleaned)
     .replace(/[-:;,.]+$/u, '')
     .trim();
-  if (!description || description.length < 4 || DOCX_IMPORT_STOP_RE.test(description)) return null;
+  if (!description || description.length < 4 || looksLikeBoilerplateHeading(description)) return null;
 
   const meta = options?.meta ? { ...options.meta } : {};
   const inlineOkpd2 = extractOkpd2Code(cleaned);
@@ -540,6 +570,7 @@ function buildImportedRowFromText(text: string, sourceKind: Exclude<ImportedRowS
     licenseType: commercial.licenseType,
     term: commercial.term,
     qty: qtyMatch?.qty || 1,
+    qtyExplicit: options?.qtyExplicit ?? !!qtyMatch,
     meta,
     specs: options?.specs,
     notes: options?.notes,
@@ -571,6 +602,53 @@ function parseQty(value: string): number {
   return Math.max(1, Math.round(num));
 }
 
+function parseQtyCell(value: string): QtyParseResult {
+  const cleaned = normalizeCell(value);
+  return {
+    qty: parseQty(cleaned || '1'),
+    explicit: /\d/.test(cleaned),
+  };
+}
+
+function extractRowDescription(row: string[], map: HeaderMap): string {
+  const primaryIndex = map.type ?? map.description ?? 0;
+  const descriptionIndex = map.description ?? map.type ?? primaryIndex;
+  const primary = normalizeCell(row[primaryIndex] || '');
+  const description = normalizeCell(row[descriptionIndex] || primary);
+  if (description && description !== primary) return description;
+  return primary;
+}
+
+function isLikelyProcurementTable(rawRows: string[][]): boolean {
+  if (rawRows.length < 2 || isSpecTable(rawRows)) return false;
+
+  const headerMap = detectHeaderMap(rawRows[0]);
+  const hasHeader = Object.keys(headerMap).length > 0;
+  const dataRows = hasHeader ? rawRows.slice(1) : rawRows;
+  if (dataRows.length === 0) return false;
+
+  const fallbackMap: HeaderMap = hasHeader
+    ? headerMap
+    : { type: 0, description: 1, licenseType: 2, term: 3, qty: 4, okpd2: 5 };
+
+  let candidateRows = 0;
+  for (const row of dataRows.slice(0, 12)) {
+    const description = extractRowDescription(row, fallbackMap);
+    if (!description || looksLikeBoilerplateHeading(description)) continue;
+    const qtyCell = normalizeCell(row[fallbackMap.qty ?? -1] || '');
+    const explicitQty = /\d/.test(qtyCell) || !!findTrailingQty(normalizeDocxLine(description));
+    const hasOkpd2 = !!extractOkpd2Code(row.join(' | '));
+    if (countMeaningfulWords(description) >= 2 && (explicitQty || hasOkpd2 || description.length >= 24)) {
+      candidateRows += 1;
+    }
+  }
+
+  if (hasHeader) {
+    return candidateRows >= Math.max(1, Math.min(2, dataRows.length));
+  }
+  return candidateRows >= 2;
+}
+
 function mapRows(
   rawRows: string[][],
   sourceFormat: ImportedRowImportInfo['sourceFormat'],
@@ -588,20 +666,21 @@ function mapRows(
   return dataRows
     .map((row) => {
       const primaryIndex = fallbackMap.type ?? fallbackMap.description ?? 0;
-      const descriptionIndex = fallbackMap.description ?? fallbackMap.type ?? primaryIndex;
       const rawType = normalizeCell(row[primaryIndex] || '');
-      const description = normalizeCell(row[descriptionIndex] || rawType);
+      const description = extractRowDescription(row, fallbackMap);
       const licenseType = normalizeCell(row[fallbackMap.licenseType ?? -1] || '');
       const term = normalizeCell(row[fallbackMap.term ?? -1] || '');
-      const qty = parseQty(row[fallbackMap.qty ?? -1] || '1');
+      const qtyParsed = parseQtyCell(row[fallbackMap.qty ?? -1] || '');
+      const qty = qtyParsed.qty;
       const okpd2 = extractOkpd2Code(row[fallbackMap.okpd2 ?? -1] || '');
-      if (!rawType && !description) return null;
+      if ((!rawType && !description) || looksLikeBoilerplateHeading(description || rawType)) return null;
       return makeImportedRow({
         rawType: rawType || description,
         description,
         licenseType,
         term,
         qty,
+        qtyExplicit: qtyParsed.explicit,
         sourceFormat,
         sourceKind,
         sourceText: row.join(' | '),
@@ -657,7 +736,7 @@ function findNextBlockIndex(blocks: DocxBlock[], fromIndex: number, predicate: (
 function parseDocxTableRows(blocks: DocxBlock[]): ImportedProcurementRow[] {
   const rows: ImportedProcurementRow[] = [];
   for (const block of blocks) {
-    if (block.kind !== 'table' || !block.rows || block.rows.length < 2 || isSpecTable(block.rows)) continue;
+    if (block.kind !== 'table' || !block.rows || !isLikelyProcurementTable(block.rows)) continue;
     rows.push(...mapRows(block.rows, 'docx', 'table'));
   }
   return dedupeImportedRows(rows);
@@ -855,14 +934,14 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
 
 async function parseDocxRows(buffer: ArrayBuffer): Promise<ImportedProcurementRow[]> {
   const content = await parseDocxContent(buffer);
-  const tableRows = parseDocxTableRows(content.blocks);
-  if (tableRows.length > 0) return tableRows;
-
   const appendixRows = parseDocxAppendixRows(content);
   if (appendixRows.length > 0) return appendixRows;
 
   const enumeratedRows = parseDocxEnumeratedRows(content);
   if (enumeratedRows.length > 0) return enumeratedRows;
+
+  const tableRows = parseDocxTableRows(content.blocks);
+  if (tableRows.length > 0) return tableRows;
 
   return parseDocxFallbackRows(content);
 }

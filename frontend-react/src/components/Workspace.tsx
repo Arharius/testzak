@@ -6742,6 +6742,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [splitSourceRows, setSplitSourceRows] = useState<GoodsRow[] | null>(null);
   const [activeSplitGroupKey, setActiveSplitGroupKey] = useState<ProcurementPurposeKey | null>(null);
   const [splitSaving, setSplitSaving] = useState(false);
+  const [splitPlannerOpen, setSplitPlannerOpen] = useState(false);
   // Inline spec editing
   const [editingRowId, setEditingRowId] = useState<number | null>(null);
   const [expandedRowMetaId, setExpandedRowMetaId] = useState<number | null>(null);
@@ -6824,6 +6825,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       });
       setSplitSourceRows(null);
       setActiveSplitGroupKey(null);
+      setSplitPlannerOpen(false);
       setRows((prev) => {
         const isBlankDraft = prev.length === 1 && !prev[0].model.trim() && !prev[0].specs?.length && prev[0].status === 'idle';
         return isBlankDraft ? mappedRows : [...prev, ...mappedRows];
@@ -8412,6 +8414,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       setSplitSourceRows(cloneGoodsRows(sourceRows));
     }
     setActiveSplitGroupKey(groupKey);
+    setSplitPlannerOpen(true);
     const base = Date.now();
     replaceWorkspaceRows(cloneGoodsRows(target.rows).map((row, idx) => ({ ...row, id: base + idx })));
     showToast(`✅ Открыто отдельное ТЗ: ${target.title}`, true);
@@ -8423,6 +8426,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     replaceWorkspaceRows(cloneGoodsRows(splitSourceRows).map((row, idx) => ({ ...row, id: base + idx })));
     setSplitSourceRows(null);
     setActiveSplitGroupKey(null);
+    setSplitPlannerOpen(false);
     showToast('✅ Восстановлен полный список позиций из исходного файла', true);
   }, [replaceWorkspaceRows, showToast, splitSourceRows]);
 
@@ -9769,15 +9773,15 @@ ${hint || '- Используй детальные, проверяемые эк�
             <div className="workspace-side-head workspace-side-head--split">
               <div>
                 <div className="micro-label">Split</div>
-                <strong>Разбивка на отдельные ТЗ по назначению</strong>
+                <strong>Разделить файл на отдельные ТЗ</strong>
               </div>
               <span className="workspace-side-meta">{splitGroups.length} групп</span>
             </div>
             <div className="workspace-inline-note">
-              Файл содержит разнотипные позиции. Можно открыть отдельное ТЗ только для нужной группы: сеть, комплектующие, периферия, услуги и т.д.
+              Это необязательно. Если нужен один общий документ, просто игнорируйте этот блок. Разделение пригодится только когда хотите быстро вынести, например, ПО, серверы или услуги в отдельные ТЗ.
             </div>
-            <div className="workspace-chip-row workspace-chip-row--dense">
-              {splitGroups.map((group) => (
+            <div className="workspace-chip-row workspace-chip-row--dense workspace-chip-row--split-summary">
+              {splitGroups.slice(0, 5).map((group) => (
                 <span
                   key={group.key}
                   className={`workspace-mini-chip ${activeSplitGroupKey === group.key ? 'is-ready' : ''}`}
@@ -9785,42 +9789,58 @@ ${hint || '- Используй детальные, проверяемые эк�
                   {group.label}: {group.count}
                 </span>
               ))}
+              {splitGroups.length > 5 ? (
+                <span className="workspace-mini-chip">+ ещё {splitGroups.length - 5}</span>
+              ) : null}
             </div>
-            <div className="workspace-split-grid">
-              {splitGroups.map((group) => (
-                <div
-                  key={group.key}
-                  className={`workspace-split-card ${activeSplitGroupKey === group.key ? 'is-active' : ''}`}
-                >
-                  <div className="workspace-split-card-head">
-                    <strong>{group.title}</strong>
-                    <span>{group.count} поз.</span>
-                  </div>
-                  <div className="workspace-split-card-copy">{group.preview || 'Без явного примера позиции'}</div>
-                  <button
-                    type="button"
-                    className="row-detail-toggle"
-                    onClick={() => openSplitGroup(group.key)}
-                  >
-                    {activeSplitGroupKey === group.key ? 'Открыто в работе' : 'Открыть как отдельное ТЗ'}
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="workspace-action-grid workspace-action-grid--toolbar workspace-action-grid--split">
+            <div className="workspace-split-toolbar">
               <button
                 type="button"
-                onClick={() => void saveSplitGroupsLocally()}
-                disabled={paymentRequired || splitSaving}
+                className="row-detail-toggle"
+                onClick={() => setSplitPlannerOpen((open) => !open)}
               >
-                {splitSaving ? '⏳ Сохраняю группы...' : `🗂️ Сохранить ${splitGroups.length} отдельных ТЗ`}
+                {splitPlannerOpen ? 'Скрыть варианты разбиения' : `Показать варианты разбиения (${splitGroups.length})`}
               </button>
               {splitSourceRows?.length ? (
                 <button type="button" onClick={restoreSplitGroupsSource}>
-                  ↩️ Вернуть полный список позиций
+                  ↩️ Вернуть полный список
                 </button>
               ) : null}
             </div>
+            {splitPlannerOpen ? (
+              <>
+                <div className="workspace-split-grid">
+                  {splitGroups.map((group) => (
+                    <div
+                      key={group.key}
+                      className={`workspace-split-card ${activeSplitGroupKey === group.key ? 'is-active' : ''}`}
+                    >
+                      <div className="workspace-split-card-head">
+                        <strong>{group.title}</strong>
+                        <span>{group.count} поз.</span>
+                      </div>
+                      <div className="workspace-split-card-copy">{group.preview || 'Без явного примера позиции'}</div>
+                      <button
+                        type="button"
+                        className="row-detail-toggle"
+                        onClick={() => openSplitGroup(group.key)}
+                      >
+                        {activeSplitGroupKey === group.key ? 'Открыто в работе' : 'Открыть как отдельное ТЗ'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="workspace-action-grid workspace-action-grid--toolbar workspace-action-grid--split">
+                  <button
+                    type="button"
+                    onClick={() => void saveSplitGroupsLocally()}
+                    disabled={paymentRequired || splitSaving}
+                  >
+                    {splitSaving ? '⏳ Сохраняю группы...' : `🗂️ Сохранить ${splitGroups.length} отдельных ТЗ`}
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         )}
         <div className="workspace-side-note">

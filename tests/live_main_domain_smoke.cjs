@@ -10,7 +10,10 @@ async function run() {
 
   try {
     await page.goto('https://tz-generator.onrender.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.getByRole('heading', { name: 'Генератор ТЗ' }).waitFor({ timeout: 15000 });
+    await page.waitForFunction(() => {
+      const text = document.body.innerText || '';
+      return text.includes('Подготовка закупочного ТЗ без ручного хаоса') || text.includes('Сборка ТЗ');
+    }, { timeout: 15000 });
 
     await page.getByRole('button', { name: 'Войти' }).click();
     await page.getByRole('button', { name: 'Email-ссылка' }).click();

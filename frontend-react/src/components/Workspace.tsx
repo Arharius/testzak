@@ -90,7 +90,15 @@ function isServiceCatalogType(key: string): boolean {
   return !!lookupCatalog(key)?.isService;
 }
 
-const SERVICE_QUERY_RE = /(услуг|услуга|оказание|обслуживан|сопровождени|монтаж|демонтаж|ремонт|аутсорс|уборк|охрана|разработка|внедрение|интеграц|обучени|консалтинг|аудит|настройк|пусконалад|поддержк)/i;
+const SERVICE_QUERY_RE = /(услуг|услуга|оказание|обслуживан|сопровождени|монтаж|демонтаж|ремонт|аутсорс|уборк|охрана|разработка|внедрение|интеграц|обучени|консалтинг|аудит|настройк|пусконалад|поддержк|медосмотр|медицинск|осмотр|обследован|освидетельств|диагностик)/i;
+
+function normalizeTypeMatchText(value: string): string {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[^a-zа-я0-9]+/g, ' ')
+    .trim();
+}
 
 type Law175StatusNormalized = 'ban' | 'restriction' | 'preference' | 'exception' | 'none';
 
@@ -228,16 +236,24 @@ function getLaw175MeasureText(status: string, regime: string, basis = ''): strin
   }
 }
 
-function detectFreeformRowType(rawType: string, description: string): string {
+function detectFreeformRowType(rawType: string, description: string, options?: { conservativeGeneral?: boolean }): string {
   const text = `${rawType} ${description}`.trim();
   if (!text) return 'otherGoods';
   if (SERVICE_QUERY_RE.test(text)) {
     return 'otherService';
   }
+  const normalized = normalizeTypeMatchText(text);
   const itType = detectGoodsType(text, 'otherGoods');
   const generalType = detectGeneralGoodsType(text, 'otherGoods');
   if (itType !== 'otherGoods' && !['miscHardware', 'miscCable', 'miscConsumable', 'miscSoftware'].includes(itType)) {
     return itType;
+  }
+  if (options?.conservativeGeneral) {
+    const strongGeneralMatch = detectGeneralGoodsTypes(text, 3).find((candidate) => {
+      const candidateNorm = normalizeTypeMatchText(candidate.name);
+      return candidateNorm.length >= 8 && (normalized.includes(candidateNorm) || candidateNorm.includes(normalized));
+    });
+    return strongGeneralMatch?.type || 'otherGoods';
   }
   if (generalType !== 'otherGoods') {
     return generalType;
@@ -6803,7 +6819,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       }
       const now = Date.now();
       const mappedRows = imported.map((item, idx) => {
-        const type = detectFreeformRowType(item.rawType, item.description);
+        const type = detectFreeformRowType(item.rawType, item.description, {
+          conservativeGeneral: item.importInfo.sourceFormat === 'docx',
+        });
         const classificationSource = item.importInfo.sourceFormat === 'docx' ? 'docx_import' : 'import';
         return applyAutoCommercialTerms({
           id: now + idx,

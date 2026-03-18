@@ -1846,7 +1846,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['принтер','printer','xerox b2','hp laser','laserjet','pantum p','ricoh sp','brother hl','canon lbp','kyocera ecosys p'], type: 'printer' },
 
   // ── МФУ ──
-  { tokens: ['мфу','мфд','multifunction','pantum bm','xerox b2','brother mfc','brother dcp','canon mf','ricoh mp','ricoh m','kyocera ecosys m'], type: 'mfu' },
+  { tokens: ['мфу','мфд','multifunction','многофункциональное устройство','многофункциональное устроиство','pantum bm','xerox b2','brother mfc','brother dcp','canon mf','ricoh mp','ricoh m','kyocera ecosys m'], type: 'mfu' },
 
   // ── Сканеры ──
   { tokens: ['сканер','scanner','fujitsu fi','canon dr','kodak s2','avision','epson ds'], type: 'scanner' },

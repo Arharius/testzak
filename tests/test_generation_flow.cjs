@@ -75,7 +75,7 @@ const checks = [
     ok: workspace.includes('function hasTrustedClassificationEvidence')
       && workspace.includes('function buildRowClassificationContext')
       && workspace.includes("case 'classify':")
-      && workspace.includes('Переобогатить классификацию')
+      && workspace.includes('Уточнить классификацию')
       && workspace.includes('Добрать ОКПД2'),
   },
   {
@@ -84,7 +84,7 @@ const checks = [
       && workspace.includes('const runPublicationAutopilot = useCallback(async () => {')
       && workspace.includes("event: 'compliance.publication_autopilot'")
       && workspace.includes('Автодовести до публикации')
-      && workspace.includes('Publication autopilot последовательно переобогащает классификацию'),
+      && workspace.includes('Автодоводка по очереди уточняет классификацию'),
   },
   {
     name: 'Publication dossier is rendered and serialized across save, export and preview',

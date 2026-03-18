@@ -91,7 +91,7 @@ export function EnterprisePanel({ value, onSave }: Props) {
         <label><input type="checkbox" {...form.register('rbacApprovals')} /> Ролевые согласования</label>
         <label><input type="checkbox" {...form.register('slaControl')} /> SLA-контроль</label>
         <label><input type="checkbox" {...form.register('immutableAudit')} /> Immutable audit trail</label>
-        <label><input type="checkbox" {...form.register('benchmarking')} /> Бенчмаркинг закупок</label>
+        <label><input type="checkbox" {...form.register('benchmarking')} /> Сверка с внешним источником</label>
         <label><input type="checkbox" {...form.register('multiOrg')} /> Multi-organization</label>
         <label><input type="checkbox" {...form.register('multiContour')} /> Multi-contour</label>
       </div>

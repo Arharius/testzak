@@ -135,23 +135,28 @@ export function WorkspaceRowDetailPanel({
               type="button"
               onClick={() => onRefreshRowClassification(row.id)}
               disabled={!canUseAiAssist || !!rowActionState || publicationAutopilotRunning}
-              title={!canUseAiAssist ? 'Требуется доступ к backend/AI для уточнения классификации' : 'Переобогатить ОКПД2, КТРУ и статус ПП1875 для этой строки'}
+              title={!canUseAiAssist ? 'Требуется доступ к backend/AI для уточнения классификации' : 'Уточнить ОКПД2, КТРУ и статус ПП1875 для этой строки'}
             >
-              {rowActionState?.rowId === row.id && rowActionState.source === 'classify' ? '⏳ Класс.' : '🧭 Класс.'}
+              {rowActionState?.rowId === row.id && rowActionState.source === 'classify' ? '⏳ Уточнение...' : '🧭 Уточнить'}
             </button>
           </div>
           <div className="workspace-chip-row workspace-chip-row--detail">
             {(() => {
               if (row.benchmark && row.specs?.length) {
                 const riskLevel = getBenchmarkRiskLevel(buildDraftSourceComparison(row.benchmark.sourceSpecs, row.specs, row.type));
+                const riskLabel = riskLevel === 'block'
+                  ? 'есть расхождения'
+                  : riskLevel === 'warn'
+                    ? 'нужна проверка'
+                    : 'совпадает';
                 return (
                   <span className={`workspace-status-badge workspace-status-badge--${riskLevel === 'block' ? 'block' : riskLevel === 'warn' ? 'warn' : 'ready'}`}>
-                    Benchmark: {riskLevel}
+                    Сверка: {riskLabel}
                   </span>
                 );
               }
               if (benchmarkingEnabled && !isServiceCatalogType(row.type)) {
-                return <span className="workspace-mini-chip">Benchmark: нет</span>;
+                return <span className="workspace-mini-chip">Источник для сверки: нет</span>;
               }
               return null;
             })()}

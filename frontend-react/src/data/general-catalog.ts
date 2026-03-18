@@ -1066,7 +1066,7 @@ export const GENERAL_CATALOG: Record<string, GeneralGoodsItem> = {
   // 🚪 УНИВЕРСАЛЬНЫЕ ПОЗИЦИИ
   // ═══════════════════════════════════════════════════════════
   otherGoods: {
-    name: '⭐ Любой товар (введите описание)',
+    name: '⭐ Свободный ввод товара',
     okpd2: '00.00.00.000',
     okpd2name: 'ОКПД2 определяется автоматически по описанию товара',
     placeholder: 'Введите ЛЮБОЙ товар: «стул офисный с подлокотниками», «бензопила Husqvarna 450», «палатка туристическая 4-местная», «микроскоп бинокулярный»...',
@@ -1086,7 +1086,7 @@ export const GENERAL_CATALOG: Record<string, GeneralGoodsItem> = {
 // Группы для меню
 // ══════════════════════════════════════════════════════════════
 export const GENERAL_GROUPS: GeneralGoodsGroup[] = [
-  { label: '⭐ Любой товар (свободный ввод)', items: [
+  { label: '⭐ Свободный ввод', items: [
     'otherGoods',
     'otherService',
   ]},

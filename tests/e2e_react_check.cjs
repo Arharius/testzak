@@ -508,15 +508,18 @@ async function run() {
   });
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('text=Генератор ТЗ', { timeout: 30000 });
-  await page.waitForSelector('text=Production ready', { timeout: 30000 });
+  await page.waitForSelector('text=Сборка ТЗ', { timeout: 30000 });
+  await page.waitForFunction(() => {
+    const text = document.body.innerText || '';
+    return /Все основные подсистемы готовы|Основные функции доступны/.test(text);
+  }, { timeout: 30000 });
 
   await page.getByRole('button', { name: /Arctic|Контраст/ }).evaluate((button) => button.click());
   await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'contrast', { timeout: 10000 });
   const theme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
   assert.strictEqual(theme, 'contrast', 'Theme should switch to contrast');
   const runtimeBlockText = await page.locator('.runtime-panel').innerText();
-  assert.match(runtimeBlockText, /Production ready/i, 'Runtime panel should show readiness summary');
+  assert.match(runtimeBlockText, /Все основные подсистемы готовы|Основные функции доступны/i, 'Runtime panel should show readiness summary');
   assert.match(runtimeBlockText, /deepseek/i, 'Runtime panel should show active AI provider');
 
   const authToggle = page.locator('.workspace-auth-toggle');
@@ -695,10 +698,10 @@ async function run() {
 
   await page.waitForFunction(() => {
     const text = document.body.innerText || '';
-    return /Инструменты исправления|Уточнить ОКПД2|Переобогатить классификацию|Класс\./.test(text);
+    return /Инструменты исправления|Уточнить ОКПД2|Уточнить классификацию|Уточнить/.test(text);
   }, { timeout: 60000 });
 
-  await universalRow.getByRole('button', { name: /Класс\./ }).click();
+  await universalRow.getByRole('button', { name: /Уточнить/ }).click();
   await page.waitForFunction(() => {
     const text = document.body.innerText || '';
     return /Классификация обновлена/i.test(text);

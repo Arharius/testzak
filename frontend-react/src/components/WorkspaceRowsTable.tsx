@@ -298,7 +298,7 @@ export function WorkspaceRowsTable({
                           disabled={!canUseAiAssist || !!rowActionState || publicationAutopilotRunning}
                           title={!canUseAiAssist ? 'Требуется доступ к backend/AI для уточнения классификации' : 'Быстро добрать ОКПД2, КТРУ и статус ПП1875 для этой строки'}
                         >
-                          {rowActionState?.rowId === row.id && rowActionState.source === 'classify' ? '⏳ Класс.' : '🧭 Класс.'}
+                          {rowActionState?.rowId === row.id && rowActionState.source === 'classify' ? '⏳ Уточнение...' : '🧭 Уточнить'}
                         </button>
                       )}
                       <button

@@ -2109,7 +2109,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['usb удлинитель','usb extender','usb-over-cat','активный usb удлинитель'], type: 'usbExtender' },
   { tokens: ['kvm удлинитель','kvm-удлинитель','kvm extender','kvm over ip'], type: 'kvmExtender' },
   { tokens: ['usb-адаптер','usb адаптер','usb-lan','usb bluetooth','usb wi-fi','usb wifi'], type: 'usbAdapter' },
-  { tokens: ['видеоадаптер','переходник hdmi','переходник dp','hdmi vga','dp hdmi','usb-c hdmi','displayport адаптер'], type: 'videoAdapter' },
+  { tokens: ['видеоадаптер','переходник hdmi','переходник dp','hdmi vga','dp hdmi','usb-c hdmi','displayport адаптер','кабель адаптер видео','кабель-адаптер видео'], type: 'videoAdapter' },
 
   // ── Электропитание ──
   { tokens: ['сетевой фильтр','surge protector','фильтр сетевой','защитный удлинитель','пилот'], type: 'surgeProtector' },
@@ -2151,7 +2151,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   // ── Инструменты ──
   { tokens: ['набор инструментов','tool set','toolkit','набор отверток','ремонтный набор'], type: 'toolSet' },
   { tokens: ['кримпер','обжимной инструмент','crimper','обжимка','клещи обжимные'], type: 'crimper' },
-  { tokens: ['тестер кабеля','lan-тестер','lan тестер','cable tester','poe тестер'], type: 'cableTester' },
+  { tokens: ['тестер кабеля','тестер кабельный','кабельный тестер','lan-тестер','lan тестер','cable tester','poe тестер'], type: 'cableTester' },
   { tokens: ['паяльник','паяльная станция','soldering','паяльная станц'], type: 'soldering' },
   { tokens: ['мультиметр','multimeter','тестер электрич','авометр'], type: 'multimeter' },
   { tokens: ['прецизионная отвертка','набор точных отверток','precision screwdriver','torx отвертк'], type: 'precisionScrewdriver' },

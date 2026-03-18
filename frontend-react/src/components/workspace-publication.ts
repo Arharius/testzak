@@ -500,9 +500,9 @@ export function createWorkspacePublicationTools({
           level: 'warn',
           rowId: row.id,
           text: `${rowLabel}: требуется ручная верификация классификации и применимости перечней ПП1875.`,
-          action: 'переобогатить классификацию по ЕИС / источникам, затем подтвердить ОКПД2, КТРУ и меру нацрежима перед публикацией',
+          action: 'уточнить классификацию по ЕИС / источникам, затем подтвердить ОКПД2, КТРУ и меру нацрежима перед публикацией',
           actionKind: 'classify',
-          actionLabel: 'Переобогатить',
+          actionLabel: 'Уточнить',
         });
       }
 
@@ -591,10 +591,10 @@ export function createWorkspacePublicationTools({
             key: `benchmark-missing-${row.id}`,
             level: 'warn',
             rowId: row.id,
-            text: `${rowLabel}: нет внешнего benchmark-источника для верификации характеристик.`,
+            text: `${rowLabel}: нет внешнего источника для сверки характеристик.`,
             action: 'подтянуть характеристики из интернета или ЕИС и сверить результат',
             actionKind: 'internet',
-            actionLabel: 'Подтянуть источник',
+            actionLabel: 'Добавить источник',
           });
         }
       }
@@ -731,7 +731,7 @@ export function createWorkspacePublicationTools({
           actions.push('перепроверить расхождения с эталоном');
         }
       } else if (!isServiceCatalogType(row.type)) {
-        qualityParts.push('Benchmark: внешний эталон не найден');
+        qualityParts.push('Внешняя сверка: источник не найден');
         actions.push('при возможности подтвердить позицию внешним источником');
         escalate('review');
       }

@@ -18,17 +18,17 @@ function getTone(status?: string): RuntimeTone {
 }
 
 function runtimeTitle(backendAvailable: boolean, readiness?: BackendReadiness, error?: string): string {
-  if (!backendAvailable) return 'Локальный режим';
+  if (!backendAvailable) return 'Работа без backend';
   if (error) return 'Backend недоступен';
   if (!readiness) return 'Проверка runtime';
-  if (readiness.status === 'ready') return 'Контур готов';
-  if (readiness.status === 'degraded') return 'Основной контур работает';
+  if (readiness.status === 'ready') return 'Все основные подсистемы готовы';
+  if (readiness.status === 'degraded') return 'Основные функции доступны';
   return 'Контур не готов';
 }
 
 function runtimeDescription(backendAvailable: boolean, readiness?: BackendReadiness, error?: string): string {
   if (!backendAvailable) {
-    return 'Backend API не подключён. Генерация и экспорт доступны локально, но enterprise-диагностика и серверные сервисы отключены.';
+    return 'Приложение запущено локально. Генерация и экспорт ТЗ работают, а серверные функции и интеграции сейчас не используются.';
   }
   if (error) {
     return `Не удалось получить runtime-диагностику: ${error}`;
@@ -37,10 +37,10 @@ function runtimeDescription(backendAvailable: boolean, readiness?: BackendReadin
     return 'Проверяю базу данных, очередь интеграций, AI-провайдеров, платежи и enterprise-контур.';
   }
   if (readiness.status === 'ready') {
-    return 'Критичные подсистемы доступны. Контур готов к рабочей нагрузке и контролируемому enterprise-использованию.';
+    return 'Критичные подсистемы доступны. Генерация, импорт, проверка и выгрузка работают без ограничений.';
   }
   if (readiness.status === 'degraded') {
-    return 'Генерация, импорт, проверка и выгрузка доступны. Сейчас ограничены только дополнительные серверные функции, которые не мешают основному сценарию работы.';
+    return 'Основной сценарий работает: можно генерировать, проверять и выгружать ТЗ. Не настроены только дополнительные серверные функции, например интеграции, почта, платежи или расширенная диагностика.';
   }
   return 'Найден критичный сбой. Использование production-контура рискованно до устранения причины.';
 }

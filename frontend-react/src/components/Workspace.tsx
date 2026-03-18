@@ -100,7 +100,9 @@ const DOCX_STRONG_IT_CONTEXT_TOKENS = [
   'ldap', 'почтов', 'операционн', 'программн', 'лицензия', 'резервного', 'резервное',
   'резервный', 'резервная', 'виртуализац', 'системный блок', 'компьютер', 'ssd', 'hdd',
   'процессор', 'клавиатур', 'мышь', 'гарнитур', 'веб камера', 'usb', 'hdmi', 'dvd', 'cd r',
-  'cd rw', 'оптическ', 'твердотельн', 'схд', 'ибп', 'nas', 'san',
+  'cd rw', 'оптическ', 'твердотельн', 'схд', 'ибп', 'nas', 'san', 'витая пара', 'rj45',
+  'rj 45', '8p8c', 'акустическ', 'колонки', 'видеоадаптер', 'displayport', 'dp', 'vga',
+  'переходник hdmi', 'переходник dp', 'внешний привод', 'кабель адаптер видео',
 ];
 
 function normalizeTypeMatchText(value: string): string {
@@ -261,7 +263,39 @@ function getLaw175MeasureText(status: string, regime: string, basis = ''): strin
   }
 }
 
-function detectFreeformRowType(rawType: string, description: string, options?: { conservativeGeneral?: boolean }): string {
+function detectTypeByImportedOkpd2(description: string, okpd2?: string): string | null {
+  const code = String(okpd2 || '').trim();
+  if (!code) return null;
+  const normalized = normalizeTypeMatchText(description);
+  if (!normalized) return null;
+
+  if (/(витая пара|патч|patch|utp|ftp|stp|s\/ftp|cat5|cat6|cat6a|rj45 кабел|ethernet|lan кабел)/.test(normalized)
+    && /^27\.(31|32)\./.test(code)) {
+    return 'patchCord';
+  }
+  if (/(коннектор|rj45|rj 45|8p8c|штекер)/.test(normalized) && /^26\.30\.30\./.test(code)) {
+    return 'rj45Connector';
+  }
+  if (/(тестер|lan тестер|кабельн)/.test(normalized) && /^26\.51\.43\./.test(code)) {
+    return 'cableTester';
+  }
+  if (/(акустическ|колонк|speakers|звуков)/.test(normalized) && /^26\.40\.32\./.test(code)) {
+    return 'speakers';
+  }
+  if (/(оптическ|dvd|cd|bd|blu ray|blu-ray|привод)/.test(normalized) && /^26\.20\.40\.140$/.test(code)) {
+    return 'opticalDrive';
+  }
+  if (/(накопител|storage|drive)/.test(normalized) && /^26\.20\.40\.120$/.test(code)) {
+    return 'extSsd';
+  }
+  if (/(накопител|storage|drive)/.test(normalized) && /^26\.20\.40\.110$/.test(code)) {
+    return 'extHdd';
+  }
+
+  return null;
+}
+
+function detectFreeformRowType(rawType: string, description: string, options?: { conservativeGeneral?: boolean; okpd2?: string }): string {
   const text = `${rawType} ${description}`.trim();
   if (!text) return 'otherGoods';
   const normalized = normalizeTypeMatchText(text);
@@ -275,11 +309,15 @@ function detectFreeformRowType(rawType: string, description: string, options?: {
     && (normalized.includes('лиценз') || normalized.includes('система') || normalized.includes('программ'))) {
     return 'backup_sw';
   }
+  const okpd2DetectedType = detectTypeByImportedOkpd2(text, options?.okpd2);
   const itType = detectGoodsType(text, 'otherGoods');
   const generalType = detectGeneralGoodsType(text, 'otherGoods');
   const allowItType = !options?.conservativeGeneral || DOCX_STRONG_IT_CONTEXT_TOKENS.some((token) => normalized.includes(token));
   if (itType !== 'otherGoods' && allowItType && !['miscHardware', 'miscCable', 'miscConsumable', 'miscSoftware'].includes(itType)) {
     return itType;
+  }
+  if (okpd2DetectedType) {
+    return okpd2DetectedType;
   }
   if (options?.conservativeGeneral) {
     const strongGeneralMatch = detectGeneralGoodsTypes(text, 3).find((candidate) => {
@@ -989,6 +1027,10 @@ function applyBenchmarkPatchToRow(row: GoodsRow, mode: 'missing' | 'changed' | '
 
 function getRowDisplayLabel(row: GoodsRow): string {
   const goods = lookupCatalog(row.type);
+  if (isUniversalGoodsType(row.type)) {
+    const model = String(row.model || '').trim();
+    return model ? `Свободный ввод (${model})` : goods.name;
+  }
   return `${goods.name}${row.model ? ` (${row.model})` : ''}`;
 }
 
@@ -6856,6 +6898,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       const mappedRows = imported.map((item, idx) => {
         const type = detectFreeformRowType(item.rawType, item.description, {
           conservativeGeneral: item.importInfo.sourceFormat === 'docx',
+          okpd2: item.meta?.okpd2_code || item.meta?.okpd2,
         });
         const classificationSource = item.importInfo.sourceFormat === 'docx' ? 'docx_import' : 'import';
         const hasSeedSpecs = !!item.specs?.length;

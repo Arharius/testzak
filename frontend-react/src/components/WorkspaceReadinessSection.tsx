@@ -116,18 +116,18 @@ export function WorkspaceReadinessSection({
                   <summary className="workspace-disclosure-summary">
                     <div>
                       <strong>Инструменты исправления</strong>
-                      <span>Автодоводка, safe-fix, классификация, benchmark и сервисный контур</span>
+                      <span>Автодоводка, уточнение классификации, внешняя сверка и сервисные требования</span>
                     </div>
-                    <span className="workspace-side-meta">bulk actions</span>
+                    <span className="workspace-side-meta">массовые действия</span>
                   </summary>
                   <div className="workspace-disclosure-body">
                     <div className="workspace-review-stack">
                       {(publicationAutopilotActions.totalRows > 0 || readinessAutofixActions.totalRows > 0 || legalBulkActions.safeFixRows > 0) && (
                         <WorkspaceReviewActionCard
-                          title="Автодоводка и safe-fix"
+                          title="Автодоводка и безопасные исправления"
                           subtitle="Главный режим исправления перед публикацией"
                           tone={publicationAutopilotActions.totalRows > 0 ? 'ready' : 'neutral'}
-                          note="Publication autopilot последовательно переобогащает классификацию, снимает неподтверждённые исключения, синхронизирует benchmark и добивает сервисные требования."
+                          note="Автодоводка по очереди уточняет классификацию, снимает неподтверждённые исключения, сверяет характеристики с источником и добирает сервисные требования."
                         >
                           <div className="workspace-action-grid workspace-action-grid--compact">
                             {publicationAutopilotActions.totalRows > 0 && (
@@ -137,7 +137,7 @@ export function WorkspaceReadinessSection({
                                 disabled={publicationAutopilotRunning || rowActionBusy}
                                 className="workspace-action-button is-autopilot"
                               >
-                                {publicationAutopilotRunning ? '⏳ Publication autopilot...' : `Автодовести до публикации (${publicationAutopilotActions.totalRows})`}
+                                {publicationAutopilotRunning ? '⏳ Автодоводка...' : `Автодовести до публикации (${publicationAutopilotActions.totalRows})`}
                               </button>
                             )}
                             {readinessAutofixActions.totalRows > 0 && (
@@ -168,7 +168,7 @@ export function WorkspaceReadinessSection({
                         <WorkspaceReviewActionCard
                           title="Классификация"
                           subtitle="Добор ОКПД2, КТРУ и снятие ручной верификации"
-                          note="Classification assist использует ЕИС, внешние источники и ИИ-классификацию, чтобы укрепить правовой статус позиции перед публикацией."
+                          note="Система использует ЕИС, внешние источники и ИИ, чтобы уточнить правовой статус позиции перед публикацией."
                         >
                           <div className="workspace-action-grid workspace-action-grid--compact">
                             <button
@@ -177,7 +177,7 @@ export function WorkspaceReadinessSection({
                               disabled={!canUseAiAssist || rowActionBusy || publicationAutopilotRunning}
                               className="workspace-action-button is-classify"
                             >
-                              Переобогатить классификацию ({classificationBulkActions.allRows})
+                              Уточнить классификацию ({classificationBulkActions.allRows})
                             </button>
                             {classificationBulkActions.missingOkpd2Rows > 0 && (
                               <button
@@ -205,8 +205,8 @@ export function WorkspaceReadinessSection({
 
                       {(benchmarkBulkActions.missingRows > 0 || benchmarkBulkActions.changedRows > 0 || benchmarkBulkActions.allRows > 0) && (
                         <WorkspaceReviewActionCard
-                          title="Benchmark sync"
-                          subtitle="Сверка с эталонными источниками"
+                          title="Сверка с внешним источником"
+                          subtitle="Проверка характеристик по ЕИС или документации"
                         >
                           <div className="workspace-action-grid workspace-action-grid--compact">
                             {benchmarkBulkActions.missingRows > 0 && (
@@ -215,7 +215,7 @@ export function WorkspaceReadinessSection({
                                 onClick={() => onApplyBenchmarkPatchBulk('missing')}
                                 className="workspace-action-button is-benchmark-add"
                               >
-                                + Добрать пропущенное по всем ({benchmarkBulkActions.missingRows})
+                                + Добрать недостающее ({benchmarkBulkActions.missingRows})
                               </button>
                             )}
                             {benchmarkBulkActions.changedRows > 0 && (
@@ -224,7 +224,7 @@ export function WorkspaceReadinessSection({
                                 onClick={() => onApplyBenchmarkPatchBulk('changed')}
                                 className="workspace-action-button is-benchmark-apply"
                               >
-                                ⇄ Принять эталон по всем ({benchmarkBulkActions.changedRows})
+                                ⇄ Принять данные источника ({benchmarkBulkActions.changedRows})
                               </button>
                             )}
                             {benchmarkBulkActions.allRows > 0 && (
@@ -233,7 +233,7 @@ export function WorkspaceReadinessSection({
                                 onClick={() => onApplyBenchmarkPatchBulk('all')}
                                 className="workspace-action-button is-benchmark-sync"
                               >
-                                Синхронизировать все риск-позиции ({benchmarkBulkActions.allRows})
+                                Сверить все риск-позиции ({benchmarkBulkActions.allRows})
                               </button>
                             )}
                           </div>
@@ -242,7 +242,7 @@ export function WorkspaceReadinessSection({
 
                       {(serviceBulkActions.coreRows > 0 || serviceBulkActions.allRows > 0) && (
                         <WorkspaceReviewActionCard
-                          title="Сервисный контур"
+                          title="Сервисные требования"
                           subtitle="Результат, SLA, приёмка, режим оказания"
                         >
                           <div className="workspace-action-grid workspace-action-grid--compact">

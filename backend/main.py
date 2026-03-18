@@ -1183,6 +1183,19 @@ def _build_readiness_payload() -> dict[str, Any]:
     enabled_ai = [name for name, enabled in ai_providers.items() if enabled]
     db_check = _probe_database()
     integration_check, integration_counts = _probe_integration_store()
+    email_ready = True
+    email_detail = "smtp_configured" if SMTP_USER and SMTP_PASS else "direct_link_fallback"
+    email_extra = {
+        "smtp_configured": bool(SMTP_USER and SMTP_PASS),
+        "delivery_mode": "smtp" if SMTP_USER and SMTP_PASS else "direct_link",
+    }
+    enterprise_ready = ENTERPRISE_SIMULATION_MODE or bool(INTEGRATION_TARGET_WEBHOOK_URL)
+    if ENTERPRISE_SIMULATION_MODE:
+        enterprise_detail = "simulation_mode_default"
+    elif INTEGRATION_TARGET_WEBHOOK_URL:
+        enterprise_detail = "live_target_configured"
+    else:
+        enterprise_detail = "live_target_missing"
     checks = {
         "database": db_check,
         "integration_store": integration_check,
@@ -1193,8 +1206,9 @@ def _build_readiness_payload() -> dict[str, Any]:
             else "default_jwt_secret_or_anonymous_integration_enabled",
         ),
         "email": _readiness_check(
-            "ok" if SMTP_USER and SMTP_PASS else "degraded",
-            "smtp_configured" if SMTP_USER and SMTP_PASS else "smtp_not_configured",
+            "ok" if email_ready else "degraded",
+            email_detail,
+            extra=email_extra,
         ),
         "ai": _readiness_check(
             "ok" if enabled_ai else "degraded",
@@ -1210,17 +1224,12 @@ def _build_readiness_payload() -> dict[str, Any]:
             "yookassa_configured" if YOOKASSA_SHOP_ID and YOOKASSA_SECRET_KEY else "yookassa_not_configured",
         ),
         "enterprise": _readiness_check(
-            "ok" if INTEGRATION_TARGET_WEBHOOK_URL and not ENTERPRISE_SIMULATION_MODE else "degraded",
-            "live_target_configured"
-            if INTEGRATION_TARGET_WEBHOOK_URL and not ENTERPRISE_SIMULATION_MODE
-            else (
-                "simulation_default_enabled"
-                if INTEGRATION_TARGET_WEBHOOK_URL and ENTERPRISE_SIMULATION_MODE
-                else "simulation_only_or_live_target_missing"
-            ),
+            "ok" if enterprise_ready else "degraded",
+            enterprise_detail,
             extra={
                 "simulation_mode_default": ENTERPRISE_SIMULATION_MODE,
                 "target_webhook_configured": bool(INTEGRATION_TARGET_WEBHOOK_URL),
+                "operating_mode": "simulation" if ENTERPRISE_SIMULATION_MODE else "live_target",
             },
         ),
     }

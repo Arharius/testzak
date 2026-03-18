@@ -11,6 +11,7 @@ const base = explicitBase || (isGhPages ? '/testzak/' : '/');
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const backendTarget = (env.VITE_BACKEND_URL || 'https://backend-production-3b942.up.railway.app').replace(/\/$/, '');
+  const devHost = env.VITE_DEV_HOST || '127.0.0.1';
   const apiProxy = {
     '/api': {
       target: backendTarget,
@@ -61,11 +62,14 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      host: '0.0.0.0',
+      host: devHost,
       port: 5174,
+      strictPort: true,
       proxy: apiProxy,
     },
     preview: {
+      host: devHost,
+      strictPort: true,
       proxy: apiProxy,
     },
   };

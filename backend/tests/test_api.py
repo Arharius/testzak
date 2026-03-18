@@ -36,6 +36,28 @@ class TestHealth:
         assert data["checks"]["integration_store"]["status"] == "ok"
         assert data["checks"]["enterprise"]["status"] in {"ok", "degraded"}
 
+    def test_readiness_is_ready_for_core_flow_with_direct_link_and_simulation(self, monkeypatch):
+        import main
+
+        monkeypatch.setattr(main, "JWT_SECRET", "prod-secret")
+        monkeypatch.setattr(main, "INTEGRATION_ALLOW_ANON", False)
+        monkeypatch.setattr(main, "SMTP_USER", "")
+        monkeypatch.setattr(main, "SMTP_PASS", "")
+        monkeypatch.setattr(main, "ENTERPRISE_SIMULATION_MODE", True)
+        monkeypatch.setattr(main, "INTEGRATION_TARGET_WEBHOOK_URL", "")
+        monkeypatch.setattr(main, "DEEPSEEK_API_KEY", "configured")
+        monkeypatch.setattr(main, "_search_import_source", "direct")
+        monkeypatch.setattr(main, "YOOKASSA_SHOP_ID", "shop")
+        monkeypatch.setattr(main, "YOOKASSA_SECRET_KEY", "secret")
+
+        payload = main._build_readiness_payload()
+        assert payload["status"] == "ready"
+        assert payload["ready"] is True
+        assert payload["checks"]["email"]["status"] == "ok"
+        assert payload["checks"]["email"]["detail"] == "direct_link_fallback"
+        assert payload["checks"]["enterprise"]["status"] == "ok"
+        assert payload["checks"]["enterprise"]["detail"] == "simulation_mode_default"
+
 
 class TestAuth:
     def test_send_link_valid_email(self, client):

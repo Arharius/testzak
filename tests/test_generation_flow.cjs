@@ -143,6 +143,13 @@ const checks = [
       && workspace.includes('const enumeratedRows = parseDocxEnumeratedRows(content);')
       && workspace.includes('const tableRows = parseDocxTableRows(content.blocks);'),
   },
+  {
+    name: 'DOCX appendix detection uses Cyrillic-safe boundaries instead of \\b',
+    ok: workspace.includes('const DOCX_APPENDIX_HEADING_RE = /^приложение(?:\\s|$|[.:])/i;')
+      && workspace.includes('const DOCX_OKPD2_PREFIX_RE = /^код окпд2(?:\\s|$|[.:])/i;')
+      && !workspace.includes('/^приложение\\b/i')
+      && !workspace.includes('/^код окпд2\\b/i'),
+  },
 ];
 
 let failed = 0;

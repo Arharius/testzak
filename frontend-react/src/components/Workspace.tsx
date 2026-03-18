@@ -93,7 +93,15 @@ function isServiceCatalogType(key: string): boolean {
 const SERVICE_EXPLICIT_TOKENS = ['услуг', 'услуга', 'оказани', 'обслуживан', 'сопровождени', 'аутсорс', 'уборк', 'охран', 'разработк', 'внедрени', 'интеграц', 'обучени', 'консалтинг', 'аудит', 'поддержк', 'медосмотр', 'медицинск', 'осмотр', 'обследован', 'освидетельств', 'диагностик'];
 const SERVICE_ACTION_TOKENS = ['монтаж', 'демонтаж', 'ремонт', 'настройка', 'настройки', 'пусконаладка', 'пусконаладочные'];
 const PRODUCT_NOUN_TOKENS = ['клей', 'пена', 'лента', 'розетк', 'рулетк', 'нож', 'ведро', 'смазк', 'шпаклев', 'отвертк', 'отвёртк', 'инструмент', 'сверл', 'коронк', 'плоскогуб', 'клещ', 'патрон', 'площадк', 'зажим', 'шуруп', 'полотно', 'пилк', 'емкост', 'ёмкост'];
-const DOCX_STRONG_IT_CONTEXT_RE = /\b(astra|linux|windows|ald\b|ald pro|rupost|термидеск|termidesk|брест|сервер|ноутбук|моноблок|мфу|многофункциональное|принтер|сканер|картридж|тонер|монитор|коммутатор|маршрутизатор|точка доступа|vdi|ldap|почтов|операционн|программн|лицензия|резервного|резервное|резервный|резервная|виртуализац|системн(?:ый)? блок|компьютер|ssd|hdd|процессор|клавиатур|мышь|гарнитур|usb|hdmi|dvd|cd-r|схд|ибп|nas|san)\b/i;
+const DOCX_STRONG_IT_CONTEXT_TOKENS = [
+  'astra', 'linux', 'windows', 'ald', 'ald pro', 'rupost', 'термидеск', 'termidesk', 'брест',
+  'сервер', 'ноутбук', 'моноблок', 'мфу', 'многофункциональное', 'принтер', 'сканер',
+  'картридж', 'тонер', 'монитор', 'коммутатор', 'маршрутизатор', 'точка доступа', 'vdi',
+  'ldap', 'почтов', 'операционн', 'программн', 'лицензия', 'резервного', 'резервное',
+  'резервный', 'резервная', 'виртуализац', 'системный блок', 'компьютер', 'ssd', 'hdd',
+  'процессор', 'клавиатур', 'мышь', 'гарнитур', 'веб камера', 'usb', 'hdmi', 'dvd', 'cd r',
+  'cd rw', 'оптическ', 'твердотельн', 'схд', 'ибп', 'nas', 'san',
+];
 
 function normalizeTypeMatchText(value: string): string {
   return String(value || '')
@@ -269,7 +277,7 @@ function detectFreeformRowType(rawType: string, description: string, options?: {
   }
   const itType = detectGoodsType(text, 'otherGoods');
   const generalType = detectGeneralGoodsType(text, 'otherGoods');
-  const allowItType = !options?.conservativeGeneral || DOCX_STRONG_IT_CONTEXT_RE.test(text);
+  const allowItType = !options?.conservativeGeneral || DOCX_STRONG_IT_CONTEXT_TOKENS.some((token) => normalized.includes(token));
   if (itType !== 'otherGoods' && allowItType && !['miscHardware', 'miscCable', 'miscConsumable', 'miscSoftware'].includes(itType)) {
     return itType;
   }

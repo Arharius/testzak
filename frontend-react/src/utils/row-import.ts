@@ -51,6 +51,7 @@ type ParsedDocxContent = {
   paragraphs: string[];
   tables: string[][][];
   blocks: DocxBlock[];
+  documentXmlText: string;
 };
 
 const HEADER_ALIASES: Record<keyof HeaderMap, string[]> = {
@@ -68,9 +69,11 @@ const DOCX_TRAILING_QTY_RE = new RegExp(
   `(\\d+(?:[.,]\\d+)?)\\s*(?:\\([^)]*\\)\\s*)?${DOCX_QTY_UNITS}(?=\\s*(?:[.;]|$))`,
   'giu',
 );
-const DOCX_IMPORT_STOP_RE = /^(код окпд2|наименование характеристики|значение характеристики|единица измерения характеристики|спецификация\b|требования к|составил:|согласовано:|утверждаю\b|техническое задание\b)/i;
-const DOCX_SECTION_HEADING_RE = /^(\d+(?:\.\d+)*\.?\s+|приложение\b|раздел\b|глава\b|составил:|согласовано:|утверждаю\b)/i;
-const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии\b|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право)/i;
+const DOCX_IMPORT_STOP_RE = /^(код окпд2(?:\s|$|[.:])|наименование характеристики|значение характеристики|единица измерения характеристики|спецификация(?:\s|$|[.:])|требования к|составил:|согласовано:|утверждаю(?:\s|$|[.:])|техническое задание(?:\s|$|[.:]))/i;
+const DOCX_SECTION_HEADING_RE = /^(\d+(?:\.\d+)*\.?\s+|приложение(?:\s|$|[.:])|раздел(?:\s|$|[.:])|глава(?:\s|$|[.:])|составил:|согласовано:|утверждаю(?:\s|$|[.:]))/i;
+const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии(?:\s|$|[.:])|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право)/i;
+const DOCX_APPENDIX_HEADING_RE = /^приложение(?:\s|$|[.:])/i;
+const DOCX_OKPD2_PREFIX_RE = /^код окпд2(?:\s|$|[.:])/i;
 const DOCX_CLAUSE_PREFIXES = [
   'если',
   'в случае',
@@ -124,6 +127,15 @@ function normalizeDocxLine(value: string): string {
   );
 }
 
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
 function trimPreviewText(value: string, maxLen = 220): string {
   const source = normalizeCell(value);
   if (source.length <= maxLen) return source;
@@ -160,13 +172,20 @@ function countMeaningfulWords(text: string): number {
     .length;
 }
 
+function looksLikeCompactProductName(text: string): boolean {
+  const normalized = normalizeCell(text);
+  if (!normalized) return false;
+  if (countMeaningfulWords(normalized) >= 2) return true;
+  return normalized.length >= 6;
+}
+
 function looksLikeBoilerplateHeading(text: string): boolean {
   const normalized = normalizeCell(text);
   if (!normalized) return true;
   if (DOCX_IMPORT_STOP_RE.test(normalized) || DOCX_SECTION_HEADING_RE.test(normalized) || DOCX_BOILERPLATE_RE.test(normalized)) {
     return true;
   }
-  if (countMeaningfulWords(normalized) <= 1 && !findTrailingQty(normalizeDocxLine(normalized))) {
+  if (countMeaningfulWords(normalized) <= 1 && !findTrailingQty(normalizeDocxLine(normalized)) && !looksLikeCompactProductName(normalized)) {
     return true;
   }
   return false;
@@ -366,7 +385,8 @@ async function parseDocxContent(buffer: ArrayBuffer): Promise<ParsedDocxContent>
   const documentFile = zip.file('word/document.xml');
   if (!documentFile) throw new Error('Файл DOCX не содержит word/document.xml');
 
-  const xml = new DOMParser().parseFromString(await documentFile.async('text'), 'application/xml');
+  const documentXmlText = await documentFile.async('text');
+  const xml = new DOMParser().parseFromString(documentXmlText, 'application/xml');
   const body = Array.from(xml.getElementsByTagName('*')).find((node) => node.localName === 'body');
   if (!body) throw new Error('Не удалось прочитать содержимое DOCX');
 
@@ -394,7 +414,7 @@ async function parseDocxContent(buffer: ArrayBuffer): Promise<ParsedDocxContent>
       }
     }
   }
-  return { paragraphs, tables, blocks };
+  return { paragraphs, tables, blocks, documentXmlText };
 }
 
 function findTrailingQty(text: string): { qty: number; index: number } | null {
@@ -783,19 +803,21 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
   const { blocks } = content;
   for (let i = 0; i < blocks.length; i += 1) {
     const block = blocks[i];
-    if (block.kind !== 'paragraph' || !/^приложение\b/i.test(block.text || '')) continue;
-    const nextAppendixIndex = findNextBlockIndex(blocks, i + 1, (candidate) => candidate.kind === 'paragraph' && /^приложение\b/i.test(candidate.text || ''));
+    if (block.kind !== 'paragraph' || !DOCX_APPENDIX_HEADING_RE.test(block.text || '')) continue;
+    const nextAppendixIndex = findNextBlockIndex(blocks, i + 1, (candidate) => candidate.kind === 'paragraph' && DOCX_APPENDIX_HEADING_RE.test(candidate.text || ''));
     let itemParagraphIndex = -1;
-    for (let j = i + 1; j < Math.min(blocks.length, i + 5); j += 1) {
+    for (let j = i + 1; j < nextAppendixIndex; j += 1) {
       const candidate = blocks[j];
       if (candidate.kind !== 'paragraph') continue;
       const text = normalizeCell(candidate.text || '');
-      if (!text || /^код окпд2\b/i.test(text)) break;
+      if (!text) continue;
+      if (DOCX_OKPD2_PREFIX_RE.test(text)) break;
       if (findTrailingQty(normalizeDocxLine(text))) {
         itemParagraphIndex = j;
         break;
       }
-      if (DOCX_IMPORT_STOP_RE.test(text)) break;
+      if (shouldRejectImportText(text)) continue;
+      if (itemParagraphIndex < 0) itemParagraphIndex = j;
     }
     if (itemParagraphIndex < 0) continue;
 
@@ -820,11 +842,107 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
   return dedupeImportedRows(rows);
 }
 
+function parseDocxAppendixParagraphRows(content: ParsedDocxContent): ImportedProcurementRow[] {
+  const rows: ImportedProcurementRow[] = [];
+  const paragraphs = content.paragraphs.map((paragraph) => normalizeCell(paragraph)).filter(Boolean);
+  for (let i = 0; i < paragraphs.length; i += 1) {
+    if (!DOCX_APPENDIX_HEADING_RE.test(paragraphs[i])) continue;
+
+    let nextAppendixIndex = paragraphs.length;
+    for (let j = i + 1; j < paragraphs.length; j += 1) {
+      if (DOCX_APPENDIX_HEADING_RE.test(paragraphs[j])) {
+        nextAppendixIndex = j;
+        break;
+      }
+    }
+
+    const appendixParagraphs = paragraphs.slice(i + 1, nextAppendixIndex);
+    let itemText = '';
+    for (const paragraph of appendixParagraphs) {
+      if (DOCX_OKPD2_PREFIX_RE.test(paragraph)) break;
+      if (findTrailingQty(normalizeDocxLine(paragraph))) {
+        itemText = paragraph;
+        break;
+      }
+      if (!shouldRejectImportText(paragraph) && !itemText) {
+        itemText = paragraph;
+      }
+    }
+    if (!itemText) continue;
+
+    const okpd2 = appendixParagraphs.map((paragraph) => extractOkpd2Code(paragraph)).find(Boolean) || '';
+    const requirementContext = collectRequirementContext(appendixParagraphs);
+    const imported = buildImportedRowFromText(itemText, 'appendix', {
+      meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+      notes: requirementContext.count > 0 ? [`В приложении обнаружено текстовых требований: ${requirementContext.count}.`] : [],
+      sourceContextText: requirementContext.text,
+      ignoredBlocks: requirementContext.count,
+    });
+    if (imported) rows.push(imported);
+  }
+  return dedupeImportedRows(rows);
+}
+
+function extractDocxParagraphsFromXml(documentXmlText: string): string[] {
+  const paragraphs = Array.from(documentXmlText.matchAll(/<w:p\b[\s\S]*?<\/w:p>/g));
+  return paragraphs
+    .map((match) => {
+      const paragraphXml = match[0]
+        .replace(/<w:(?:tab)[^/]*\/>/g, '\t')
+        .replace(/<w:(?:br|cr)[^/]*\/>/g, '\n');
+      const parts = Array.from(paragraphXml.matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)).map((textMatch) => decodeXmlEntities(textMatch[1] || ''));
+      return normalizeCell(parts.join('').replace(/\s*\n\s*/g, ' '));
+    })
+    .filter(Boolean);
+}
+
+function parseDocxAppendixXmlRows(content: ParsedDocxContent): ImportedProcurementRow[] {
+  const rows: ImportedProcurementRow[] = [];
+  const paragraphs = extractDocxParagraphsFromXml(content.documentXmlText);
+  for (let i = 0; i < paragraphs.length; i += 1) {
+    if (!DOCX_APPENDIX_HEADING_RE.test(paragraphs[i])) continue;
+
+    let nextAppendixIndex = paragraphs.length;
+    for (let j = i + 1; j < paragraphs.length; j += 1) {
+      if (DOCX_APPENDIX_HEADING_RE.test(paragraphs[j])) {
+        nextAppendixIndex = j;
+        break;
+      }
+    }
+
+    const appendixParagraphs = paragraphs.slice(i + 1, nextAppendixIndex);
+    let itemText = '';
+    for (const paragraph of appendixParagraphs) {
+      if (DOCX_OKPD2_PREFIX_RE.test(paragraph)) break;
+      if (findTrailingQty(normalizeDocxLine(paragraph))) {
+        itemText = paragraph;
+        break;
+      }
+      if (!shouldRejectImportText(paragraph) && !itemText) {
+        itemText = paragraph;
+      }
+    }
+    if (!itemText) continue;
+
+    const okpd2 = appendixParagraphs.map((paragraph) => extractOkpd2Code(paragraph)).find(Boolean) || '';
+    const requirementContext = collectRequirementContext(appendixParagraphs);
+    const imported = buildImportedRowFromText(itemText, 'appendix', {
+      meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+      notes: requirementContext.count > 0 ? [`В приложении обнаружено текстовых требований: ${requirementContext.count}.`] : [],
+      sourceContextText: requirementContext.text,
+      ignoredBlocks: requirementContext.count,
+    });
+    if (imported) rows.push(imported);
+  }
+  return dedupeImportedRows(rows);
+}
+
 function parseDocxEnumeratedRows(content: ParsedDocxContent): ImportedProcurementRow[] {
   const rows: ImportedProcurementRow[] = [];
   const { blocks } = content;
   let listStarted = false;
   let listStartIndex = 0;
+  let captureStarted = false;
   for (let i = 0; i < blocks.length; i += 1) {
     const block = blocks[i];
     if (block.kind !== 'paragraph') continue;
@@ -836,6 +954,7 @@ function parseDocxEnumeratedRows(content: ParsedDocxContent): ImportedProcuremen
     if (!listStarted) continue;
     if (/^(?:2\.|3\.|4\.|5\.)\s*(заказчик|исполнитель|требования|сроки|место|гаранти|поставка)/i.test(text)) break;
     if (/^\d+\)/.test(text)) {
+      captureStarted = true;
       const trailingContext = collectRequirementContext(
         blocks
           .slice(i + 1)
@@ -848,7 +967,9 @@ function parseDocxEnumeratedRows(content: ParsedDocxContent): ImportedProcuremen
         ignoredBlocks: trailingContext.count,
       });
       if (imported) rows.push(imported);
+      continue;
     }
+    if (captureStarted) break;
   }
   if (rows.length === 0 && listStartIndex > 0) {
     const trailingContext = collectRequirementContext(
@@ -972,6 +1093,12 @@ async function parseDocxRows(buffer: ArrayBuffer): Promise<ImportedProcurementRo
   const content = await parseDocxContent(buffer);
   const appendixRows = parseDocxAppendixRows(content);
   if (appendixRows.length > 0) return appendixRows;
+
+  const appendixParagraphRows = parseDocxAppendixParagraphRows(content);
+  if (appendixParagraphRows.length > 0) return appendixParagraphRows;
+
+  const appendixXmlRows = parseDocxAppendixXmlRows(content);
+  if (appendixXmlRows.length > 0) return appendixXmlRows;
 
   const enumeratedRows = parseDocxEnumeratedRows(content);
   if (enumeratedRows.length > 0) return enumeratedRows;

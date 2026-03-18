@@ -137,6 +137,15 @@ export function WorkspaceRowsTable({
   return (
     <div className="rows-table-wrap">
       <table className="rows-table">
+        <colgroup>
+          <col className="rows-col rows-col--num" />
+          <col className="rows-col rows-col--type" />
+          <col className="rows-col rows-col--model" />
+          <col className="rows-col rows-col--license" />
+          <col className="rows-col rows-col--term" />
+          <col className="rows-col rows-col--qty" />
+          <col className="rows-col rows-col--status" />
+        </colgroup>
         <thead>
           <tr>
             <th>#</th>
@@ -145,8 +154,7 @@ export function WorkspaceRowsTable({
             <th>Тип лицензии</th>
             <th>Срок действия</th>
             <th>Кол-во</th>
-            <th>Статус</th>
-            <th></th>
+            <th>Статус и действия</th>
           </tr>
         </thead>
         <tbody>
@@ -273,9 +281,9 @@ export function WorkspaceRowsTable({
                     onChange={(event) => onChangeRowQty(row.id, Math.max(1, Number(event.target.value || 1)))}
                   />
                 </td>
-                <td>
+                <td className="row-status-column">
                   <div className="row-status-cell">
-                    <span className={row.status === 'done' ? 'ok' : row.status === 'error' ? 'warn' : 'muted'}>
+                    <span className={`row-status-label ${row.status === 'done' ? 'ok' : row.status === 'error' ? 'warn' : 'muted'}`}>
                       {row.status === 'idle' && (lookupCatalog(row.type)?.hardTemplate ? '📋 Шаблон готов' : 'Ожидание')}
                       {row.status === 'loading' && '⏳ Генерация...'}
                       {row.status === 'done' && `✅ Готово (${row.specs?.length ?? 0} хар-к)`}
@@ -300,23 +308,21 @@ export function WorkspaceRowsTable({
                       >
                         {expandedRowMetaId === row.id ? 'Скрыть' : 'Детали'}
                       </button>
+                      <button
+                        type="button"
+                        className="danger-btn row-delete-inline"
+                        disabled={rows.length <= 1}
+                        onClick={() => onDeleteRow(row.id)}
+                      >
+                        Удалить
+                      </button>
                     </div>
                   </div>
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    className="danger-btn"
-                    disabled={rows.length <= 1}
-                    onClick={() => onDeleteRow(row.id)}
-                  >
-                    Удалить
-                  </button>
                 </td>
               </tr>
               {expandedRowMetaId === row.id && (
                 <tr key={`meta-${row.id}`}>
-                  <td colSpan={8} className="row-full-width-cell">
+                  <td colSpan={7} className="row-full-width-cell">
                     <WorkspaceRowDetailPanel
                       row={row}
                       editingRowId={editingRowId}
@@ -345,7 +351,7 @@ export function WorkspaceRowsTable({
               )}
               {editingRowId === row.id && row.specs && (
                 <tr key={`edit-${row.id}`}>
-                  <td colSpan={8} className="row-full-width-cell">
+                  <td colSpan={7} className="row-full-width-cell">
                     <WorkspaceSpecEditor
                       rowId={row.id}
                       rowType={row.type}

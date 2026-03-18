@@ -151,6 +151,12 @@ const checks = [
       && !workspace.includes('/^код окпд2\\b/i'),
   },
   {
+    name: 'Top-level DOCX tables are parsed instead of only nested wrapper tables',
+    ok: workspace.includes('function extractDocxTablesFromTable(table: Element, result: string[][][]): void {')
+      && workspace.includes('extractDocxTablesFromTable(child, extractedTables);')
+      && workspace.includes('extractDocxTablesFromTable(child, result);'),
+  },
+  {
     name: 'Import replaces the current draft instead of appending stale rows',
     ok: workspace.includes('setRows(mappedRows);')
       && workspace.includes('Текущий черновик заменён.'),

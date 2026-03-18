@@ -396,18 +396,24 @@ function parseDirectDocxTableRows(table: Element): string[][] {
     .filter((row) => row.some(Boolean));
 }
 
+function extractDocxTablesFromTable(table: Element, result: string[][][]): void {
+  const rows = parseDirectDocxTableRows(table);
+  const nestedTableCount = countDescendantElements(table, 'tbl');
+  const maxCols = rows.reduce((max, row) => Math.max(max, row.length), 0);
+  const wrapperTable = nestedTableCount > 0 && maxCols <= 1;
+  if (wrapperTable) {
+    collectDocxTables(table, result);
+    return;
+  }
+  if (rows.length > 0) {
+    result.push(rows);
+  }
+}
+
 function collectDocxTables(node: ParentNode, result: string[][][]): void {
   for (const child of getChildElements(node)) {
     if (getNodeLocalName(child) === 'tbl') {
-      const rows = parseDirectDocxTableRows(child);
-      const nestedTableCount = countDescendantElements(child, 'tbl');
-      const maxCols = rows.reduce((max, row) => Math.max(max, row.length), 0);
-      const wrapperTable = nestedTableCount > 0 && maxCols <= 1;
-      if (wrapperTable) {
-        collectDocxTables(child, result);
-      } else if (rows.length > 0) {
-        result.push(rows);
-      }
+      extractDocxTablesFromTable(child, result);
       continue;
     }
     collectDocxTables(child, result);
@@ -439,7 +445,7 @@ async function parseDocxContent(buffer: ArrayBuffer): Promise<ParsedDocxContent>
     }
     if (localName === 'tbl') {
       const extractedTables: string[][][] = [];
-      collectDocxTables(child, extractedTables);
+      extractDocxTablesFromTable(child, extractedTables);
       for (const rows of extractedTables) {
         tables.push(rows);
         blocks.push({ kind: 'table', rows });
@@ -586,15 +592,17 @@ function makeImportedRow(params: {
 
 function isSpecTable(rows: string[][]): boolean {
   if (rows.length < 2) return false;
-  const headers = rows[0].map((cell) => normalizeHeader(cell));
+  const headerIndex = rows[0].length === 1 && rows.length > 2 ? 1 : 0;
+  const headers = rows[headerIndex].map((cell) => normalizeHeader(cell));
   return headers.some((cell) => cell === 'наименование характеристики')
     && headers.some((cell) => cell === 'значение характеристики');
 }
 
 function parseSpecTable(rows: string[][]): SpecItem[] {
   const specs: SpecItem[] = [];
+  const headerIndex = rows[0].length === 1 && rows.length > 2 ? 1 : 0;
   let currentGroup = 'Технические характеристики';
-  for (const row of rows.slice(1)) {
+  for (const row of rows.slice(headerIndex + 1)) {
     const name = normalizeCell(row[0] || '');
     const value = normalizeCell(row[1] || '');
     const unit = normalizeCell(row[2] || '') || '—';
@@ -611,6 +619,16 @@ function parseSpecTable(rows: string[][]): SpecItem[] {
     });
   }
   return specs;
+}
+
+function isDocxSummaryTable(rows: string[][]): boolean {
+  if (rows.length < 2) return false;
+  const headers = rows[0].map((cell) => normalizeHeader(cell));
+  const hasName = headers.includes('наименование');
+  const hasOkpd2 = headers.includes('окпд2') || headers.includes('окпд 2');
+  const hasAppendix = headers.some((cell) => cell.includes('прил'));
+  const hasCommercial = headers.includes('тип лицензии') || headers.includes('срок действия');
+  return hasName && hasOkpd2 && hasAppendix && hasCommercial;
 }
 
 function collectRequirementContext(lines: string[]): { text: string; count: number } {
@@ -712,6 +730,15 @@ function isLikelyProcurementTable(rawRows: string[][]): boolean {
 
   const headerMap = detectHeaderMap(rawRows[0]);
   const hasHeader = Object.keys(headerMap).length > 0;
+  if (hasHeader) {
+    const hasNameColumn = headerMap.type !== undefined || headerMap.description !== undefined;
+    const hasProcurementSignals =
+      headerMap.qty !== undefined ||
+      headerMap.okpd2 !== undefined ||
+      headerMap.licenseType !== undefined ||
+      headerMap.term !== undefined;
+    if (!hasNameColumn || !hasProcurementSignals) return false;
+  }
   const dataRows = hasHeader ? rawRows.slice(1) : rawRows;
   if (dataRows.length === 0) return false;
 
@@ -824,8 +851,46 @@ function findNextBlockIndex(blocks: DocxBlock[], fromIndex: number, predicate: (
 function parseDocxTableRows(blocks: DocxBlock[]): ImportedProcurementRow[] {
   const rows: ImportedProcurementRow[] = [];
   for (const block of blocks) {
-    if (block.kind !== 'table' || !block.rows || !isLikelyProcurementTable(block.rows)) continue;
+    if (block.kind !== 'table' || !block.rows || isDocxSummaryTable(block.rows) || !isLikelyProcurementTable(block.rows)) continue;
     rows.push(...mapRows(block.rows, 'docx', 'table'));
+  }
+  return dedupeImportedRows(rows);
+}
+
+function buildDocxSpecTableMap(content: ParsedDocxContent): Map<number, SpecItem[]> {
+  const specTables = content.tables
+    .filter((rows) => isSpecTable(rows))
+    .map((rows) => parseSpecTable(rows))
+    .filter((specs) => specs.length > 0);
+  return new Map(specTables.map((specs, index) => [index + 1, specs]));
+}
+
+function parseDocxSummaryTableRows(content: ParsedDocxContent): ImportedProcurementRow[] {
+  const rows: ImportedProcurementRow[] = [];
+  const specTableMap = buildDocxSpecTableMap(content);
+  for (const tableRows of content.tables) {
+    if (!isDocxSummaryTable(tableRows)) continue;
+    for (const row of tableRows.slice(1)) {
+      const description = normalizeCell(row[1] || '');
+      if (!description || shouldRejectImportText(description)) continue;
+      const appendixMatch = normalizeCell(row[6] || '').match(/(\d+)/);
+      const appendixIndex = appendixMatch ? Number(appendixMatch[1]) : null;
+      const imported = makeImportedRow({
+        rawType: description,
+        description,
+        licenseType: normalizeCell(row[2] || '').replace(/^—$/u, ''),
+        term: normalizeCell(row[3] || '').replace(/^—$/u, ''),
+        qty: parseQty(row[4] || '1'),
+        qtyExplicit: /\d/.test(normalizeCell(row[4] || '')),
+        meta: extractOkpd2Code(row[5] || '') ? { okpd2_code: extractOkpd2Code(row[5] || '') } : undefined,
+        specs: appendixIndex ? specTableMap.get(appendixIndex) : undefined,
+        notes: ['Позиция извлечена из сводной таблицы ТЗ.'],
+        sourceFormat: 'docx',
+        sourceKind: 'table',
+        sourceText: row.join(' | '),
+      });
+      rows.push(imported);
+    }
   }
   return dedupeImportedRows(rows);
 }
@@ -1134,6 +1199,9 @@ async function parseDocxRows(buffer: ArrayBuffer): Promise<ImportedProcurementRo
 
   const enumeratedRows = parseDocxEnumeratedRows(content);
   if (enumeratedRows.length > 0) return enumeratedRows;
+
+  const summaryTableRows = parseDocxSummaryTableRows(content);
+  if (summaryTableRows.length > 0) return summaryTableRows;
 
   const tableRows = parseDocxTableRows(content.blocks);
   if (tableRows.length > 0) return tableRows;

@@ -71,6 +71,30 @@ const DOCX_TRAILING_QTY_RE = new RegExp(
 const DOCX_IMPORT_STOP_RE = /^(код окпд2|наименование характеристики|значение характеристики|единица измерения характеристики|спецификация\b|требования к|составил:|согласовано:|утверждаю\b|техническое задание\b)/i;
 const DOCX_SECTION_HEADING_RE = /^(\d+(?:\.\d+)*\.?\s+|приложение\b|раздел\b|глава\b|составил:|согласовано:|утверждаю\b)/i;
 const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии\b|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право)/i;
+const DOCX_CLAUSE_PREFIXES = [
+  'если',
+  'в случае',
+  'в течение',
+  'в течении',
+  'в целях',
+  'в соответствии',
+  'место',
+  'срок',
+  'сроки',
+  'поставка',
+  'приемка',
+  'приёмка',
+  'заказчик',
+  'исполнитель',
+  'описание',
+  'лицензии',
+  'действия',
+  'все',
+  'документ',
+  'условие',
+  'условия',
+  'порядок',
+];
 const OKPD2_RE = /\b\d{2}(?:\.\d{2}){2}\.\d{3}\b/;
 const NORMATIVE_TEXT_RE = /\b(постановлени|приказ|федеральн(ый|ого)|трудового кодекса|гост|фстэк|фсб|министерств|минздрава|стать[яи]|решени[ея]|реестр|minцифр|правительств)\b/i;
 const REQUIREMENT_TEXT_RE = /\b(должен|должна|должны|обязан|обязана|обязаны|требования|осуществляется|обеспечивает|соответств|гаранти|сроки оказания|место проведения|приемк|приёмк|документац)\b/i;
@@ -146,6 +170,18 @@ function looksLikeBoilerplateHeading(text: string): boolean {
     return true;
   }
   return false;
+}
+
+function looksLikeClauseFragment(text: string): boolean {
+  const normalized = normalizeCell(text).toLowerCase().replace(/ё/g, 'е');
+  if (!normalized) return true;
+  if (!DOCX_CLAUSE_PREFIXES.some((prefix) => normalized.startsWith(prefix))) return false;
+  if (countMeaningfulWords(normalized) <= 6) return true;
+  return looksLikeRequirementText(normalized) || looksLikeNormativeText(normalized);
+}
+
+function shouldRejectImportText(text: string): boolean {
+  return looksLikeBoilerplateHeading(text) || looksLikeClauseFragment(text);
 }
 
 function chooseDelimiter(sample: string): string {
@@ -557,7 +593,7 @@ function buildImportedRowFromText(text: string, sourceKind: Exclude<ImportedRowS
   const description = normalizeDocxLine(qtyMatch ? cleaned.slice(0, qtyMatch.index) : cleaned)
     .replace(/[-:;,.]+$/u, '')
     .trim();
-  if (!description || description.length < 4 || looksLikeBoilerplateHeading(description)) return null;
+  if (!description || description.length < 4 || shouldRejectImportText(description)) return null;
 
   const meta = options?.meta ? { ...options.meta } : {};
   const inlineOkpd2 = extractOkpd2Code(cleaned);
@@ -634,7 +670,7 @@ function isLikelyProcurementTable(rawRows: string[][]): boolean {
   let candidateRows = 0;
   for (const row of dataRows.slice(0, 12)) {
     const description = extractRowDescription(row, fallbackMap);
-    if (!description || looksLikeBoilerplateHeading(description)) continue;
+    if (!description || shouldRejectImportText(description)) continue;
     const qtyCell = normalizeCell(row[fallbackMap.qty ?? -1] || '');
     const explicitQty = /\d/.test(qtyCell) || !!findTrailingQty(normalizeDocxLine(description));
     const hasOkpd2 = !!extractOkpd2Code(row.join(' | '));
@@ -673,7 +709,7 @@ function mapRows(
       const qtyParsed = parseQtyCell(row[fallbackMap.qty ?? -1] || '');
       const qty = qtyParsed.qty;
       const okpd2 = extractOkpd2Code(row[fallbackMap.okpd2 ?? -1] || '');
-      if ((!rawType && !description) || looksLikeBoilerplateHeading(description || rawType)) return null;
+      if ((!rawType && !description) || shouldRejectImportText(description || rawType)) return null;
       return makeImportedRow({
         rawType: rawType || description,
         description,

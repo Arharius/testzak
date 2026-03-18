@@ -88,6 +88,21 @@ async function buildMaterialsTableDocx() {
   `);
 }
 
+async function buildAmbiguousImportDocx() {
+  return buildDocxBuffer(`
+    ${paragraphXml('Служебная записка')}
+    <w:tbl>
+      ${tableRowXml(['№ п/п', 'Наименование', 'Ед. изм.', 'Количество'])}
+      ${tableRowXml(['1', 'Рулетка 5м Ширина ленты 19 мм Автостоп нет Материал ленты сталь с лаковым покрытием Батарейки не требуются', 'шт.', '1'])}
+      ${tableRowXml(['2', 'Клей монтажный каучуковый 310 мл', 'шт.', '1'])}
+      ${tableRowXml(['3', 'Пена монтажная профессиональная 70 л', 'шт.', '1'])}
+      ${tableRowXml(['4', 'Монтаж ЛВС и структурированной кабельной системы', 'усл.', '1'])}
+      ${tableRowXml(['5', 'Поставка осуществляется силами поставщика', '', ''])}
+      ${tableRowXml(['6', 'В течение 10 календарных дней', '', ''])}
+    </w:tbl>
+  `);
+}
+
 function mockedAiPayload() {
   return {
     choices: [
@@ -548,6 +563,30 @@ async function run() {
   const importedMaterialsRows = page.locator('.rows-table tbody tr');
   await expectInputValue(importedMaterialsRows.nth(0).locator('td').nth(2).locator('input'), /Сверло алмазное/i, 'DOCX import should read procurement rows from Word tables');
   await expectInputValue(importedMaterialsRows.nth(1).locator('td').nth(2).locator('input'), /Набор адаптеров/i, 'DOCX import should preserve table descriptions');
+
+  await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('.rows-table tbody tr', { timeout: 30000 });
+  await importInput.setInputFiles({
+    name: 'ambiguous-materials.docx',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    buffer: await buildAmbiguousImportDocx(),
+  });
+  await page.waitForFunction(() => {
+    const rows = Array.from(document.querySelectorAll('.rows-table tbody tr'));
+    return rows.length === 4 && /Импортировано 4 позиций/i.test(document.body.innerText || '');
+  }, { timeout: 30000 });
+  const importedAmbiguousRows = page.locator('.rows-table tbody tr');
+  const firstAmbiguousType = await importedAmbiguousRows.nth(0).locator('td').nth(1).locator('select').inputValue();
+  const secondAmbiguousType = await importedAmbiguousRows.nth(1).locator('td').nth(1).locator('select').inputValue();
+  const thirdAmbiguousType = await importedAmbiguousRows.nth(2).locator('td').nth(1).locator('select').inputValue();
+  const fourthAmbiguousType = await importedAmbiguousRows.nth(3).locator('td').nth(1).locator('select').inputValue();
+  assert.notStrictEqual(firstAmbiguousType, 'battery', 'Battery mentions inside a product description must not classify the row as a battery');
+  assert.notStrictEqual(secondAmbiguousType, 'otherService', 'Mounting adhesive must stay a product, not a service');
+  assert.notStrictEqual(thirdAmbiguousType, 'otherService', 'Mounting foam must stay a product, not a service');
+  assert.strictEqual(fourthAmbiguousType, 'otherService', 'Explicit service rows should still classify as services');
+  const ambiguousText = await page.locator('.rows-table tbody').innerText();
+  assert.doesNotMatch(ambiguousText, /Поставка осуществляется/i, 'Clause rows must be ignored during DOCX import');
+  assert.doesNotMatch(ambiguousText, /В течение 10 календарных дней/i, 'Deadline fragments must not become imported positions');
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.rows-table tbody tr', { timeout: 30000 });

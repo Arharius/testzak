@@ -90,7 +90,10 @@ function isServiceCatalogType(key: string): boolean {
   return !!lookupCatalog(key)?.isService;
 }
 
-const SERVICE_QUERY_RE = /(услуг|услуга|оказание|обслуживан|сопровождени|монтаж|демонтаж|ремонт|аутсорс|уборк|охрана|разработка|внедрение|интеграц|обучени|консалтинг|аудит|настройк|пусконалад|поддержк|медосмотр|медицинск|осмотр|обследован|освидетельств|диагностик)/i;
+const SERVICE_EXPLICIT_TOKENS = ['услуг', 'услуга', 'оказани', 'обслуживан', 'сопровождени', 'аутсорс', 'уборк', 'охран', 'разработк', 'внедрени', 'интеграц', 'обучени', 'консалтинг', 'аудит', 'поддержк', 'медосмотр', 'медицинск', 'осмотр', 'обследован', 'освидетельств', 'диагностик'];
+const SERVICE_ACTION_TOKENS = ['монтаж', 'демонтаж', 'ремонт', 'настройка', 'настройки', 'пусконаладка', 'пусконаладочные'];
+const PRODUCT_NOUN_TOKENS = ['клей', 'пена', 'лента', 'розетк', 'рулетк', 'нож', 'ведро', 'смазк', 'шпаклев', 'отвертк', 'отвёртк', 'инструмент', 'сверл', 'коронк', 'плоскогуб', 'клещ', 'патрон', 'площадк', 'зажим', 'шуруп', 'полотно', 'пилк', 'емкост', 'ёмкост'];
+const DOCX_STRONG_IT_CONTEXT_RE = /\b(astra|linux|windows|ald\b|ald pro|rupost|термидеск|termidesk|брест|сервер|ноутбук|моноблок|мфу|многофункциональное|принтер|сканер|картридж|тонер|монитор|коммутатор|маршрутизатор|точка доступа|vdi|ldap|почтов|операционн|программн|лицензия|резервного|резервное|резервный|резервная|виртуализац|системн(?:ый)? блок|компьютер|ssd|hdd|процессор|клавиатур|мышь|гарнитур|usb|hdmi|dvd|cd-r|схд|ибп|nas|san)\b/i;
 
 function normalizeTypeMatchText(value: string): string {
   return String(value || '')
@@ -98,6 +101,20 @@ function normalizeTypeMatchText(value: string): string {
     .replace(/ё/g, 'е')
     .replace(/[^a-zа-я0-9]+/g, ' ')
     .trim();
+}
+
+function looksLikeServiceQuery(value: string): boolean {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  const normalized = normalizeTypeMatchText(text);
+  const hasMeasuredCue = /(?:\d+(?:[.,]\d+)?\s*(?:мм|см|мл|л|кг|г|шт|в|а|вт|ач|mah|м2|м3)|\d+\s*[xх×]\s*\d+)/i.test(normalized);
+  const hasProductCue = hasMeasuredCue
+    || ['тип продукта', 'материал', 'цвет', 'размер', 'длина', 'ширина', 'высота', 'диаметр', 'корпус', 'объем', 'объём', 'напряжение', 'мощность', 'артикул'].some((token) => normalized.includes(token))
+    || PRODUCT_NOUN_TOKENS.some((token) => normalized.includes(token));
+  if (normalized.includes('оказание услуг')) return true;
+  const hasExplicit = SERVICE_EXPLICIT_TOKENS.some((token) => normalized.includes(token));
+  if (hasExplicit && !hasProductCue) return true;
+  return SERVICE_ACTION_TOKENS.some((token) => normalized.includes(token)) && !hasProductCue;
 }
 
 type Law175StatusNormalized = 'ban' | 'restriction' | 'preference' | 'exception' | 'none';
@@ -239,13 +256,21 @@ function getLaw175MeasureText(status: string, regime: string, basis = ''): strin
 function detectFreeformRowType(rawType: string, description: string, options?: { conservativeGeneral?: boolean }): string {
   const text = `${rawType} ${description}`.trim();
   if (!text) return 'otherGoods';
-  if (SERVICE_QUERY_RE.test(text)) {
+  const normalized = normalizeTypeMatchText(text);
+  if (looksLikeServiceQuery(text)) {
     return 'otherService';
   }
-  const normalized = normalizeTypeMatchText(text);
+  if (normalized.includes('мфу') || normalized.includes('многофункциональное устройство')) {
+    return 'mfu';
+  }
+  if ((normalized.includes('резервного копирования') || normalized.includes('backup'))
+    && (normalized.includes('лиценз') || normalized.includes('система') || normalized.includes('программ'))) {
+    return 'backup_sw';
+  }
   const itType = detectGoodsType(text, 'otherGoods');
   const generalType = detectGeneralGoodsType(text, 'otherGoods');
-  if (itType !== 'otherGoods' && !['miscHardware', 'miscCable', 'miscConsumable', 'miscSoftware'].includes(itType)) {
+  const allowItType = !options?.conservativeGeneral || DOCX_STRONG_IT_CONTEXT_RE.test(text);
+  if (itType !== 'otherGoods' && allowItType && !['miscHardware', 'miscCable', 'miscConsumable', 'miscSoftware'].includes(itType)) {
     return itType;
   }
   if (options?.conservativeGeneral) {
@@ -263,7 +288,7 @@ function detectFreeformRowType(rawType: string, description: string, options?: {
 
 function detectAllCatalogTypes(query: string): Array<{ type: string; name: string; okpd2: string }> {
   const items = [...detectAllGoodsTypes(query), ...detectGeneralGoodsTypes(query)];
-  if (SERVICE_QUERY_RE.test(query)) {
+  if (looksLikeServiceQuery(query)) {
     items.unshift({
       type: 'otherService',
       name: GENERAL_CATALOG.otherService.name,
@@ -621,7 +646,7 @@ function buildImportedSpecsPromptBlock(row: GoodsRow): string {
 
 function inferProcurementPurposeFromText(text: string): ProcurementPurposeKey {
   const normalized = String(text || '').toLowerCase();
-  if (/(монтаж|демонтаж|ремонт|обслуживан|сопровождени|уборк|охран|медосмотр|оказани[ея]\s+услуг|услуг)/i.test(normalized)) return 'services';
+  if (looksLikeServiceQuery(normalized)) return 'services';
   if (/(коммутатор|switch|router|маршрутизатор|wifi|wi-fi|сете|rj45|патч|скс|витая пара|sfp|оптич)/i.test(normalized)) return 'network';
   if (/(сервер|схд|san|nas|ленточн|стойк|шкаф|kvm-server|хранилищ)/i.test(normalized)) return 'server';
   if (/(ноутбук|системный блок|моноблок|тонкий клиент|рабочая станция|планшет)/i.test(normalized)) return 'workstations';

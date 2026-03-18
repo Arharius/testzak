@@ -2030,7 +2030,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['ald pro','алд про','ald','astra linux directory','ред адм','red adm','freeipa','openldap','samba ad','служба каталогов','ldap','active directory','домен контроллер','контроллер домена','astra ald','лицензия ald','лицензия алд'], type: 'ldap' },
 
   // ── Прочие расходные/периферия ──
-  { tokens: ['батарейк','battery','duracell','energizer','gp ultra','lr6','lr03','aa щелоч','aaa щелоч'], type: 'battery' },
+  { tokens: ['элемент питания','батарейки aa','батарейки aaa','алкалиновая батарейка','щелочные батарейки','battery','duracell','energizer','gp ultra','lr6','lr03','aa щелоч','aaa щелоч'], type: 'battery' },
   { tokens: ['cr2032','cr2025','cr2016','литиевый элемент','coin cell'], type: 'batteryLithium' },
   { tokens: ['термопаста','термоинтерфейс','noctua nt-h','arctic mx','кпт-8','thermal compound'], type: 'thermalPaste' },
   { tokens: ['чистящий набор','набор чистящ','антистатическ','compressed air','сжатый воздух'], type: 'cleaningSet' },

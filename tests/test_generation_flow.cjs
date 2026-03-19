@@ -30,7 +30,10 @@ const checks = [
   },
   {
     name: 'Search-first still runs for explicit autopilot or universal goods',
-    ok: workspace.includes('const shouldSearchBeforeGenerate = autopilotEnabled || isUniversalGoodsType(currentRow.type);'),
+    ok: workspace.includes('const shouldSearchBeforeGenerate =')
+      && workspace.includes('autopilotEnabled')
+      && workspace.includes('isUniversalGoodsType(currentRow.type)')
+      && workspace.includes('looksLikeSpecificModelQuery(currentRow.model)'),
   },
   {
     name: 'Readiness gate tracks auto-derived ПП1875 basis separately',

@@ -37,6 +37,7 @@ import { GOODS_CATALOG, detectGoodsType, detectAllGoodsTypes, getNacRegime, type
 import { GENERAL_CATALOG, detectGeneralGoodsType, detectGeneralGoodsTypes, getGeneralNacRegime, type GeneralGoodsItem } from '../data/general-catalog';
 import { postProcessSpecs, parseAiResponse, type SpecItem } from '../utils/spec-processor';
 import { deriveCommercialContext, resolveCommercialTerms, type LdapLicenseProfile } from '../utils/commercial-terms';
+import { looksLikeSpecificModelQuery } from '../utils/model-search';
 import { type LawMode } from '../utils/npa-blocks';
 import { parseImportedRows, type ImportedRowImportInfo } from '../utils/row-import';
 import { WorkspaceRowsTable } from './WorkspaceRowsTable';
@@ -8240,7 +8241,10 @@ ${hint || '- Используй детальные, проверяемые эк�
           }
 
           try {
-            const shouldSearchBeforeGenerate = autopilotEnabled || isUniversalGoodsType(currentRow.type);
+            const shouldSearchBeforeGenerate =
+              autopilotEnabled
+              || isUniversalGoodsType(currentRow.type)
+              || looksLikeSpecificModelQuery(currentRow.model);
             if (shouldSearchBeforeGenerate) {
               let internetCandidate: SpecsCandidate | null = null;
               let eisCandidate: SpecsCandidate | null = null;
@@ -9887,7 +9891,11 @@ ${hint || '- Используй детальные, проверяемые эк�
             disabled={paymentRequired || !canGenerate || mutation.isPending || (!canUseAiAssist && !canRunGenerationWithoutAi) || publicationAutopilotRunning}
             onClick={() => (canUseAiAssist || canRunGenerationWithoutAi) ? mutation.mutate({ trigger: 'manual' }) : undefined}
             style={{ background: !paymentRequired && canGenerate && !mutation.isPending && (canUseAiAssist || canRunGenerationWithoutAi) && !publicationAutopilotRunning ? '#1F5C8B' : undefined, color: !paymentRequired && canGenerate && !mutation.isPending && (canUseAiAssist || canRunGenerationWithoutAi) && !publicationAutopilotRunning ? '#fff' : undefined }}
-            title={paymentRequired ? 'Trial завершён: оформите Pro Business' : !canUseAiAssist && !canRunGenerationWithoutAi ? 'Требуется доступ к backend/AI для генерации ТЗ' : undefined}
+            title={paymentRequired
+              ? 'Trial завершён: оформите Pro Business'
+              : !canUseAiAssist && !canRunGenerationWithoutAi
+                ? 'Требуется доступ к backend/AI для генерации ТЗ'
+                : 'Если в описании указана конкретная модель, генератор сначала пытается подтянуть реальные характеристики этой модели, а затем достраивает ТЗ'}
           >
             {mutation.isPending && generationProgress
               ? `⏳ Генерация ${generationProgress.current}/${generationProgress.total}`

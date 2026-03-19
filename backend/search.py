@@ -370,16 +370,23 @@ _MSI_FIELD_NAME_MAP: dict[str, str] = {
     "Chipset": "Чипсет",
     "Graphics": "Графическая подсистема",
     "Storage": "Конфигурация накопителей",
+    "Memory": "Оперативная память",
     "System Memory": "Оперативная память",
+    "I/O Ports (Front)": "Порты на передней панели",
+    "I/O Ports (Rear)": "Порты на задней панели",
     "I/O (Front)": "Порты на передней панели",
     "I/O (Rear)": "Порты на задней панели",
     "Wireless LAN": "Беспроводные интерфейсы",
     "Bluetooth": "Bluetooth",
+    "Audio": "Аудиоподсистема",
     "AUDIO": "Аудиоподсистема",
     "LAN": "Проводная сеть",
+    "Cooler": "Система охлаждения",
     "Cooling System": "Система охлаждения",
+    "Power Supply": "Блок питания",
     "AC Adapter / PSU": "Блок питания",
     "Dimension (WxDxH)": "Размеры корпуса",
+    "Product Dimension (WxDxH)": "Размеры корпуса",
     "WEIGHT (N.W./ G.W.)": "Масса нетто/брутто",
     "VESA Mount": "VESA крепление",
     "Volume": "Объем корпуса",
@@ -419,9 +426,12 @@ _MSI_FIELD_NAME_MAP: dict[str, str] = {
     "Lock type": "Тип замка безопасности",
     "USB 3.2 Gen 2 (10G) Type C (R)": "USB Type-C",
     "USB 3.2 Gen 2 (10G) Type A (R)": "USB 3.2 Gen 2 Type-A",
+    "Communication": "Беспроводные интерфейсы",
     "Warranty": "Гарантия производителя",
     "Weight (Net kg)": "Масса нетто",
     "Weight (Gross kg)": "Масса брутто",
+    "W/O KB Weight (Net kg)": "Масса нетто",
+    "W/O KB Weight (Gross kg)": "Масса брутто",
     "Product Dimension (WxDxH) (mm)": "Размеры корпуса",
     "Keyboard Interface": "Интерфейс клавиатуры",
     "Mouse": "Мышь в комплекте",
@@ -440,6 +450,8 @@ _MSI_IGNORED_FIELDS = {
     "Accessories",
     "Certificates",
     "Weight (Gross kg)",
+    "W/O KB Weight (Net lbs)",
+    "W/O KB Weight (Gross lbs)",
     "Product Dimension (WxDxH) (inch)",
     "Inside Carton Dimension (WxDxH) (mm)",
     "Inside Carton Dimension (WxDxH) (inch)",
@@ -828,7 +840,7 @@ def _looks_like_specific_model_query(value: str) -> bool:
     if has_brand_hint and (long_latin_tokens >= 2 or has_upper_series):
         return True
     if has_upper_series and len(informative_tokens) >= 3:
-        return True
+        return has_brand_hint or any(_has_alpha_digit_mix(token) for token in informative_tokens)
     return False
 
 
@@ -1984,10 +1996,10 @@ def _parse_msi_spec_markdown(markdown: str, exact_model: str) -> list[dict]:
     return _clean_specs_for_compliance(_dedupe_specs(specs))
 
 
-def _extract_msi_search_spec_url(markdown: str, goods_type: str = "") -> str:
+def _extract_msi_search_spec_urls(markdown: str, goods_type: str = "") -> list[str]:
     text = str(markdown or "")
     if not text.strip():
-        return ""
+        return []
 
     categories = _MSI_CATEGORY_PATHS_BY_TYPE.get(goods_type, ["Business-Productivity-PC", "Business-Productivity-Laptop", "Monitor"])
     candidates: list[str] = []
@@ -1997,16 +2009,29 @@ def _extract_msi_search_spec_url(markdown: str, goods_type: str = "") -> str:
             candidates.append(url)
 
     if not candidates:
-        return ""
+        return []
 
+    ranked: list[str] = []
     for category in categories:
         for url in candidates:
-            if f"/{category}/" in url:
-                return url
-    return candidates[0]
+            if f"/{category}/" in url and url not in ranked:
+                ranked.append(url)
+    for url in candidates:
+        if url not in ranked:
+            ranked.append(url)
+    return ranked
+
+
+def _extract_msi_search_spec_url(markdown: str, goods_type: str = "") -> str:
+    urls = _extract_msi_search_spec_urls(markdown, goods_type)
+    return urls[0] if urls else ""
 
 
 def _parse_msi_family_spec_markdown(markdown: str) -> list[dict]:
+    repeated_specs = _parse_msi_family_repeated_markdown(markdown)
+    if _has_sufficient_exact_model_quality(repeated_specs):
+        return repeated_specs
+
     raw_lines = str(markdown or "").splitlines()
     labels: list[str] = []
     values: list[str] = []
@@ -2120,6 +2145,94 @@ def _parse_msi_family_spec_markdown(markdown: str) -> list[dict]:
     return _clean_specs_for_compliance(_dedupe_specs(specs))
 
 
+def _parse_msi_family_repeated_markdown(markdown: str) -> list[dict]:
+    known_labels = set(_MSI_FIELD_NAME_MAP) | set(_MSI_IGNORED_FIELDS)
+    specs: list[dict] = []
+    seen_names: set[str] = set()
+    current_label: str | None = None
+    current_values: list[str] = []
+
+    def normalize_repeated_value(label: str, value: str) -> str:
+        cleaned = re.sub(r"\s+", " ", str(value or "")).strip(" :")
+        if not cleaned:
+            return ""
+        if cleaned.lower() == label.lower():
+            return ""
+        cleaned = re.sub(rf"^{re.escape(label)}\s*", "", cleaned, flags=re.I).strip(" :")
+        repeated_label = re.search(rf"{re.escape(label)}\s+", cleaned, flags=re.I)
+        if repeated_label and repeated_label.start() > 0:
+            cleaned = cleaned[:repeated_label.start()].strip(" :")
+        return cleaned
+
+    def flush_current() -> None:
+        nonlocal current_label, current_values, specs, seen_names
+        if not current_label:
+            current_values = []
+            return
+        label = current_label.strip()
+        current_label = None
+        values = [normalize_repeated_value(label, item) for item in current_values]
+        values = [item for item in values if item]
+        current_values = []
+        if label in _MSI_IGNORED_FIELDS or not values:
+            return
+        friendly_name = _MSI_FIELD_NAME_MAP.get(label, label)
+        if friendly_name in seen_names:
+            return
+        joined_value = "; ".join(values)
+        explicit_unit = ""
+        if friendly_name == "Размеры корпуса":
+            joined_value = re.sub(r"\(\s*(?:mm|мм)\s*\)", "", joined_value, flags=re.I).strip(" ;")
+            explicit_unit = "мм"
+        elif friendly_name in {"Масса нетто", "Масса брутто", "Масса нетто/брутто"}:
+            explicit_unit = "кг"
+        elif friendly_name == "Объем корпуса":
+            explicit_unit = "л"
+        elif friendly_name == "Блок питания" and re.fullmatch(r"\d+(?:[.,]\d+)?\s*[Ww]", joined_value):
+            joined_value = re.sub(r"\s*[Ww]\b", "", joined_value).strip()
+            explicit_unit = "Вт"
+        specs.append({
+            "name": friendly_name,
+            "value": joined_value,
+            "unit": explicit_unit,
+        })
+        seen_names.add(friendly_name)
+
+    for raw_line in str(markdown or "").splitlines():
+        normalized = re.sub(r"\s+", " ", raw_line).strip()
+        if not normalized:
+            continue
+        if normalized.startswith(("Title:", "URL Source:", "Markdown Content:", "### ", "# ")):
+            continue
+        if normalized.startswith("![Image"):
+            continue
+        if re.search(r"(trademark|all images and descriptions are for illustrative purposes only|all specifications are subject to change without notice)", normalized, flags=re.I):
+            flush_current()
+            break
+
+        parsed = _split_repeated_label_values(normalized)
+        if parsed:
+            label, repeated_values = parsed
+            label = re.sub(r"\s+", " ", label).strip()
+            if label in known_labels:
+                flush_current()
+                current_label = label
+                first_value = ""
+                for candidate in repeated_values:
+                    normalized_candidate = normalize_repeated_value(label, candidate)
+                    if normalized_candidate:
+                        first_value = normalized_candidate
+                        break
+                current_values = [first_value] if first_value else []
+                continue
+
+        if current_label:
+            current_values.append(normalized)
+
+    flush_current()
+    return _clean_specs_for_compliance(_dedupe_specs(specs))
+
+
 def _resolve_msi_exact_model_specs(product: str, goods_type: str = "") -> list[dict]:
     if "msi" not in str(product or "").lower():
         return []
@@ -2170,22 +2283,23 @@ def _resolve_msi_search_page_specs(product: str, goods_type: str = "") -> list[d
         logger.info(f"[vendor] MSI search page empty: {search_url}")
         return []
 
-    spec_url = _extract_msi_search_spec_url(search_markdown, goods_type)
-    if not spec_url:
+    spec_urls = _extract_msi_search_spec_urls(search_markdown, goods_type)
+    if not spec_urls:
         logger.info(f"[vendor] MSI search page has no spec URL: query={family_query!r}")
         return []
 
-    spec_markdown = _fetch_readable_page(spec_url, timeout=10)
-    if not spec_markdown:
-        logger.info(f"[vendor] MSI spec page empty: {spec_url}")
-        return []
+    for spec_url in spec_urls[:4]:
+        spec_markdown = _fetch_readable_page(spec_url, timeout=10)
+        if not spec_markdown:
+            logger.info(f"[vendor] MSI spec page empty: {spec_url}")
+            continue
 
-    specs = _parse_msi_family_spec_markdown(spec_markdown)
-    if _has_sufficient_exact_model_quality(specs):
-        logger.info(f"[vendor] MSI search-page family hit: {product!r} -> {spec_url}")
-        return specs
+        specs = _parse_msi_family_spec_markdown(spec_markdown)
+        if _has_sufficient_exact_model_quality(specs):
+            logger.info(f"[vendor] MSI search-page family hit: {product!r} -> {spec_url}")
+            return specs
 
-    logger.info(f"[vendor] MSI search-page family weak parse: {spec_url} specs={len(specs)}")
+        logger.info(f"[vendor] MSI search-page family weak parse: {spec_url} specs={len(specs)}")
     return []
 
 
@@ -2455,6 +2569,11 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
         if direct_vendor_specs:
             _cache_set(cache_key, direct_vendor_specs)
             return direct_vendor_specs
+        family_vendor_specs = _resolve_msi_search_page_specs(product, goods_type)
+        if family_vendor_specs:
+            _cache_set(cache_key, family_vendor_specs)
+            return family_vendor_specs
+    elif "msi" in product.lower():
         family_vendor_specs = _resolve_msi_search_page_specs(product, goods_type)
         if family_vendor_specs:
             _cache_set(cache_key, family_vendor_specs)

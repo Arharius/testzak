@@ -62,6 +62,8 @@ export function looksLikeSpecificModelQuery(value: string): boolean {
   if (looksLikeSpecSentence && !hasCodeToken) return false;
   if (hasCodeToken) return true;
   if (hasBrandHint && (longLatinTokens >= 2 || hasUpperSeries)) return true;
-  if (hasUpperSeries && informativeTokens.length >= 3) return true;
+  if (hasUpperSeries && informativeTokens.length >= 3) {
+    return hasBrandHint || informativeTokens.some((token) => hasAlphaDigitMix(token));
+  }
   return false;
 }

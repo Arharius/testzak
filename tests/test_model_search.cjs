@@ -26,6 +26,7 @@ const cases = [
   { input: 'Astra Linux Special Edition 1.8', expected: true },
   { input: 'системный блок', expected: false },
   { input: 'Системный блок, 16 ГБ ОЗУ, SSD 512 ГБ', expected: false },
+  { input: 'Монитор серии 07 RDW', expected: false },
   { input: 'ноутбук lenovo', expected: false },
   { input: 'коммутатор cisco', expected: false },
   { input: 'техническая поддержка ALD Pro', expected: false },

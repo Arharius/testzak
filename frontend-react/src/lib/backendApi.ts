@@ -102,7 +102,7 @@ export function isLoggedIn(): boolean {
 
 const DEFAULT_TIMEOUT_MS = 180_000; // 180s for AI calls (DeepSeek can take 40-90s, with retry)
 const SHORT_TIMEOUT_MS = 15_000;   // 15s for auth/CRUD
-const SEARCH_TIMEOUT_MS = 8_000;   // backend exact-model search should fail fast; frontend can fall back to AI
+const SEARCH_TIMEOUT_MS = 18_000;  // vendor/family spec pages can take 10-15s; do not abort a valid search too early
 
 function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();

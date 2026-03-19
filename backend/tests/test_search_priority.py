@@ -55,6 +55,7 @@ def test_specific_model_detection_matches_frontend_expectations():
     assert _looks_like_specific_model_query("MSI PRO DP21 14M-1069XRU") is True
     assert _looks_like_specific_model_query("Dell OptiPlex 7010") is True
     assert _looks_like_specific_model_query("Гравитон Н15") is True
+    assert _looks_like_specific_model_query("Монитор серии 07 RDW") is False
     assert _looks_like_specific_model_query("системный блок") is False
     assert _looks_like_specific_model_query("Системный блок, 16 ГБ ОЗУ, SSD 512 ГБ") is False
 
@@ -253,6 +254,65 @@ FCC, CB/CE, UL & CUL, VCCI, RCM, ENERGY STAR
     assert "Accessories" not in by_name
     assert "Certificates" not in by_name
     assert _has_sufficient_exact_model_quality(specs) is True
+
+
+def test_parse_msi_family_spec_markdown_extracts_real_repeated_layout():
+    markdown = """
+### PRO DP21 14MQ
+
+CPU CPU  Intel® Core™ i7 processor 14700 (33M Cache, 2.10 GHz up to 5.40 GHz)
+
+ Intel® Core™ i5 processor 14500 (24M Cache, 2.60 GHz up to 5.00 GHz)CPU  Intel® Core™ i7 processor 14700 (33M Cache, 2.10 GHz up to 5.40 GHz)
+
+ Intel® Core™ i5 processor 14500 (24M Cache, 2.60 GHz up to 5.00 GHz)
+Chipset Chipset  Intel® Q670 Chipset  Intel® Q670
+Memory Memory  DDR5 5600 MHz Max 64GB SO-DIMM 2 Slots Memory  DDR5 5600 MHz Max 64GB SO-DIMM 2 Slots
+Storage Storage  1x M.2 SSD combo (NVMe PCIe Gen3 x4 / SATA)
+
+ 2x 2.5" Drive Bays Storage  1x M.2 SSD combo (NVMe PCIe Gen3 x4 / SATA)
+
+ 2x 2.5" Drive Bays
+I/O Ports (Rear)I/O Ports (Rear)  1x (v2.1) HDMI out
+
+ 1x (v1.4) DP out
+
+ 1x COM Port
+
+ 1x USB 3.2 Gen 2 (10G) Type C 
+
+ 3x USB 3.2 Gen 2 (10G) Type A I/O Ports (Rear)  1x (v2.1) HDMI out
+
+ 1x (v1.4) DP out
+
+ 1x COM Port
+
+ 1x USB 3.2 Gen 2 (10G) Type C 
+
+ 3x USB 3.2 Gen 2 (10G) Type A
+Communication Communication  Intel Wireless AX211 + Bluetooth v5.3
+
+ Intel Wi-Fi 7 BE200 + Bluetooth 5.4 Communication  Intel Wireless AX211 + Bluetooth v5.3
+
+ Intel Wi-Fi 7 BE200 + Bluetooth 5.4
+Power Supply Power Supply  120W Power Supply  120W
+Product Dimension (WxDxH)Product Dimension (WxDxH)  204 x 208 x 54.8 (mm)Product Dimension (WxDxH)  204 x 208 x 54.8 (mm)
+W/O KB Weight (Net kg)W/O KB Weight (Net kg)  1.27 W/O KB Weight (Net kg)  1.27
+Part No Part No 9S6-B0A431-1069 Part No 9S6-B0A431-1069
+MKT Name MKT Name PRO DP21 14M MKT Name PRO DP21 14M
+"""
+    specs = _parse_msi_family_spec_markdown(markdown)
+    by_name = {item["name"]: item["value"] for item in specs}
+    assert by_name["Процессор"].startswith("Intel® Core™ i7 processor 14700")
+    assert by_name["Чипсет"] == "Intel® Q670"
+    assert "DDR5 5600 MHz" in by_name["Оперативная память"]
+    assert "M.2 SSD combo" in by_name["Конфигурация накопителей"]
+    assert "HDMI out" in by_name["Порты на задней панели"]
+    assert "AX211" in by_name["Беспроводные интерфейсы"]
+    assert by_name["Блок питания"] == "120"
+    assert by_name["Размеры корпуса"].startswith("204 x 208 x 54.8")
+    assert by_name["Масса нетто"] == "1.27"
+    assert "Part No" not in by_name
+    assert "MKT Name" not in by_name
 
 
 def test_clean_specs_for_compliance_removes_model_identity_fields():

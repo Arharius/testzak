@@ -2055,8 +2055,10 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
         if exact_model:
             ai_specs = await loop.run_in_executor(None, lambda: _ai_generate_model_specs(product, goods_type))
             if ai_specs:
-                _cache_set(cache_key, ai_specs)
-                return ai_specs
+                final_specs = _clean_specs_for_compliance(_dedupe_specs(ai_specs))
+                if _has_sufficient_exact_model_quality(final_specs):
+                    _cache_set(cache_key, final_specs)
+                    return final_specs
             return []
         return baseline_specs
 
@@ -2090,8 +2092,10 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
         if exact_model:
             ai_specs = await loop.run_in_executor(None, lambda: _ai_generate_model_specs(product, goods_type))
             if ai_specs:
-                _cache_set(cache_key, ai_specs)
-                return ai_specs
+                final_specs = _clean_specs_for_compliance(_dedupe_specs(ai_specs))
+                if _has_sufficient_exact_model_quality(final_specs):
+                    _cache_set(cache_key, final_specs)
+                    return final_specs
             return []
         return baseline_specs
 
@@ -2105,7 +2109,10 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
         if not _has_sufficient_exact_model_quality(final_specs):
             ai_specs = await loop.run_in_executor(None, lambda: _ai_generate_model_specs(product, goods_type))
             if ai_specs:
-                final_specs = ai_specs
+                final_specs = _clean_specs_for_compliance(_dedupe_specs(ai_specs))
+        if not _has_sufficient_exact_model_quality(final_specs):
+            logger.warning(f"[internet] Exact model result stayed generic for {product!r}")
+            return []
     else:
         specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, product, goods_type))
         merged_specs = _merge_specs(specs, heuristic_specs)
@@ -2202,6 +2209,9 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
         final_specs = _clean_specs_for_compliance(_dedupe_specs(heuristic_specs))
         if not _has_sufficient_exact_model_quality(final_specs):
             final_specs = await search_internet_specs(query, goods_type)
+        if not _has_sufficient_exact_model_quality(final_specs):
+            logger.warning(f"[eis] Exact model result stayed generic for {query!r}")
+            return []
     else:
         specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, query, goods_type))
         merged_specs = _merge_specs(specs, heuristic_specs)

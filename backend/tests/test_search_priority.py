@@ -5,9 +5,12 @@ from search import (
     _clean_specs_for_compliance,
     _enrich_with_baseline,
     _extract_msi_model_family,
+    _extract_msi_search_family_query,
+    _extract_msi_search_spec_url,
     _get_astra_fast_specs,
     _has_sufficient_exact_model_quality,
     _looks_like_specific_model_query,
+    _parse_msi_family_spec_markdown,
     _parse_msi_spec_markdown,
 )
 
@@ -121,6 +124,20 @@ def test_extract_msi_model_family_parses_exact_sku():
     assert _extract_msi_model_family("MSI PRO DP21 14M-1069XRU") == ("PRO DP21 14M", "1069XRU")
 
 
+def test_extract_msi_search_family_query_supports_family_only_input():
+    assert _extract_msi_search_family_query("Мини ПК MSI PRO DP21") == "PRO DP21"
+    assert _extract_msi_search_family_query("MSI PRO DP21 14M-1069XRU") == "PRO DP21 14M"
+
+
+def test_extract_msi_search_spec_url_prefers_matching_category():
+    markdown = """
+Search Results for PRO DP21
+[Specifications](http://www.msi.com/Monitor/PRO-MP275Q/Specification)
+[Specifications](http://www.msi.com/Business-Productivity-PC/PRO-DP21-14MX/Specification)
+"""
+    assert _extract_msi_search_spec_url(markdown, "pc") == "https://www.msi.com/Business-Productivity-PC/PRO-DP21-14MX/Specification"
+
+
 def test_parse_msi_spec_markdown_extracts_exact_column():
     markdown = """
 MKT Spec MKT Spec PRO DP21 14M-1055XRU MKT Spec PRO DP21 14M-1069XRU MKT Spec PRO DP21 14M-1071XRU
@@ -152,6 +169,90 @@ Inside Carton Dimension (WxDxH) (inch)Inside Carton Dimension (WxDxH) (inch) 0.3
     assert "Part No" not in by_name
     assert "Color" not in by_name
     assert "Inside Carton Dimension (WxDxH) (inch)" not in by_name
+
+
+def test_parse_msi_family_spec_markdown_extracts_search_page_family_specs():
+    markdown = """
+### PRO DP21 14M
+
+*    Operating System
+*    CPU
+*    Chipset
+*    Graphics
+*    Storage
+*    System Memory
+*    I/O (Front)
+*    I/O (Rear)
+*    Wireless LAN
+*    Bluetooth
+*    AUDIO
+*    LAN
+*    Cooling System
+*    KEYBOARD / MOUSE
+*    AC Adapter / PSU
+*    Dimension (WxDxH)
+*    WEIGHT (N.W./ G.W.)
+*    VESA Mount
+*    Volume
+*    Accessories
+*    Certificates
+
+Windows 11 Home
+Windows 11 Pro - MSI recommends Windows 11 Pro for business
+Intel® Core™ i7 processor 14700
+Intel® Core™ i5 processor 14400
+Intel® Core™ i3 processor 14100
+Intel® Pentium® Gold G7400
+Intel® H610
+Intel® UHD Graphics 770
+1x M.2 SSD (NVMe PCIe/SATA auto switch)
+2x 2.5” HDD / SSD
+2x DDR5 up to 5600MHz SO-DIMMs, up to 64GB
+1x USB 5Gbps Type-C
+1x USB 5Gbps Type-A
+2x USB 2.0 Type-A
+1x Mic-in
+1x Headphone-out
+1x USB 10Gbps Type-C
+1x USB 10Gbps Type-A
+2x USB 2.0
+1x RJ45
+1x HDMI™ out (supports 4K @60Hz as specified in HDMI™ 2.1)
+1x DisplayPort (1.4)
+1x COM port
+1x Mic-in
+1x Line-out
+1x Kensington Lock
+Intel Wireless AX211 (WiFi 6E)
+Realtek Wireless AW-CB515NF (WiFi 5)
+5.3 (for AX211) / 4.1 (for AW-CB515NF)
+Realtek® ALC897
+Intel® I219V
+Fan Cooler
+Optional
+120W
+204 x 208 x 54.8 mm (8.03 x 8.19 x 2.16 inch)
+1.52 kg (3.35 lbs) / 3.05 kg (6.72 lbs)
+Support 100 x 100 mm
+2.3 Liter / 4.86pt
+1x Quick Guide
+1x Warranty Card
+1x Power Cord
+VESA Mount Screws
+FCC, CB/CE, UL & CUL, VCCI, RCM, ENERGY STAR
+"""
+    specs = _parse_msi_family_spec_markdown(markdown)
+    by_name = {item["name"]: item["value"] for item in specs}
+    assert by_name["Процессор"].startswith("Intel® Core™ i7 processor 14700")
+    assert by_name["Чипсет"] == "Intel® H610"
+    assert "M.2 SSD" in by_name["Конфигурация накопителей"]
+    assert "DDR5" in by_name["Оперативная память"]
+    assert "WiFi 6E" in by_name["Беспроводные интерфейсы"]
+    assert by_name["Размеры корпуса"].startswith("204 x 208 x 54.8")
+    assert "KEYBOARD / MOUSE" not in by_name
+    assert "Accessories" not in by_name
+    assert "Certificates" not in by_name
+    assert _has_sufficient_exact_model_quality(specs) is True
 
 
 def test_clean_specs_for_compliance_removes_model_identity_fields():

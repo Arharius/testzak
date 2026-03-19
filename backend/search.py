@@ -365,6 +365,24 @@ _MSI_CATEGORY_PATHS_BY_TYPE: dict[str, list[str]] = {
 }
 
 _MSI_FIELD_NAME_MAP: dict[str, str] = {
+    "Operating System": "Поддерживаемая операционная система",
+    "CPU": "Процессор",
+    "Chipset": "Чипсет",
+    "Graphics": "Графическая подсистема",
+    "Storage": "Конфигурация накопителей",
+    "System Memory": "Оперативная память",
+    "I/O (Front)": "Порты на передней панели",
+    "I/O (Rear)": "Порты на задней панели",
+    "Wireless LAN": "Беспроводные интерфейсы",
+    "Bluetooth": "Bluetooth",
+    "AUDIO": "Аудиоподсистема",
+    "LAN": "Проводная сеть",
+    "Cooling System": "Система охлаждения",
+    "AC Adapter / PSU": "Блок питания",
+    "Dimension (WxDxH)": "Размеры корпуса",
+    "WEIGHT (N.W./ G.W.)": "Масса нетто/брутто",
+    "VESA Mount": "VESA крепление",
+    "Volume": "Объем корпуса",
     "Operating Systems": "Поддерживаемая операционная система",
     "Chipsets": "Чипсет",
     "Memory Size": "Объем оперативной памяти",
@@ -418,6 +436,9 @@ _MSI_IGNORED_FIELDS = {
     "MKT Spec",
     "Color",
     "Warranty",
+    "KEYBOARD / MOUSE",
+    "Accessories",
+    "Certificates",
     "Weight (Gross kg)",
     "Product Dimension (WxDxH) (inch)",
     "Inside Carton Dimension (WxDxH) (mm)",
@@ -1887,6 +1908,28 @@ def _extract_msi_model_family(query: str) -> tuple[str, str] | None:
     return family, suffix
 
 
+def _extract_msi_search_family_query(query: str) -> str:
+    family_info = _extract_msi_model_family(query)
+    if family_info:
+        return family_info[0]
+
+    cleaned = re.sub(r"\bmsi\b", " ", str(query or ""), flags=re.I)
+    cleaned = re.sub(
+        r"\b(мини\s*пк|mini\s*pc|mini-pc|desktop|system\s*unit|системный\s*блок|business\s*productivity\s*pc|office\s*desktop|pc)\b",
+        " ",
+        cleaned,
+        flags=re.I,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -_/")
+    family_match = re.search(r"(PRO\s+DP\d+[A-Za-z0-9-]*)", cleaned, flags=re.I)
+    if family_match:
+        return re.sub(r"\s+", " ", family_match.group(1)).strip()
+    tokens = cleaned.split()
+    if len(tokens) >= 2:
+        return " ".join(tokens[:3]).strip()
+    return cleaned
+
+
 def _split_repeated_label_values(line: str) -> tuple[str, list[str]] | None:
     normalized = re.sub(r"\s+", " ", str(line or "")).strip()
     if not normalized:
@@ -1941,6 +1984,142 @@ def _parse_msi_spec_markdown(markdown: str, exact_model: str) -> list[dict]:
     return _clean_specs_for_compliance(_dedupe_specs(specs))
 
 
+def _extract_msi_search_spec_url(markdown: str, goods_type: str = "") -> str:
+    text = str(markdown or "")
+    if not text.strip():
+        return ""
+
+    categories = _MSI_CATEGORY_PATHS_BY_TYPE.get(goods_type, ["Business-Productivity-PC", "Business-Productivity-Laptop", "Monitor"])
+    candidates: list[str] = []
+    for match in re.finditer(r"https?://(?:www\.)?msi\.com/[A-Za-z0-9/_\-]+/Specification", text, flags=re.I):
+        url = match.group(0).replace("http://", "https://")
+        if url not in candidates:
+            candidates.append(url)
+
+    if not candidates:
+        return ""
+
+    for category in categories:
+        for url in candidates:
+            if f"/{category}/" in url:
+                return url
+    return candidates[0]
+
+
+def _parse_msi_family_spec_markdown(markdown: str) -> list[dict]:
+    raw_lines = str(markdown or "").splitlines()
+    labels: list[str] = []
+    values: list[str] = []
+    label_mode = False
+    value_mode = False
+
+    for raw_line in raw_lines:
+        normalized = re.sub(r"\s+", " ", raw_line).strip()
+        if not normalized:
+            continue
+        if normalized.startswith(("Title:", "URL Source:", "Markdown Content:")):
+            continue
+        if normalized.startswith("![Image") or "trademark" in normalized.lower():
+            if value_mode:
+                break
+            continue
+        if normalized.startswith("*"):
+            bullet = re.sub(r"^\*\s*", "", normalized).strip()
+            bullet = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", bullet).strip()
+            if bullet in {"Product Specifications", "Datasheet"}:
+                continue
+            if not value_mode:
+                label_mode = True
+                labels.append(bullet)
+            continue
+        if label_mode:
+            value_mode = True
+        if value_mode:
+            values.append(normalized)
+
+    if len(labels) < 6 or len(values) < 6:
+        return []
+
+    def consume_until(index: int, stop_predicate) -> tuple[list[str], int]:
+        start = index
+        while index < len(values) and not stop_predicate(values[index]):
+            index += 1
+        return values[start:index], index
+
+    def chipset_start(line: str) -> bool:
+        return bool(re.search(r"\b(?:Intel|AMD).*\b(?:H|B|Q|Z|A|X)\d{2,4}\b", line, flags=re.I))
+
+    def cpu_start(line: str) -> bool:
+        return bool(re.search(r"\b(?:Intel|AMD).*(?:Core|Ryzen|Pentium|Celeron|processor)\b", line, flags=re.I))
+
+    def front_rear_boundary(line: str) -> bool:
+        return bool(re.search(r"(USB 10Gbps|RJ45|HDMI|DisplayPort|COM port|Kensington)", line, flags=re.I))
+
+    def rear_wireless_boundary(line: str) -> bool:
+        return bool(re.search(r"(Wireless|WiFi|AX211|AW-CB|Bluetooth)", line, flags=re.I))
+
+    def wireless_bluetooth_boundary(line: str) -> bool:
+        return bool(re.match(r"^\d+(?:\.\d+)?(?:\s*\(|$)", line))
+
+    def accessories_cert_boundary(line: str) -> bool:
+        return bool(re.search(r"(FCC|CB/CE|UL\s*&\s*CUL|VCCI|RCM|ENERGY STAR)", line, flags=re.I))
+
+    specs: list[dict] = []
+    seen_names: set[str] = set()
+    idx = 0
+
+    for label in labels:
+        if idx >= len(values):
+            break
+
+        group: list[str]
+        if label == "Operating System":
+            group, idx = consume_until(idx, cpu_start)
+        elif label == "CPU":
+            group, idx = consume_until(idx, chipset_start)
+        elif label == "Chipset":
+            group, idx = values[idx:idx + 1], idx + 1
+        elif label == "Graphics":
+            group, idx = consume_until(idx, lambda line: bool(re.search(r"(M\.2|HDD|SSD|PCIe|SATA)", line, flags=re.I)))
+        elif label == "Storage":
+            group, idx = consume_until(idx, lambda line: bool(re.search(r"(DDR\d|LPDDR|SO-DIMM)", line, flags=re.I)))
+        elif label == "System Memory":
+            group, idx = values[idx:idx + 1], idx + 1
+        elif label == "I/O (Front)":
+            group, idx = consume_until(idx, front_rear_boundary)
+        elif label == "I/O (Rear)":
+            group, idx = consume_until(idx, rear_wireless_boundary)
+        elif label == "Wireless LAN":
+            group, idx = consume_until(idx, wireless_bluetooth_boundary)
+        elif label in {"Bluetooth", "AUDIO", "LAN", "Cooling System", "KEYBOARD / MOUSE", "AC Adapter / PSU", "Dimension (WxDxH)", "WEIGHT (N.W./ G.W.)", "VESA Mount", "Volume"}:
+            group, idx = values[idx:idx + 1], idx + 1
+        elif label == "Accessories":
+            group, idx = consume_until(idx, accessories_cert_boundary)
+        elif label == "Certificates":
+            group, idx = values[idx:], len(values)
+        else:
+            group, idx = values[idx:idx + 1], idx + 1
+
+        if label in _MSI_IGNORED_FIELDS:
+            continue
+
+        cleaned_group = [item.strip(" :") for item in group if item and item.strip(" :")]
+        if not cleaned_group:
+            continue
+
+        friendly_name = _MSI_FIELD_NAME_MAP.get(label, label)
+        if friendly_name in seen_names:
+            continue
+        specs.append({
+            "name": friendly_name,
+            "value": "; ".join(cleaned_group),
+            "unit": "",
+        })
+        seen_names.add(friendly_name)
+
+    return _clean_specs_for_compliance(_dedupe_specs(specs))
+
+
 def _resolve_msi_exact_model_specs(product: str, goods_type: str = "") -> list[dict]:
     if "msi" not in str(product or "").lower():
         return []
@@ -1974,6 +2153,39 @@ def _resolve_msi_exact_model_specs(product: str, goods_type: str = "") -> list[d
             logger.info(f"[vendor] MSI exact model hit: {product!r} -> {candidate_url}")
             return specs
         logger.info(f"[vendor] MSI candidate weak parse: {candidate_url} specs={len(specs)}")
+    return []
+
+
+def _resolve_msi_search_page_specs(product: str, goods_type: str = "") -> list[dict]:
+    if "msi" not in str(product or "").lower():
+        return []
+
+    family_query = _extract_msi_search_family_query(product)
+    if not family_query:
+        return []
+
+    search_url = f"https://www.msi.com/search/{quote_plus(family_query)}"
+    search_markdown = _fetch_readable_page(search_url, timeout=8)
+    if not search_markdown:
+        logger.info(f"[vendor] MSI search page empty: {search_url}")
+        return []
+
+    spec_url = _extract_msi_search_spec_url(search_markdown, goods_type)
+    if not spec_url:
+        logger.info(f"[vendor] MSI search page has no spec URL: query={family_query!r}")
+        return []
+
+    spec_markdown = _fetch_readable_page(spec_url, timeout=10)
+    if not spec_markdown:
+        logger.info(f"[vendor] MSI spec page empty: {spec_url}")
+        return []
+
+    specs = _parse_msi_family_spec_markdown(spec_markdown)
+    if _has_sufficient_exact_model_quality(specs):
+        logger.info(f"[vendor] MSI search-page family hit: {product!r} -> {spec_url}")
+        return specs
+
+    logger.info(f"[vendor] MSI search-page family weak parse: {spec_url} specs={len(specs)}")
     return []
 
 
@@ -2243,6 +2455,10 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
         if direct_vendor_specs:
             _cache_set(cache_key, direct_vendor_specs)
             return direct_vendor_specs
+        family_vendor_specs = _resolve_msi_search_page_specs(product, goods_type)
+        if family_vendor_specs:
+            _cache_set(cache_key, family_vendor_specs)
+            return family_vendor_specs
 
     fast_specs = _get_astra_fast_specs(goods_type, product)
     if fast_specs:

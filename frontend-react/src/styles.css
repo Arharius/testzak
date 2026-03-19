@@ -1538,6 +1538,25 @@ html[data-theme='contrast'] .workspace-disclosure {
   margin-top: 10px;
 }
 
+.workspace-quick-add {
+  min-height: 36px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border-strong);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.workspace-quick-add:hover:enabled {
+  transform: none;
+  filter: none;
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
 .workspace-composer-card {
   margin: 18px 0 16px;
   display: grid;

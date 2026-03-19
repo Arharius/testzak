@@ -102,11 +102,23 @@ except ImportError:
 # ── Search module ──────────────────────────────────────────────
 _search_import_source = "stub"
 try:
-    from .search import search_internet_specs, search_eis_specs  # type: ignore
+    from .search import (  # type: ignore
+        search_internet_specs,
+        search_eis_specs,
+        _has_sufficient_exact_model_quality,
+        _looks_like_specific_model_query,
+        _resolve_msi_exact_model_specs,
+    )
     _search_import_source = "package"
 except ImportError:
     try:
-        from search import search_internet_specs, search_eis_specs
+        from search import (
+            search_internet_specs,
+            search_eis_specs,
+            _has_sufficient_exact_model_quality,
+            _looks_like_specific_model_query,
+            _resolve_msi_exact_model_specs,
+        )
         _search_import_source = "direct"
     except Exception as _search_err:
         import traceback
@@ -115,6 +127,12 @@ except ImportError:
         async def search_internet_specs(product: str, goods_type: str) -> list:  # type: ignore
             return []
         async def search_eis_specs(query: str, goods_type: str) -> list:  # type: ignore
+            return []
+        def _has_sufficient_exact_model_quality(specs: list) -> bool:  # type: ignore
+            return False
+        def _looks_like_specific_model_query(query: str) -> bool:  # type: ignore
+            return False
+        def _resolve_msi_exact_model_specs(product: str, goods_type: str = "") -> list:  # type: ignore
             return []
 
 # ── Logging ────────────────────────────────────────────────────
@@ -1731,11 +1749,20 @@ async def search_specs(
     import time as _time
     t0 = _time.time()
     logger.info(f"Internet search: {req.product!r} type={req.goods_type!r}")
+    exact_model = _looks_like_specific_model_query(req.product.strip())
     try:
         specs = await search_internet_specs(req.product.strip(), req.goods_type)
     except Exception as e:
         logger.error(f"Internet search EXCEPTION: {e}", exc_info=True)
         specs = []
+    if exact_model and not _has_sufficient_exact_model_quality(specs):
+        logger.warning(f"Internet search returned weak exact-model result for {req.product!r}, trying direct vendor resolver")
+        try:
+            direct_specs = _resolve_msi_exact_model_specs(req.product.strip(), req.goods_type)
+        except Exception as e:
+            logger.error(f"MSI exact-model resolver EXCEPTION: {e}", exc_info=True)
+            direct_specs = []
+        specs = direct_specs if _has_sufficient_exact_model_quality(direct_specs) else []
     elapsed = _time.time() - t0
     logger.info(f"Internet search done: {len(specs)} specs in {elapsed:.1f}s")
     return {"ok": True, "specs": specs, "source": "internet", "elapsed": round(elapsed, 1)}

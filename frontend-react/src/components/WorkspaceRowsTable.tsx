@@ -52,6 +52,8 @@ type WorkspaceRowsTableProps = {
   expandedRowMetaId: number | null;
   canUseAiAssist: boolean;
   hasBackendSession: boolean;
+  canStartGeneration: boolean;
+  generationPending: boolean;
   benchmarkingEnabled: boolean;
   lookupCatalog: (key: string) => CatalogLike;
   getUnifiedNacRegime: (key: string) => string;
@@ -85,6 +87,7 @@ type WorkspaceRowsTableProps = {
   onRefreshRowClassification: (rowId: number) => void;
   onRefreshRowFromSource: (rowId: number, source: 'internet' | 'eis') => void;
   onOpenAuthPanel: () => void;
+  onGenerate: () => void;
   onUpdateSpec: (rowId: number, specIdx: number, field: 'name' | 'value' | 'unit' | 'group', newVal: string) => void;
   onDeleteSpec: (rowId: number, specIdx: number) => void;
   onAddSpec: (rowId: number, afterIdx?: number) => void;
@@ -102,6 +105,8 @@ export function WorkspaceRowsTable({
   expandedRowMetaId,
   canUseAiAssist,
   hasBackendSession,
+  canStartGeneration,
+  generationPending,
   benchmarkingEnabled,
   lookupCatalog,
   getUnifiedNacRegime,
@@ -132,6 +137,7 @@ export function WorkspaceRowsTable({
   onRefreshRowClassification,
   onRefreshRowFromSource,
   onOpenAuthPanel,
+  onGenerate,
   onUpdateSpec,
   onDeleteSpec,
   onAddSpec,
@@ -295,6 +301,17 @@ export function WorkspaceRowsTable({
                       {row.status === 'error' && `❌ ${row.error ?? 'Ошибка'}`}
                     </span>
                     <div className="row-status-actions">
+                      {row.status === 'idle' && row.model.trim() && (
+                        <button
+                          type="button"
+                          className="row-inline-action"
+                          onClick={onGenerate}
+                          disabled={!canStartGeneration || generationPending}
+                          title={canStartGeneration ? 'Запустить генерацию ТЗ для текущего черновика' : 'Сначала заполните строки и проверьте доступ к AI'}
+                        >
+                          {generationPending ? '⏳ Генерация...' : '🚀 Сгенерировать'}
+                        </button>
+                      )}
                       {needsQuickClassificationAction && (
                         <button
                           type="button"

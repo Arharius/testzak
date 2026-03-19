@@ -660,7 +660,7 @@ def _normalize_text(value: str) -> str:
 
 
 def _detect_unit(value: str) -> str:
-    match = re.search(r"\b(ГБ|МБ|ТБ|Вт·ч|Вт|ГГц|МГц|кГц|Гц|мм|см|м|дюйм|шт\.?|dpi|кадр\/с|fps|°|млн нажатий|x)\b", str(value or ""), flags=re.I)
+    match = re.search(r"\b(ГБ|МБ|ТБ|Вт·ч|Вт|ГГц|МГц|кГц|Гц|мм|см|м|дюйм|шт\.?|dpi|кадр\/с|fps|°|млн нажатий)\b", str(value or ""), flags=re.I)
     if not match:
         return ""
     unit = str(match.group(1) or "")

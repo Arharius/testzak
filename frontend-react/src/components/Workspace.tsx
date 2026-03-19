@@ -6980,7 +6980,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       });
       return changed ? next : prev;
     });
-  }, [hasBackendSession]);
+  }, [hasBackendSession, rows]);
   // Выпадающая таблица типов при вводе бренда
   const [typeSuggestions, setTypeSuggestions] = useState<{ rowId: number; items: Array<{ type: string; name: string; okpd2: string }>; loading?: boolean; rect?: { top: number; left: number; width: number } } | null>(null);
   const aiSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

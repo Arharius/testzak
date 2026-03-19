@@ -179,6 +179,7 @@ export function createWorkspacePublicationTools({
   deriveLaw175BasisText,
   getRowDisplayLabel,
 }: PublicationDeps) {
+  void getLaw175EvidenceText;
   function getReadinessStatusLabel(status: ReadinessGateSummary['status']): string {
     if (status === 'block') return 'есть блокеры';
     if (status === 'warn') return 'нужна проверка';
@@ -669,6 +670,7 @@ export function createWorkspacePublicationTools({
     benchmarkingEnabled: boolean,
   ): PublicationDossierRow {
     const goods = lookupCatalog(row.type);
+    void goods;
     const okpd2 = getResolvedOkpd2Code(row) || '—';
     const okpd2Name = getResolvedOkpd2Name(row);
     const ktru = getResolvedKtruCode(row);

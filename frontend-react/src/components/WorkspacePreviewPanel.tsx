@@ -3,7 +3,7 @@ import type { ReactNode, RefObject } from 'react';
 type WorkspacePreviewPanelProps = {
   readyRowsCount: number;
   readinessStatus: 'ready' | 'warn' | 'block';
-  previewRef: RefObject<HTMLDivElement | null>;
+  previewRef: RefObject<HTMLDivElement>;
   previewContent: ReactNode;
 };
 

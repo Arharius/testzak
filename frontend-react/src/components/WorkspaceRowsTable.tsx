@@ -87,7 +87,6 @@ type WorkspaceRowsTableProps = {
   onRefreshRowClassification: (rowId: number) => void;
   onRefreshRowFromSource: (rowId: number, source: 'internet' | 'eis') => void;
   onOpenAuthPanel: () => void;
-  onGenerate: () => void;
   onGenerateRow: (rowId: number) => void;
   onUpdateSpec: (rowId: number, specIdx: number, field: 'name' | 'value' | 'unit' | 'group', newVal: string) => void;
   onDeleteSpec: (rowId: number, specIdx: number) => void;
@@ -138,7 +137,6 @@ export function WorkspaceRowsTable({
   onRefreshRowClassification,
   onRefreshRowFromSource,
   onOpenAuthPanel,
-  onGenerate,
   onGenerateRow,
   onUpdateSpec,
   onDeleteSpec,
@@ -370,18 +368,18 @@ export function WorkspaceRowsTable({
                       publicationAutopilotRunning={publicationAutopilotRunning}
                       canUseAiAssist={canUseAiAssist}
                       benchmarkingEnabled={benchmarkingEnabled}
-                      getResolvedOkpd2Code={getResolvedOkpd2Code}
-                      getResolvedOkpd2Name={getResolvedOkpd2Name}
-                      getResolvedKtruCode={getResolvedKtruCode}
+                      getResolvedOkpd2Code={(detailRow) => getResolvedOkpd2Code(detailRow as GoodsRowLike)}
+                      getResolvedOkpd2Name={(detailRow) => getResolvedOkpd2Name(detailRow as GoodsRowLike)}
+                      getResolvedKtruCode={(detailRow) => getResolvedKtruCode(detailRow as GoodsRowLike)}
                       getResolvedLaw175Meta={getResolvedLaw175Meta}
                       getUnifiedNacRegime={getUnifiedNacRegime}
                       getLaw175MeasureLabel={getLaw175MeasureLabel}
                       getClassificationSourceLabel={getClassificationSourceLabel}
-                      requiresManualClassificationReview={requiresManualClassificationReview}
-                      getLaw175EvidenceText={getLaw175EvidenceText}
+                      requiresManualClassificationReview={(detailRow) => requiresManualClassificationReview(detailRow as GoodsRowLike)}
+                      getLaw175EvidenceText={(detailRow) => getLaw175EvidenceText(detailRow as GoodsRowLike)}
                       isServiceCatalogType={isServiceCatalogType}
-                      buildDraftSourceComparison={buildDraftSourceComparison}
-                      getBenchmarkRiskLevel={getBenchmarkRiskLevel}
+                      buildDraftSourceComparison={(sourceSpecs, draftSpecs, rowType) => buildDraftSourceComparison(sourceSpecs, draftSpecs, rowType)}
+                      getBenchmarkRiskLevel={(comparison) => getBenchmarkRiskLevel(comparison)}
                       onToggleRowEditing={onToggleRowEditing}
                       onRefreshRowFromSource={onRefreshRowFromSource}
                       onRefreshRowClassification={onRefreshRowClassification}

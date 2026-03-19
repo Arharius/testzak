@@ -31,6 +31,8 @@ const cases = [
   { input: 'системный блок', expected: false },
   { input: 'Системный блок, 16 ГБ ОЗУ, SSD 512 ГБ', expected: false },
   { input: 'Монитор серии 07 RDW', expected: false },
+  { input: 'комплект клавиатура мышь mk240 nano', expected: false },
+  { input: 'тестер кабеля rj45 rj11 телефонный', expected: false },
   { input: 'ноутбук lenovo', expected: false },
   { input: 'коммутатор cisco', expected: false },
   { input: 'техническая поддержка ALD Pro', expected: false },

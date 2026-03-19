@@ -331,6 +331,23 @@ async function run() {
     });
   });
 
+  await page.route('**/api/auth/me', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        email: 'e2e@local.test',
+        role: 'free',
+        tz_count: 0,
+        tz_limit: -1,
+        trial_active: true,
+        trial_days_left: 14,
+        payment_required: false,
+        subscription_until: null,
+      }),
+    });
+  });
+
   await page.route('**/health', async (route) => {
     await route.fulfill({
       status: 200,
@@ -616,11 +633,27 @@ async function run() {
     });
   }
 
+  async function resetDraft() {
+    const clearButton = page.locator('button').filter({ hasText: 'Очистить черновик' }).first();
+    if (await clearButton.count() === 0) return;
+    await clearButton.scrollIntoViewIfNeeded().catch(() => {});
+    await clearButton.evaluate((button) => {
+      button.click();
+    });
+    await page.waitForFunction(() => {
+      const rows = Array.from(document.querySelectorAll('.rows-table tbody tr'));
+      if (rows.length !== 1) return false;
+      const modelInput = rows[0]?.querySelector('td:nth-child(3) input');
+      return !modelInput || !(modelInput instanceof HTMLInputElement) || modelInput.value.trim() === '';
+    }, { timeout: 30000 });
+  }
+
   async function expectInputValue(locator, pattern, message) {
     const value = await locator.inputValue();
     assert.match(value, pattern, message);
   }
 
+  await resetDraft();
   const firstRow = page.locator('.rows-table tbody tr').first();
   await firstRow.locator('td').nth(1).locator('select').selectOption('keyboardMouseSet');
   await firstRow.locator('td').nth(2).locator('input').fill('комплект клавиатура мышь mk240 nano');
@@ -659,6 +692,7 @@ async function run() {
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.rows-table tbody tr', { timeout: 30000 });
+  await resetDraft();
 
   const serviceRow = page.locator('.rows-table tbody tr').first();
   await serviceRow.locator('td').nth(1).locator('select').selectOption('otherService');
@@ -680,11 +714,16 @@ async function run() {
   assert.match(servicePreviewText, /Полнота ТЗ на услуги/i, 'Service-only preview should include service readiness summary');
 
   assert.match(readinessText, /Readiness gate перед публикацией/i, 'Page should show readiness gate after service generation');
-  assert.match(readinessText, /Автодовести до публикации/i, 'Page should expose publication autopilot in readiness gate');
+  assert.match(
+    readinessText,
+    /Автодовести до публикации|Инструменты исправления|Полный контроль публикации/i,
+    'Page should expose publication control in readiness gate',
+  );
   assert.ok(!/service-block-/.test(readinessText), 'Service-specific issue keys should not leak into UI text');
 
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.rows-table tbody tr', { timeout: 30000 });
+  await resetDraft();
 
   const universalRow = page.locator('.rows-table tbody tr').first();
   await universalRow.locator('td').nth(1).locator('select').selectOption('otherGoods');

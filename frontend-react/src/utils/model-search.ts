@@ -37,10 +37,14 @@ function hasStructuredCodeToken(token: string): boolean {
   return /[a-zа-я0-9]+[-_/+.][a-zа-я0-9]+/i.test(token);
 }
 
+function isCommonInterfaceCodeToken(token: string): boolean {
+  return /^(rj-?\d+|cat\.?\d+[a-z]?|usb\d(?:\.\d)?|wi-?fi\d[\w.+-]*|bt\d(?:\.\d)?|hdmi\d?(?:\.\d)?|dp\d(?:\.\d)?|nvme|ssd|hdd)$/i.test(token);
+}
+
 function hasBrandSeriesPattern(informativeTokens: string[], hasBrandHint: boolean): boolean {
   if (!hasBrandHint || informativeTokens.length < 2) return false;
   const hasBrandLikeWord = informativeTokens.some((token) => /[a-zа-я]/i.test(token) && !/\d/.test(token) && token.length >= 3);
-  const hasSeriesToken = informativeTokens.some((token) => /^\d{3,5}[a-z]{0,2}$/i.test(token));
+  const hasSeriesToken = informativeTokens.some((token) => /^[a-zа-я]?\d{2,5}[a-zа-я]{0,2}$/i.test(token));
   return hasBrandLikeWord && hasSeriesToken;
 }
 
@@ -74,13 +78,18 @@ export function looksLikeSpecificModelQuery(value: string): boolean {
   if (looksLikeAsusFamilySeriesQuery(normalized, informativeTokens)) return false;
 
   const hasBrandHint = BRAND_HINTS.some((brand) => normalized.includes(brand));
-  const hasCodeToken = informativeTokens.some((token) => hasAlphaDigitMix(token) || hasStructuredCodeToken(token));
+  const strongCodeTokens = informativeTokens.filter((token) => (
+    hasStructuredCodeToken(token)
+    || (hasAlphaDigitMix(token) && token.length >= 7 && !isCommonInterfaceCodeToken(token))
+  ));
+  const hasCodeToken = strongCodeTokens.length > 0;
   const longLatinTokens = informativeTokens.filter((token) => /[a-z]/i.test(token) && token.length >= 3).length;
   const hasUpperSeries = /(?:^|[\s(])([A-Z]{2,}[A-Z0-9/+._-]{1,}|[A-Z]?\d+[A-Z0-9._/-]+)(?:$|[\s)])/u.test(raw);
   const measuredCues = raw.match(/\d+\s*(?:гб|gb|tb|тб|mhz|мгц|ггц|вт|мм|см|кг|г|шт|mah|мач|дюйм|hz)/ig) || [];
   const looksLikeSpecSentence = /[:,;]/.test(raw) || (measuredCues.length >= 2 && informativeTokens.length >= 4);
 
   if (looksLikeSpecSentence && !hasCodeToken) return false;
+  if (!hasBrandHint && !hasCodeToken) return false;
   if (hasCodeToken) return true;
   if (hasBrandSeriesPattern(informativeTokens, hasBrandHint)) return true;
   if (hasBrandHint && (longLatinTokens >= 2 || hasUpperSeries)) return true;

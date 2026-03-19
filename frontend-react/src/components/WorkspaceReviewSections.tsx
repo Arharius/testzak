@@ -43,7 +43,7 @@ export type WorkspaceReviewSectionsProps = {
   benchmarkRows: BenchmarkRowLike[];
   onApplyBenchmarkPatch: (rowId: number, mode: BenchmarkBulkMode) => void;
   readyRowsCount: number;
-  previewRef: RefObject<HTMLDivElement | null>;
+  previewRef: RefObject<HTMLDivElement>;
   previewContent: ReactNode;
 };
 

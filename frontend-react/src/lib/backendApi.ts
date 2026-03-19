@@ -168,6 +168,40 @@ async function apiDelete<T>(path: string, auth = true, timeoutMs = SHORT_TIMEOUT
   return _handleResponse<T>(resp);
 }
 
+function extractAiContentFromBody(bodyText: string): string {
+  const raw = String(bodyText || '');
+  if (!raw.trim()) return '';
+
+  let streamedContent = '';
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data: ')) continue;
+    const jsonStr = trimmed.slice(6).trim();
+    if (!jsonStr || jsonStr === '[DONE]') continue;
+    try {
+      const chunk = JSON.parse(jsonStr);
+      const delta = chunk?.choices?.[0]?.delta?.content;
+      if (typeof delta === 'string' && delta) streamedContent += delta;
+    } catch {
+      // Skip malformed stream chunks and fall back to plain JSON parsing below.
+    }
+  }
+  if (streamedContent.trim()) return streamedContent;
+
+  try {
+    const parsed = JSON.parse(raw);
+    const content =
+      parsed?.choices?.[0]?.message?.content
+      ?? parsed?.choices?.[0]?.delta?.content
+      ?? parsed?.choices?.[0]?.text
+      ?? parsed?.message?.content
+      ?? parsed?.content;
+    return typeof content === 'string' ? content : '';
+  } catch {
+    return '';
+  }
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 export async function sendMagicLink(email: string): Promise<{
@@ -277,38 +311,12 @@ async function _generateWithDirectStream(
       const text = await resp.text().catch(() => '');
       throw new Error(`AI HTTP ${resp.status}: ${text.slice(0, 300)}`);
     }
-
-    const reader = resp.body?.getReader();
-    if (!reader) throw new Error('No stream reader');
-
-    const decoder = new TextDecoder();
-    let fullContent = '';
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data: ')) continue;
-        const jsonStr = trimmed.slice(6);
-        if (jsonStr === '[DONE]') break;
-        try {
-          const chunk = JSON.parse(jsonStr);
-          const delta = chunk.choices?.[0]?.delta?.content;
-          if (delta) fullContent += delta;
-        } catch {
-          // skip malformed chunk
-        }
-      }
+    const bodyText = await resp.text();
+    const content = extractAiContentFromBody(bodyText);
+    if (!content.trim()) {
+      throw new Error('Пустой ответ AI-провайдера');
     }
-
-    return fullContent;
+    return content;
   } finally {
     clearTimeout(timer);
   }

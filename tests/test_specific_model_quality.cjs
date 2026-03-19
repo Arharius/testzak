@@ -94,6 +94,32 @@ const msiVendorSpecs = [
   { name: 'Размеры корпуса', value: '204 x 208 x 54.8', unit: '' },
 ];
 
+const keyboardMouseSetExactSpecs = [
+  { name: 'Тип подключения', value: 'Беспроводное (USB-радиоканал 2,4 ГГц) или эквивалент', unit: '' },
+  { name: 'Интерфейс подключения комплекта', value: 'USB-радиоканал 2,4 ГГц через USB-приёмник или эквивалент', unit: '' },
+  { name: 'Раскладка клавиатуры', value: 'Русская и латинская (двуязычная) с заводской маркировкой', unit: '' },
+  { name: 'Количество клавиш клавиатуры', value: 'не менее 104', unit: 'шт.' },
+  { name: 'Тип клавишного механизма', value: 'Мембранный/ножничный или эквивалент', unit: '' },
+  { name: 'Тип сенсора мыши', value: 'Оптический или эквивалент', unit: '' },
+  { name: 'Разрешение сенсора мыши', value: 'не менее 1000', unit: 'dpi' },
+  { name: 'Количество кнопок мыши', value: 'не менее 3', unit: 'шт.' },
+  { name: 'Беспроводной приёмник', value: 'USB-приёмник для подключения комплекта по радиоканалу 2,4 ГГц', unit: '' },
+  { name: 'Совместимость с ОС', value: 'Windows/Linux/macOS или эквивалент', unit: '' },
+];
+
+const cableTesterExactSpecs = [
+  { name: 'Тип устройства', value: 'Многофункциональный кабельный тестер', unit: '' },
+  { name: 'Тестируемые типы кабелей', value: 'Витая пара (UTP, FTP, STP), телефонный кабель', unit: '' },
+  { name: 'Категории кабелей', value: 'Cat.5, Cat.5e, Cat.6', unit: '' },
+  { name: 'Тестируемые разъемы', value: 'RJ-45, RJ-11, RJ-12', unit: '' },
+  { name: 'Функции тестирования', value: 'Обрыв, короткое замыкание, неверная пара, перепутанные пары, экранирование', unit: '' },
+  { name: 'Дальность тестирования', value: 'не менее 300', unit: 'м' },
+  { name: 'Тип индикации', value: 'Светодиодная (LED) и/или ЖК-дисплей', unit: '' },
+  { name: 'Удаленный модуль', value: 'В комплекте', unit: '' },
+  { name: 'Питание', value: 'Батарейки типа AAA или эквивалент', unit: '' },
+  { name: 'Комплектность', value: 'Тестер, удаленный модуль, элементы питания, документация', unit: '' },
+];
+
 let failed = 0;
 
 if (!mod.isWeakExactModelSpec(genericSpecs[0])) {
@@ -150,6 +176,20 @@ if (!mod.hasSufficientExactModelCoverage(msiVendorSpecs)) {
   console.error('FAIL MSI vendor spec pack should be accepted');
 } else {
   console.log('PASS MSI vendor spec pack is accepted');
+}
+
+if (!mod.hasSufficientExactModelCoverage(keyboardMouseSetExactSpecs)) {
+  failed += 1;
+  console.error('FAIL keyboard/mouse set exact spec pack should be accepted');
+} else {
+  console.log('PASS keyboard/mouse set exact spec pack is accepted');
+}
+
+if (!mod.hasSufficientExactModelCoverage(cableTesterExactSpecs)) {
+  failed += 1;
+  console.error('FAIL cable tester exact spec pack should be accepted');
+} else {
+  console.log('PASS cable tester exact spec pack is accepted');
 }
 
 if (failed > 0) process.exit(1);

@@ -1121,8 +1121,8 @@ function buildServiceSpecsFromParagraphs(paragraphs: string[]): SpecItem[] {
     { label: /требования к оказанию услуг/i, group: 'Требования к исполнению', name: 'Требования к оказанию услуг' },
     { label: /гарантийные обязательства/i, group: 'Гарантийные обязательства', name: 'Гарантийные обязательства' },
   ];
-  return sections
-    .map((section) => {
+  const specs = sections
+    .map((section): SpecItem | null => {
       const value = findParagraphValue(paragraphs, section.label);
       if (!value) return null;
       return {
@@ -1130,9 +1130,10 @@ function buildServiceSpecsFromParagraphs(paragraphs: string[]): SpecItem[] {
         name: section.name,
         value,
         unit: '—',
-      } satisfies SpecItem;
+      };
     })
-    .filter((item): item is SpecItem => !!item);
+    .filter((item): item is SpecItem => item !== null);
+  return specs;
 }
 
 function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementRow[] {

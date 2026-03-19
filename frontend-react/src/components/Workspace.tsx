@@ -365,6 +365,7 @@ type Provider = 'openrouter' | 'groq' | 'deepseek';
 interface GoodsRow {
   id: number;
   type: string;
+  typeLocked?: boolean;
   model: string;
   licenseType: string;
   term: string;
@@ -6261,6 +6262,10 @@ async function buildDocx(
     VerticalAlign,
     WidthType,
   } = await import('docx');
+  type DocxAlignment = (typeof AlignmentType)[keyof typeof AlignmentType];
+  type DocxParagraph = InstanceType<typeof Paragraph>;
+  type DocxTable = InstanceType<typeof Table>;
+  type DocxTableRow = InstanceType<typeof TableRow>;
   const doneRows = rows.filter((r) => r.status === 'done' && r.specs);
   if (doneRows.length === 0) throw new Error('Нет готовых позиций для экспорта');
 
@@ -6325,7 +6330,7 @@ async function buildDocx(
     opts: {
       span?: number;
       w?: number;
-      align?: string;
+      align?: DocxAlignment;
       size?: number;
       margins?: { top: number; bottom: number; left: number; right: number };
     } = {},
@@ -6418,7 +6423,7 @@ async function buildDocx(
     });
   }
 
-  const children: (Paragraph | Table)[] = [];
+  const children: Array<DocxParagraph | DocxTable> = [];
   const docSections = buildDocumentSectionBundle(doneRows, lawMode, readinessSummary, benchmarkingEnabled);
   const {
     currentYear,
@@ -6451,7 +6456,7 @@ async function buildDocx(
     keepLines: true,
   });
 
-  const borderlessCell = (paragraphs: Paragraph[], w: number) => new TableCell({
+  const borderlessCell = (paragraphs: DocxParagraph[], w: number) => new TableCell({
     width: { size: w, type: WidthType.DXA },
     borders: noBorders(),
     margins: { top: 0, bottom: 0, left: 0, right: 0 },
@@ -6510,7 +6515,7 @@ async function buildDocx(
   });
 
   const buildSummaryTable = () => {
-    const summaryRows: TableRow[] = [];
+    const summaryRows: DocxTableRow[] = [];
 
     if (showCommercialTerms) {
       const widths = DOCX_SUMMARY_WIDTHS.commercial;
@@ -6639,7 +6644,7 @@ async function buildDocx(
       measure: 1450,
       action: total - 420 - 2100 - 2150 - 1450,
     };
-    const rows: TableRow[] = [
+    const rows: DocxTableRow[] = [
       new TableRow({
         tableHeader: true,
         cantSplit: true,
@@ -6684,7 +6689,7 @@ async function buildDocx(
       quality: 1800,
       action: total - 420 - 1800 - 900 - 1650 - 1800,
     };
-    const rows: TableRow[] = [
+    const rows: DocxTableRow[] = [
       new TableRow({
         tableHeader: true,
         cantSplit: true,
@@ -6724,8 +6729,8 @@ async function buildDocx(
   // ── Helper: builds spec table rows with product name header ──
   const buildSpecTableWithHeader = (
     productName: string, specs: SpecItem[], isSW: boolean, nacRegime: string
-  ): TableRow[] => {
-    const rows: TableRow[] = [];
+  ): DocxTableRow[] => {
+    const rows: DocxTableRow[] = [];
     // Row 0: product name spanning all 3 columns
     rows.push(new TableRow({
       cantSplit: true,
@@ -6982,7 +6987,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [model] = useState('deepseek-chat');
   const [authPanelOpen, setAuthPanelOpen] = useState<boolean>(() => !useBackend);
   void _setProvider; // keep setter for future admin panel
-  const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', model: '', licenseType: '', term: '', licenseTypeAuto: false, termAuto: false, qty: 1, status: 'idle' }]);
+  const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', typeLocked: false, model: '', licenseType: '', term: '', licenseTypeAuto: false, termAuto: false, qty: 1, status: 'idle' }]);
   const [docxReady, setDocxReady] = useState(false);
   const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
 
@@ -7020,7 +7025,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           changed = true;
           return {
             ...row,
-            status: row.specs?.length ? 'done' : 'idle',
+            status: row.specs?.length ? ('done' as const) : ('idle' as const),
             error: '',
           };
         }
@@ -7090,6 +7095,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         return applyAutoCommercialTerms({
           id: now + idx,
           type,
+          typeLocked: false,
           model: item.description || item.rawType,
           licenseType: item.licenseType,
           term: item.term,
@@ -7194,10 +7200,12 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       }, 600);
     }
 
-    const detected = allTypes.length > 0
-      ? allTypes[0].type
-      : (value.trim().length > 0 ? detectFreeformRowType('', value) : row.type);
-    if (detected !== row.type) {
+    const detected = row.typeLocked
+      ? row.type
+      : (allTypes.length > 0
+        ? allTypes[0].type
+        : (value.trim().length > 0 ? detectFreeformRowType('', value) : row.type));
+    if (!row.typeLocked && detected !== row.type) {
       setAutoDetectedRow(row.id);
       setTimeout(() => setAutoDetectedRow(null), 2500);
     }
@@ -7215,7 +7223,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const handleRowTypeChange = useCallback((rowId: number, nextType: string) => {
     if (!nextType) return;
     setRows((prev) => prev.map((row) => (
-      row.id === rowId ? applyAutoCommercialTerms({ ...row, type: nextType }) : row
+      row.id === rowId ? applyAutoCommercialTerms({ ...row, type: nextType, typeLocked: true }) : row
     )));
   }, []);
   const handleRowLicenseTypeChange = useCallback((rowId: number, licenseType: string) => {
@@ -8331,6 +8339,9 @@ ${hint || '- Используй детальные, проверяемые эк�
     if (looksLikeSpecificModelQuery(row.model)) {
       return catalogItem?.isSoftware ? 10 : 8;
     }
+    if (isUniversalServiceType(row.type) || isServiceCatalogType(row.type)) {
+      return catalogItem?.isSoftware ? 12 : 10;
+    }
     const isUniversal = isUniversalGoodsType(row.type);
     if (isUniversal) {
       return catalogItem?.isSoftware ? 18 : 14;
@@ -8844,7 +8855,7 @@ ${hint || '- Используй детальные, проверяемые эк�
   const addRowWithType = useCallback((nextType: string) => {
     setSplitSourceRows(null);
     setActiveSplitGroupKey(null);
-    setRows((prev) => [...prev, { id: Date.now(), type: nextType, model: '', licenseType: '', term: '', licenseTypeAuto: false, termAuto: false, qty: 1, status: 'idle' }]);
+    setRows((prev) => [...prev, { id: Date.now(), type: nextType, typeLocked: false, model: '', licenseType: '', term: '', licenseTypeAuto: false, termAuto: false, qty: 1, status: 'idle' }]);
     if (nextType === 'otherGoods' || nextType === 'otherService' || isServiceCatalogType(nextType)) {
       setCatalogMode('general');
     }
@@ -8878,6 +8889,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     replaceWorkspaceRows([{
       id: Date.now(),
       type: catalogMode === 'general' ? 'otherGoods' : 'pc',
+      typeLocked: false,
       model: '',
       licenseType: '',
       term: '',
@@ -10424,27 +10436,26 @@ ${hint || '- Используй детальные, проверяемые эк�
         generationPending={mutation.isPending}
         benchmarkingEnabled={enterpriseSettings.benchmarking}
         onOpenAuthPanel={() => setAuthPanelOpen(true)}
-        onGenerate={() => mutation.mutate({ trigger: 'manual' })}
         onGenerateRow={(rowId) => mutation.mutate({ trigger: 'manual', rowId })}
         onSetRowRef={setRowRef}
         lookupCatalog={lookupCatalog}
         getUnifiedNacRegime={getUnifiedNacRegime}
-        getResolvedOkpd2Code={getResolvedOkpd2Code}
-        getResolvedOkpd2Name={getResolvedOkpd2Name}
-        getResolvedKtruCode={getResolvedKtruCode}
+        getResolvedOkpd2Code={(row) => getResolvedOkpd2Code(row as GoodsRow)}
+        getResolvedOkpd2Name={(row) => getResolvedOkpd2Name(row as GoodsRow)}
+        getResolvedKtruCode={(row) => getResolvedKtruCode(row as GoodsRow)}
         getResolvedLaw175Meta={getResolvedLaw175Meta}
         getClassificationSourceLabel={getClassificationSourceLabel}
         getLaw175MeasureLabel={getLaw175MeasureLabel}
-        getLaw175EvidenceText={getLaw175EvidenceText}
-        requiresManualClassificationReview={requiresManualClassificationReview}
-        buildDraftSourceComparison={buildDraftSourceComparison}
-        getBenchmarkRiskLevel={getBenchmarkRiskLevel}
-        getLicenseTypeOptions={getLicenseTypeOptions}
-        getLicenseTypePlaceholder={getLicenseTypePlaceholder}
-        getTermPlaceholder={getTermPlaceholder}
+        getLaw175EvidenceText={(row) => getLaw175EvidenceText(row as GoodsRow)}
+        requiresManualClassificationReview={(row) => requiresManualClassificationReview(row as GoodsRow)}
+        buildDraftSourceComparison={(sourceSpecs, draftSpecs, rowType) => buildDraftSourceComparison(sourceSpecs, draftSpecs, rowType)}
+        getBenchmarkRiskLevel={(comparison) => getBenchmarkRiskLevel(comparison as DraftSourceComparison)}
+        getLicenseTypeOptions={(row) => getLicenseTypeOptions(row as GoodsRow)}
+        getLicenseTypePlaceholder={(row) => getLicenseTypePlaceholder(row as GoodsRow)}
+        getTermPlaceholder={(row) => getTermPlaceholder(row as GoodsRow)}
         isServiceCatalogType={isServiceCatalogType}
         onChangeRowType={handleRowTypeChange}
-        onChangeRowModel={handleRowModelChange}
+        onChangeRowModel={(row, event) => handleRowModelChange(row as GoodsRow, event)}
         onHideTypeSuggestions={clearTypeSuggestions}
         onChangeRowLicenseType={handleRowLicenseTypeChange}
         onChangeRowTerm={handleRowTermChange}
@@ -10515,7 +10526,7 @@ ${hint || '- Используй детальные, проверяемые эк�
           onRefreshClassificationBulk={(mode) => { void refreshClassificationBulk(mode); }}
           onApplyBenchmarkPatchBulk={applyBenchmarkPatchBulk}
           onApplyServiceReadinessPatchBulk={applyServiceReadinessPatchBulk}
-          onHandleReadinessIssueAction={handleReadinessIssueAction}
+          onHandleReadinessIssueAction={(issue) => handleReadinessIssueAction(issue as ReadinessIssue)}
           complianceReport={complianceReport}
           evidenceRows={liveLegalSummaryRows}
           evidenceSummaryText={buildLegalSummaryText(liveLegalSummarySourceRows)}
@@ -10532,14 +10543,14 @@ ${hint || '- Используй детальные, проверяемые эк�
                 docSections={previewDocSections}
                 publicationSummaryText={previewPublicationSummaryText}
                 lookupCatalog={lookupCatalog}
-                getResolvedCommercialContext={getResolvedCommercialContext}
-                getCommercialValue={getCommercialValue}
-                getRowQtyUnitShort={getRowQtyUnitShort}
-                getResolvedOkpd2Code={getResolvedOkpd2Code}
+                getResolvedCommercialContext={(row) => getResolvedCommercialContext(row as GoodsRow)}
+                getCommercialValue={(value) => getCommercialValue(value ?? '')}
+                getRowQtyUnitShort={(row) => getRowQtyUnitShort(row as GoodsRow)}
+                getResolvedOkpd2Code={(row) => getResolvedOkpd2Code(row as GoodsRow)}
                 getUnifiedNacRegime={getUnifiedNacRegime}
                 getPublicationDossierRowStatusLabel={getPublicationDossierRowStatusLabel}
-                buildAppendixPassportRows={buildAppendixPassportRows}
-                buildBenchmarkAppendixRows={buildBenchmarkAppendixRows}
+                buildAppendixPassportRows={(row) => buildAppendixPassportRows(row as GoodsRow)}
+                buildBenchmarkAppendixRows={(row) => buildBenchmarkAppendixRows(row as GoodsRow)}
                 onUpdateSpec={updateSpec}
                 onDeleteSpec={deleteSpec}
                 onAddSpec={(rowId) => addSpec(rowId)}

@@ -38,6 +38,7 @@ import { GENERAL_CATALOG, detectGeneralGoodsType, detectGeneralGoodsTypes, getGe
 import { postProcessSpecs, parseAiResponse, type SpecItem } from '../utils/spec-processor';
 import { deriveCommercialContext, resolveCommercialTerms, type LdapLicenseProfile } from '../utils/commercial-terms';
 import { looksLikeSpecificModelQuery } from '../utils/model-search';
+import { hasSufficientExactModelCoverage } from '../utils/model-quality';
 import { type LawMode } from '../utils/npa-blocks';
 import { parseImportedRows, type ImportedRowImportInfo } from '../utils/row-import';
 import { WorkspaceRowsTable } from './WorkspaceRowsTable';
@@ -5927,7 +5928,7 @@ ${importedBlock}
 
 КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать «не указан», «не указано», «не указаны», «н/д», «неизвестно», «нет данных» в значениях.
 ${exactModelRequested
-  ? 'Если точное значение для этой модели не подтверждено источниками, НЕ подставляй типичное значение класса товара и не заменяй его общим требованием.'
+  ? 'Если точное значение для этой модели не подтверждено источниками, НЕ подставляй типичное значение класса товара и не заменяй его общим требованием. Запрещены формулировки вида «по требованиям Заказчика», «в соответствии с типом товара», «SSD и/или HDD», «интегрированный и/или дискретный», «в количестве, достаточном для эксплуатации».'
   : 'Если точное значение неизвестно — укажи ТИПИЧНОЕ значение для данного класса товаров с формулировкой «не менее» / «не более».'
 }
 
@@ -7997,7 +7998,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       console.warn('[autopilot] Internet AI candidate rejected: mostly placeholder values');
       return null;
     }
-    if (specificModelRequested && getWeakSpecEntries(enriched).length > 0) {
+    if (specificModelRequested && !hasSufficientExactModelCoverage(enriched)) {
       console.warn('[autopilot] Internet AI candidate rejected: exact model still has weak/generic values');
       return null;
     }
@@ -8113,7 +8114,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       console.warn('[autopilot] EIS AI candidate rejected: mostly placeholder values');
       return null;
     }
-    if (specificModelRequested && getWeakSpecEntries(enriched).length > 0) {
+    if (specificModelRequested && !hasSufficientExactModelCoverage(enriched)) {
       console.warn('[autopilot] EIS AI candidate rejected: exact model still has weak/generic values');
       return null;
     }
@@ -8152,7 +8153,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       if (!candidate) return false;
       if (candidate.specs.length < minQualitySpecs) return false;
       if (!specificModelRequested) return true;
-      return getWeakSpecEntries(candidate.specs).length === 0;
+      return hasSufficientExactModelCoverage(candidate.specs);
     };
     if (!autoPickTopCandidate) {
       if (isAcceptable(eisCandidate)) return eisCandidate;
@@ -8309,19 +8310,12 @@ ${hint || '- Используй детальные, проверяемые эк�
               || isUniversalGoodsType(currentRow.type)
               || specificModelRequested;
             if (shouldSearchBeforeGenerate) {
-              let internetCandidate: SpecsCandidate | null = null;
-              let eisCandidate: SpecsCandidate | null = null;
-
-              try {
-                internetCandidate = await fetchInternetCandidateForRow(currentRow);
-              } catch {
-                // игнорируем и пробуем ЕИС + fallback AI ниже
-              }
-              try {
-                eisCandidate = await fetchEisCandidateForRow(currentRow);
-              } catch {
-                // игнорируем и пробуем fallback AI ниже
-              }
+              const [internetResult, eisResult] = await Promise.allSettled([
+                fetchInternetCandidateForRow(currentRow),
+                fetchEisCandidateForRow(currentRow),
+              ]);
+              const internetCandidate = internetResult.status === 'fulfilled' ? internetResult.value : null;
+              const eisCandidate = eisResult.status === 'fulfilled' ? eisResult.value : null;
 
               const picked = pickBestCandidate(currentRow, internetCandidate, eisCandidate, automationSettings.autoPickTopCandidate);
               if (picked) {
@@ -8392,7 +8386,7 @@ ${hint || '- Используй детальные, проверяемые эк�
                 term: getResolvedCommercialContext(currentRow).suggestedTerm,
               }, adjustedSpecs)
               : await expandSpecsToMinimum(currentRow, adjustedSpecs, validatedMeta);
-            if (!hasRealSpecValues(enrichedSpecs) || (specificModelRequested && getWeakSpecEntries(enrichedSpecs).length > 0)) {
+            if (!hasRealSpecValues(enrichedSpecs) || (specificModelRequested && !hasSufficientExactModelCoverage(enrichedSpecs))) {
               throw new Error('характеристики не найдены');
             }
             const finalMeta = normalizeResolvedMeta(currentRow.type, { ...validatedMeta, classification_source: 'ai' });

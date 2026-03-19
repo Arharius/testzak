@@ -87,6 +87,7 @@ export function isLoggedIn(): boolean {
 
 const DEFAULT_TIMEOUT_MS = 180_000; // 180s for AI calls (DeepSeek can take 40-90s, with retry)
 const SHORT_TIMEOUT_MS = 15_000;   // 15s for auth/CRUD
+const SEARCH_TIMEOUT_MS = 8_000;   // backend exact-model search should fail fast; frontend can fall back to AI
 
 function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
@@ -351,6 +352,7 @@ export async function searchInternetSpecs(product: string, goodsType: string): P
     '/api/search/specs',
     { product, goods_type: goodsType },
     'optional',
+    SEARCH_TIMEOUT_MS,
   );
   return result.specs || [];
 }
@@ -362,6 +364,7 @@ export async function searchEisSpecs(query: string, goodsType: string): Promise<
     '/api/search/eis',
     { query, goods_type: goodsType },
     'optional',
+    SEARCH_TIMEOUT_MS,
   );
   return result.specs || [];
 }

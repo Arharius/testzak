@@ -771,26 +771,16 @@ def _build_internet_queries(product: str, goods_type: str = "") -> list[str]:
         f"{quoted_product} технические характеристики",
         f"{quoted_product} specification",
         f"{quoted_product} datasheet",
-        f"{quoted_product} pdf",
-        f"{product} технические характеристики",
-        f"{product} specification",
-        f"{product} datasheet",
     ]
     for domain in _infer_official_domains(product):
         queries.extend([
             f"site:{domain} {quoted_product}",
             f"site:{domain} {product} specification",
-            f"site:{domain} {product} datasheet",
         ])
     if type_hint:
         queries.extend([
             f"{product} {type_hint} характеристики",
-            f"{product} {type_hint} specification",
         ])
-    queries.extend([
-        f"{search_query} технические характеристики",
-        f"{search_query} specification",
-    ])
     return _dedupe_query_list(queries)
 
 
@@ -823,19 +813,9 @@ def _build_procurement_queries(query: str, goods_type: str = "") -> list[str]:
         f"site:zakupki.gov.ru {quoted} техническое задание",
         f"site:zakupki.gov.ru {quoted} описание объекта закупки",
         f"site:rostender.info {quoted} техническое задание",
-        f"site:zakupki.mos.ru {quoted} техническое задание",
         f"site:gisp.gov.ru {quoted} характеристики",
         f"site:minpromtorg.gov.ru {quoted} технические характеристики",
-        f"site:zakupki.gov.ru {base} техническое задание",
-        f"site:zakupki.gov.ru {base} описание объекта закупки",
-        f"site:rostender.info {base} техническое задание",
-        f"site:zakupki.mos.ru {base} техническое задание",
-        f"site:gisp.gov.ru {base} характеристики",
-        f"site:minpromtorg.gov.ru {base} технические характеристики",
         f"site:zakupki.gov.ru {type_hint} КТРУ характеристики",
-        f"site:zakupki.gov.ru {search_query} техническое задание",
-        f"site:gisp.gov.ru {search_query} характеристики",
-        f"site:minpromtorg.gov.ru {search_query} технические характеристики",
     ]
     return _dedupe_query_list(queries)
 
@@ -980,6 +960,94 @@ def _extract_spec_pairs(text: str, max_items: int = 25) -> list[dict]:
         if len(rows) >= max_items:
             break
     return _dedupe_specs(rows)
+
+
+def _extract_table_like_pairs(text: str, max_items: int = 25) -> list[dict]:
+    rows: list[dict] = []
+    for raw_line in str(text or "").splitlines():
+        line = re.sub(r"^\|+|\|+$", "", str(raw_line or "")).strip()
+        if not line or "|" not in line:
+            continue
+        cells = [re.sub(r"\s+", " ", cell).strip() for cell in line.split("|")]
+        cells = [cell for cell in cells if cell]
+        if len(cells) < 2:
+            continue
+        name = cells[0]
+        value = cells[1]
+        if not name or not value:
+            continue
+        rows.append({"name": name, "value": value, "unit": _infer_unit(name, value)})
+        if len(rows) >= max_items:
+            break
+    return _dedupe_specs(rows)
+
+
+_GENERIC_EXACT_MODEL_VALUE_RE = re.compile(
+    r"(по типу( товара| программного обеспечения)?|по назначению|по требованиям заказчика|"
+    r"в соответствии с (типом товара|требованиями заказчика)|в количестве, достаточном|"
+    r"типовая конфигурация|согласно требованиям|согласно документации|заводская упаковка|"
+    r"новый, не бывший|эксплуатационной документации|заводской маркировки)",
+    re.I,
+)
+_CORE_EXACT_MODEL_NAME_RE = re.compile(
+    r"(процессор|оперативн|памят|накопител|ssd|hdd|nvme|графическ|видеокарт|сетев|ethernet|wi-?fi|bluetooth|"
+    r"порт|usb|hdmi|displayport|vga|dvi|размер|габарит|вес|масса|питан|блок питания|мощност|диагонал|"
+    r"разрешен|матриц|камера|аккумулятор|батаре|чипсет|сокет|слот|интерфейс|форм[ -]?фактор|корпус|"
+    r"монтаж|vesa|tpm|операционная система|ос)",
+    re.I,
+)
+_TECH_DETAIL_VALUE_RE = re.compile(
+    r"(\d+\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|кг|г|mah|мач|гбит/с|мбит/с|fps|dpi|порт(?:а|ов)?))|"
+    r"ddr\d|nvme|pcie|usb\s*\d|usb-c|type-c|hdmi|displayport|vga|dvi|wi-?fi\s*\d|bluetooth\s*\d|"
+    r"ethernet|rj-?45|intel|amd|core\s*i[3579]|ryzen|geforce|radeon|uhd|iris|windows|linux|"
+    r"sata|m\.2|vesa|tpm|ips|va|oled|lcd",
+    re.I,
+)
+_THIN_THRESHOLD_ONLY_RE = re.compile(
+    r"^не\s+(?:менее|более)\s+\d+(?:[.,]\d+)?\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|кг|г|порт(?:а|ов)?|ядер?|поток(?:ов)?|мес)?$",
+    re.I,
+)
+
+
+def _is_weak_exact_model_spec(item: dict[str, Any]) -> bool:
+    name = re.sub(r"\s+", " ", str(item.get("name", ""))).strip().lower().replace("ё", "е")
+    value = re.sub(r"\s+", " ", str(item.get("value", ""))).strip()
+    normalized_value = value.lower().replace("ё", "е")
+    if not name or not value:
+        return True
+    if _GENERIC_EXACT_MODEL_VALUE_RE.search(normalized_value):
+        return True
+    if "и/или" in normalized_value and not _TECH_DETAIL_VALUE_RE.search(value):
+        return True
+    if _CORE_EXACT_MODEL_NAME_RE.search(name) and _THIN_THRESHOLD_ONLY_RE.match(normalized_value):
+        return True
+    if _CORE_EXACT_MODEL_NAME_RE.search(name) and not _TECH_DETAIL_VALUE_RE.search(value) and len(normalized_value.split()) <= 6:
+        return True
+    return False
+
+
+def _count_concrete_exact_model_specs(specs: list[dict]) -> int:
+    total = 0
+    for item in specs or []:
+        name = re.sub(r"\s+", " ", str(item.get("name", ""))).strip()
+        value = re.sub(r"\s+", " ", str(item.get("value", ""))).strip()
+        if not name or not value:
+            continue
+        if not _CORE_EXACT_MODEL_NAME_RE.search(name):
+            continue
+        if _is_weak_exact_model_spec(item):
+            continue
+        if _TECH_DETAIL_VALUE_RE.search(value) or re.search(r"\d", value):
+            total += 1
+    return total
+
+
+def _has_sufficient_exact_model_quality(specs: list[dict]) -> bool:
+    if len(specs or []) < 10:
+        return False
+    weak = sum(1 for item in specs if _is_weak_exact_model_spec(item))
+    concrete = _count_concrete_exact_model_specs(specs)
+    return concrete >= 6 and weak <= max(3, int(len(specs) * 0.25))
 
 
 def _detect_peripheral_connection_profile(source: str) -> dict[str, Any]:
@@ -1656,8 +1724,8 @@ def _fetch_readable_page(url: str, timeout: int = 10) -> str:
     return _extract_text_from_html(direct, max_chars=18000) if direct else ""
 
 
-def _bing_rss_search(query: str, num: int = 5) -> list[dict]:
-    xml = _fetch_url(f"https://www.bing.com/search?format=rss&q={quote_plus(query)}", timeout=12)
+def _bing_rss_search(query: str, num: int = 5, timeout: int = 12) -> list[dict]:
+    xml = _fetch_url(f"https://www.bing.com/search?format=rss&q={quote_plus(query)}", timeout=timeout)
     if not xml or "<rss" not in xml.lower():
         return []
     results: list[dict] = []
@@ -1676,24 +1744,24 @@ def _bing_rss_search(query: str, num: int = 5) -> list[dict]:
     return results
 
 
+def _resolve_ai_client() -> tuple[str, str, str] | tuple[None, None, None]:
+    key = DEEPSEEK_API_KEY or GROQ_API_KEY
+    if not key:
+        logger.warning("No AI API key configured (DEEPSEEK_API_KEY / GROQ_API_KEY)")
+        return None, None, None
+    if DEEPSEEK_API_KEY:
+        return "https://api.deepseek.com/chat/completions", "deepseek-chat", DEEPSEEK_API_KEY
+    return "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile", GROQ_API_KEY
+
+
 def _ai_extract_specs(context_text: str, product: str, goods_type: str = "") -> list[dict]:
     """
     Ask AI to extract technical specs from text.
     Returns list of {name, value, unit} dicts.
     """
-    key = DEEPSEEK_API_KEY or GROQ_API_KEY
-    if not key:
-        logger.warning("No AI API key configured (DEEPSEEK_API_KEY / GROQ_API_KEY)")
+    url, model, api_key = _resolve_ai_client()
+    if not url or not model or not api_key:
         return []
-
-    if DEEPSEEK_API_KEY:
-        url = "https://api.deepseek.com/chat/completions"
-        model = "deepseek-chat"
-        api_key = DEEPSEEK_API_KEY
-    else:
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        model = "llama-3.3-70b-versatile"
-        api_key = GROQ_API_KEY
 
     is_software = goods_type in _SW_TYPES
     system_prompt = _build_extraction_prompt(product, goods_type, is_software)
@@ -1751,6 +1819,69 @@ def _ai_extract_specs(context_text: str, product: str, goods_type: str = "") -> 
         return []
     except Exception as e:
         logger.error(f"AI extract error: {e}")
+        return []
+
+
+def _ai_generate_model_specs(product: str, goods_type: str = "") -> list[dict]:
+    url, model, api_key = _resolve_ai_client()
+    if not url or not model or not api_key:
+        return []
+
+    type_hint = _get_type_hint(goods_type)
+    is_software = goods_type in _SW_TYPES
+    minimum = 18 if is_software else 14
+    system_prompt = (
+        "Ты формируешь технические характеристики для конкретной модели товара в закупочном стиле."
+        " Верни только JSON-массив объектов {name, value, unit} без markdown и без пояснений."
+        " Указывай только характеристики самой модели или стандартной конфигурации производителя."
+        " Не используй общие фразы вида 'по требованиям заказчика', 'по типу товара', 'и/или',"
+        " 'в количестве, достаточном для эксплуатации'."
+        " Не включай характеристики упаковки, маркировки, состояния товара, гарантийных условий,"
+        " документов поставки и иных формальных закупочных требований."
+    )
+    user_prompt = (
+        f"Модель: {product}\n"
+        f"Тип товара: {type_hint or goods_type or 'товар'}\n\n"
+        f"Нужно вернуть не менее {minimum} технических характеристик именно этой модели."
+        "\nДля оборудования обязательно включи процессор/платформу, память, накопители, графику,"
+        " интерфейсы, сеть, конструктив, питание, размеры и массу, если применимо."
+        "\nДля ПО включи редакцию, архитектуры, модули, интеграции, безопасность, управление,"
+        " лицензирование и совместимость."
+        "\nНе указывай модель, бренд, артикул или производителя отдельными характеристиками."
+        "\nЕсли точная характеристика модели неизвестна, не выдумывай её и просто пропусти."
+    )
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.0,
+        "max_tokens": 4096,
+        "stream": False,
+    }
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = URLRequest(
+        url,
+        data=body,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=min(AI_TIMEOUT, 18), context=_ssl_ctx) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        content = content.strip()
+        if content.startswith("```"):
+            lines = [line for line in content.split("\n") if not line.startswith("```")]
+            content = "\n".join(lines).strip()
+        specs = _parse_json_with_repair(content)
+        if not isinstance(specs, list):
+            return []
+        final_specs = _clean_specs_for_compliance(_dedupe_specs(specs))
+        return final_specs if _has_sufficient_exact_model_quality(final_specs) else []
+    except Exception as e:
+        logger.error(f"AI model-spec generation error: {e}")
         return []
 
 
@@ -1865,7 +1996,7 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
     logger.info(f"[internet] Search: {search_query!r}")
     loop = asyncio.get_event_loop()
     results_nested = await asyncio.gather(*[
-        loop.run_in_executor(None, lambda q=q: _bing_rss_search(q, num=6))
+        loop.run_in_executor(None, lambda q=q: _bing_rss_search(q, num=4 if exact_model else 6, timeout=6 if exact_model else 12))
         for q in queries
     ])
     raw_results = [item for bucket in results_nested for item in bucket]
@@ -1879,12 +2010,18 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
             continue
         seen_links.add(link)
         deduped_results.append(item)
-        if len(deduped_results) >= 8:
+        if len(deduped_results) >= (5 if exact_model else 8):
             break
 
     if not deduped_results:
         logger.warning(f"[internet] No relevant search results for: {search_query}")
-        return [] if exact_model else baseline_specs
+        if exact_model:
+            ai_specs = await loop.run_in_executor(None, lambda: _ai_generate_model_specs(product, goods_type))
+            if ai_specs:
+                _cache_set(cache_key, ai_specs)
+                return ai_specs
+            return []
+        return baseline_specs
 
     logger.info(f"[internet] Search returned {len(deduped_results)} relevant results")
 
@@ -1898,12 +2035,12 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
 
     urls = [
         r["link"]
-        for r in deduped_results[:5]
+        for r in deduped_results[:3 if exact_model else 5]
         if r.get("link") and not any(domain in r["link"] for domain in _BLOCKED_RESULT_HOSTS)
-    ][:3]
+    ][:2 if exact_model else 3]
 
     if urls:
-        fetch_tasks = [loop.run_in_executor(None, lambda u=url: _fetch_readable_page(u, timeout=10)) for url in urls]
+        fetch_tasks = [loop.run_in_executor(None, lambda u=url: _fetch_readable_page(u, timeout=6 if exact_model else 10)) for url in urls]
         fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
         for url, page_text in zip(urls, fetch_results):
             if isinstance(page_text, Exception) or not page_text:
@@ -1913,16 +2050,30 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
                 context_parts.append(f"[{url}]:\n{text}")
 
     if not context_parts:
-        return [] if exact_model else baseline_specs
+        if exact_model:
+            ai_specs = await loop.run_in_executor(None, lambda: _ai_generate_model_specs(product, goods_type))
+            if ai_specs:
+                _cache_set(cache_key, ai_specs)
+                return ai_specs
+            return []
+        return baseline_specs
 
     full_context = "\n\n".join(context_parts)
-    specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, product, goods_type))
-    heuristic_specs = _extract_spec_pairs(full_context, max_items=40)
-    merged_specs = _merge_specs(specs, heuristic_specs)
-    final_specs = _clean_specs_for_compliance(
-        _dedupe_specs(merged_specs) if exact_model else _enrich_with_baseline(merged_specs, goods_type, product)
+    heuristic_specs = _merge_specs(
+        _extract_table_like_pairs(full_context, max_items=40),
+        _extract_spec_pairs(full_context, max_items=40),
     )
-    logger.info(f"[internet] Extracted {len(specs)} specs, final {len(final_specs)} specs for {product!r}")
+    if exact_model:
+        final_specs = _clean_specs_for_compliance(_dedupe_specs(heuristic_specs))
+        if not _has_sufficient_exact_model_quality(final_specs):
+            ai_specs = await loop.run_in_executor(None, lambda: _ai_generate_model_specs(product, goods_type))
+            if ai_specs:
+                final_specs = ai_specs
+    else:
+        specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, product, goods_type))
+        merged_specs = _merge_specs(specs, heuristic_specs)
+        final_specs = _clean_specs_for_compliance(_enrich_with_baseline(merged_specs, goods_type, product))
+    logger.info(f"[internet] Final {len(final_specs)} specs for {product!r}")
     if final_specs:
         _cache_set(cache_key, final_specs)
     return final_specs
@@ -1956,7 +2107,7 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
     logger.info(f"[eis] Search: {search_query!r}")
     loop = asyncio.get_event_loop()
     search_sets = await asyncio.gather(*[
-        loop.run_in_executor(None, lambda q=q: _bing_rss_search(q, num=5))
+        loop.run_in_executor(None, lambda q=q: _bing_rss_search(q, num=4 if exact_model else 5, timeout=6 if exact_model else 12))
         for q in site_queries
     ])
     raw_results = [item for bucket in search_sets for item in bucket]
@@ -1970,7 +2121,7 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
             continue
         seen_links.add(link)
         procurement_results.append(item)
-        if len(procurement_results) >= 8:
+        if len(procurement_results) >= (5 if exact_model else 8):
             break
 
     logger.info(f"[eis] Procurement search returned {len(procurement_results)} relevant results for {base!r}")
@@ -1984,11 +2135,11 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
 
     urls = [
         r["link"]
-        for r in procurement_results[:5]
+        for r in procurement_results[:3 if exact_model else 5]
         if r.get("link") and not any(host in r["link"] for host in _BLOCKED_RESULT_HOSTS)
-    ][:3]
+    ][:2 if exact_model else 3]
     if urls:
-        fetch_tasks = [loop.run_in_executor(None, lambda u=url: _fetch_readable_page(u, timeout=10)) for url in urls]
+        fetch_tasks = [loop.run_in_executor(None, lambda u=url: _fetch_readable_page(u, timeout=6 if exact_model else 10)) for url in urls]
         fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
         for url, page_text in zip(urls, fetch_results):
             if isinstance(page_text, Exception) or not page_text:
@@ -2006,13 +2157,19 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
         return specs
 
     full_context = "\n".join(context_parts)
-    specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, query, goods_type))
-    heuristic_specs = _extract_spec_pairs(full_context, max_items=40)
-    merged_specs = _merge_specs(specs, heuristic_specs)
-    final_specs = _clean_specs_for_compliance(
-        _dedupe_specs(merged_specs) if exact_model else _enrich_with_baseline(merged_specs, goods_type, query)
+    heuristic_specs = _merge_specs(
+        _extract_table_like_pairs(full_context, max_items=40),
+        _extract_spec_pairs(full_context, max_items=40),
     )
-    logger.info(f"[eis] Extracted {len(specs)} specs, final {len(final_specs)} specs for {query!r}")
+    if exact_model:
+        final_specs = _clean_specs_for_compliance(_dedupe_specs(heuristic_specs))
+        if not _has_sufficient_exact_model_quality(final_specs):
+            final_specs = await search_internet_specs(query, goods_type)
+    else:
+        specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, query, goods_type))
+        merged_specs = _merge_specs(specs, heuristic_specs)
+        final_specs = _clean_specs_for_compliance(_enrich_with_baseline(merged_specs, goods_type, query))
+    logger.info(f"[eis] Final {len(final_specs)} specs for {query!r}")
 
     if final_specs:
         _cache_set(cache_key, final_specs)

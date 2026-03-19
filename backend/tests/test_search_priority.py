@@ -4,6 +4,7 @@ from search import (
     _build_procurement_queries,
     _enrich_with_baseline,
     _get_astra_fast_specs,
+    _has_sufficient_exact_model_quality,
     _looks_like_specific_model_query,
 )
 
@@ -69,3 +70,19 @@ def test_baseline_is_not_merged_into_exact_model_specs():
     source_specs = [{"name": "Объем оперативной памяти", "value": "16", "unit": "ГБ"}]
     result = _enrich_with_baseline(source_specs, "pc", "MSI PRO DP21 14M-1069XRU")
     assert result == source_specs
+
+
+def test_exact_model_quality_rejects_generic_procurement_baseline():
+    generic_specs = [
+        {"name": "Процессор", "value": "Количество вычислительных ядер не менее 4; архитектура и частотные параметры по требованиям Заказчика", "unit": ""},
+        {"name": "Оперативная память", "value": "не менее 8 ГБ", "unit": "ГБ"},
+        {"name": "Тип и объем накопителя", "value": "SSD и/или HDD; суммарный объем не менее 256 ГБ", "unit": ""},
+        {"name": "Графическая подсистема", "value": "Интегрированный и/или дискретный графический адаптер по типу товара", "unit": ""},
+        {"name": "Сетевые интерфейсы", "value": "Ethernet 1 Гбит/с и/или беспроводные интерфейсы по требованиям Заказчика", "unit": ""},
+        {"name": "Порты подключения", "value": "USB, видеоинтерфейсы и аудиоразъемы в количестве, достаточном для эксплуатации", "unit": ""},
+        {"name": "Состояние товара", "value": "новый, не бывший в эксплуатации", "unit": ""},
+        {"name": "Документация на русском языке", "value": "наличие паспорта и руководства пользователя", "unit": ""},
+        {"name": "Маркировка и идентификация", "value": "наличие заводской маркировки", "unit": ""},
+        {"name": "Упаковка", "value": "заводская упаковка", "unit": ""},
+    ]
+    assert _has_sufficient_exact_model_quality(generic_specs) is False

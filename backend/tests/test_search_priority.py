@@ -124,6 +124,8 @@ def test_extract_msi_model_family_parses_exact_sku():
 def test_parse_msi_spec_markdown_extracts_exact_column():
     markdown = """
 MKT Spec MKT Spec PRO DP21 14M-1055XRU MKT Spec PRO DP21 14M-1069XRU MKT Spec PRO DP21 14M-1071XRU
+Part No Part No 9S6-B0A431-1055 Part No 9S6-B0A431-1069 Part No 9S6-B0A431-1071
+Color Color ID1/Black-Black-Black Color ID1/Black-Black-Black Color ID1/Black-Black-Black
 Chipsets Chipsets H610 Chipsets H610 Chipsets H610
 Memory Size Memory Size 8GB(8GB*1) Memory Size 16GB(8GB*2) Memory Size 8GB(8GB*1)
 Memory Type Memory Type DDR5 SDRAM Memory Type DDR5 SDRAM Memory Type DDR5 SDRAM
@@ -137,6 +139,7 @@ HDMI out HDMI out 1x (v2.1) HDMI out 1x (v2.1) HDMI out 1x (v2.1)
 DP out DP out 1x (v1.4) DP out 1x (v1.4) DP out 1x (v1.4)
 Weight (Net kg)Weight (Net kg) 1.27 Weight (Net kg) 1.27 Weight (Net kg) 1.27
 Product Dimension (WxDxH) (mm)Product Dimension (WxDxH) (mm) 204 x 208 x 54.8 Product Dimension (WxDxH) (mm) 204 x 208 x 54.8 Product Dimension (WxDxH) (mm) 204 x 208 x 54.8
+Inside Carton Dimension (WxDxH) (inch)Inside Carton Dimension (WxDxH) (inch) 0.32 x 0.32 x 0.09 Inside Carton Dimension (WxDxH) (inch) 0.32 x 0.32 x 0.09 Inside Carton Dimension (WxDxH) (inch) 0.32 x 0.32 x 0.09
 """
     specs = _parse_msi_spec_markdown(markdown, "PRO DP21 14M-1069XRU")
     by_name = {item["name"]: item["value"] for item in specs}
@@ -146,6 +149,9 @@ Product Dimension (WxDxH) (mm)Product Dimension (WxDxH) (mm) 204 x 208 x 54.8 Pr
     assert by_name["Количество потоков процессора"] == "28"
     assert by_name["Беспроводные интерфейсы"] == "Wi-Fi 6E+BT"
     assert _has_sufficient_exact_model_quality(specs) is True
+    assert "Part No" not in by_name
+    assert "Color" not in by_name
+    assert "Inside Carton Dimension (WxDxH) (inch)" not in by_name
 
 
 def test_clean_specs_for_compliance_removes_model_identity_fields():

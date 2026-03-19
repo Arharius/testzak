@@ -412,6 +412,20 @@ _MSI_FIELD_NAME_MAP: dict[str, str] = {
     "Audio Headphone-out": "Выход на наушники",
 }
 
+_MSI_IGNORED_FIELDS = {
+    "Part No",
+    "MKT Name",
+    "MKT Spec",
+    "Color",
+    "Warranty",
+    "Weight (Gross kg)",
+    "Product Dimension (WxDxH) (inch)",
+    "Inside Carton Dimension (WxDxH) (mm)",
+    "Inside Carton Dimension (WxDxH) (inch)",
+    "Net Weight (lbs)",
+    "Gross Weight (lbs)",
+}
+
 
 # ── DuckDuckGo (primary, free, no API key) ─────────────────────
 def _duckduckgo_search(query: str, num: int = 5) -> list[dict]:
@@ -1913,6 +1927,8 @@ def _parse_msi_spec_markdown(markdown: str, exact_model: str) -> list[dict]:
     seen_names: set[str] = set()
     for label, values in rows.items():
         if label == "MKT Spec" or target_index >= len(values):
+            continue
+        if label in _MSI_IGNORED_FIELDS:
             continue
         value = re.sub(r"\s+", " ", values[target_index]).strip(" :")
         if not value or value == "-":

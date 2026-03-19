@@ -4,11 +4,14 @@ from search import (
     _build_procurement_queries,
     _build_exact_model_ai_aliases,
     _build_asus_official_queries,
+    _build_asus_searchresult_urls,
     _clean_specs_for_compliance,
     _enrich_with_baseline,
     _extract_asus_model_code,
+    _extract_asus_product_result_urls,
     _extract_asus_support_code,
     _extract_asus_support_title,
+    _extract_asus_techspec_url,
     _fetch_asus_support_title,
     _extract_msi_model_family,
     _extract_msi_search_family_query,
@@ -212,6 +215,39 @@ def test_build_asus_official_queries_include_support_code_and_techspec_terms():
     assert 'site:asus.com "ASUS Vivobook 15X OLED X1503ZA" techspec' in queries
 
 
+def test_build_asus_searchresult_urls_include_localized_and_global_paths():
+    urls = _build_asus_searchresult_urls(
+        "Asus Vivobook X1503",
+        goods_type="laptop",
+        support_code="X1503ZA",
+        search_key="X1503",
+        support_title="ASUS Vivobook 15X OLED X1503ZA",
+    )
+    assert "https://www.asus.com/co/searchresult?searchKey=X1503ZA&page=1" in urls
+    assert "https://www.asus.com/searchresult?searchKey=ASUS+Vivobook+15X+OLED+X1503ZA&page=1" in urls
+    assert any("searchType=products&pdLine=laptops&category=for-home" in url for url in urls)
+
+
+def test_extract_asus_product_result_urls_reads_localized_search_results():
+    markdown = """
+[## ASUS Vivobook 15X OLED (X1503, 12a Gen Intel)](https://www.asus.com/co/Laptops/For-Home/Vivobook/Vivobook-15X-OLED-X1503-12th-Gen-Intel/)
+[Más información](https://www.asus.com/co/Laptops/For-Home/Vivobook/Vivobook-15X-OLED-X1503-12th-Gen-Intel/)
+[Support](https://www.asus.com/supportonly/X1503ZA/HelpDesk/)
+"""
+    items = _extract_asus_product_result_urls(markdown)
+    assert items == [{
+        "title": "ASUS Vivobook 15X OLED (X1503, 12a Gen Intel)",
+        "link": "https://www.asus.com/co/Laptops/For-Home/Vivobook/Vivobook-15X-OLED-X1503-12th-Gen-Intel/",
+    }]
+
+
+def test_extract_asus_techspec_url_reads_specification_link():
+    markdown = """
+*   [Especificaciones](https://www.asus.com/co/laptops/for-home/vivobook/vivobook-15x-oled-x1503-12th-gen-intel/techspec/)
+"""
+    assert _extract_asus_techspec_url(markdown) == "https://www.asus.com/co/laptops/for-home/vivobook/vivobook-15x-oled-x1503-12th-gen-intel/techspec/"
+
+
 def test_parse_asus_techspec_markdown_extracts_concrete_specs():
     markdown = """
 # ASUS Vivobook 15X OLED (X1503, 12a Gen Intel)
@@ -360,6 +396,69 @@ Need Help?
     by_name = {item["name"]: item["value"] for item in specs}
     assert by_name["Процессор"].startswith("Intel® Core™ i5-12500H")
     assert "Wi-Fi 6" in by_name["Сетевые интерфейсы"]
+
+
+def test_resolve_asus_exact_model_specs_uses_localized_searchresult_before_bing():
+    search_module = __import__("search")
+    original_bing = search_module._bing_rss_search
+    original_fetch = search_module._fetch_readable_page
+    original_support = search_module._fetch_asus_support_code
+    original_support_title = search_module._fetch_asus_support_title
+    original_ai = search_module._ai_generate_model_specs
+    try:
+        search_module._fetch_asus_support_code = lambda product: "X1503ZA"
+        search_module._fetch_asus_support_title = lambda product, support_code="": "ASUS Vivobook 15X OLED X1503ZA"
+        search_module._bing_rss_search = lambda *args, **kwargs: []
+        localized_search = """
+[## ASUS Vivobook 15X OLED (X1503, 12a Gen Intel)](https://www.asus.com/co/Laptops/For-Home/Vivobook/Vivobook-15X-OLED-X1503-12th-Gen-Intel/)
+"""
+        techspec = """
+Procesador
+Intel® Core™ i5-12500H 2.5 GHz (18M Caché, hasta 4.5 GHz, 4P+8E núcleos)
+Pantalla
+15,6", FHD (1920 x 1080) OLED 16:9, 60Hz, 600nits
+Memoria
+8GB DDR4 on board
+8GB DDR4 SO-DIMM
+Almacenamiento
+512 GB SSD M.2 NVMe™ PCIe® 3.0
+Puertos E/S
+2x USB 3.2 Gen 1 Tipo-A
+1x USB 3.2 Gen 1 Tipo C
+1x USB 2.0 Tipo-A, 1x DC-in
+Redes y comunicación
+Wi-Fi 6(802.11ax)+Bluetooth 5.0 (Dual band) 2*2
+Batería
+70WHrs, 3S1P, 3-cell Li-ion
+Alimentación
+adaptador 90 W CA; Salida: 19 V CC, 4,74 A, 90 W
+Peso
+1.70 kg (3.75 lbs)
+Dimensiones
+35.68 x 22.76 x 1.99 cm (14.05" x 8.96" x 0.78")
+Need Help?
+"""
+
+        def fake_fetch(url, timeout=10):
+            if "searchresult" in url and "X1503ZA" in url:
+                return localized_search
+            if "Vivobook-15X-OLED-X1503-12th-Gen-Intel/techspec" in url:
+                return techspec
+            return ""
+
+        search_module._fetch_readable_page = fake_fetch
+        search_module._ai_generate_model_specs = lambda product, goods_type="": []
+        specs = _resolve_asus_exact_model_specs("Asus Vivobook X1503", "laptop")
+    finally:
+        search_module._bing_rss_search = original_bing
+        search_module._fetch_readable_page = original_fetch
+        search_module._fetch_asus_support_code = original_support
+        search_module._fetch_asus_support_title = original_support_title
+        search_module._ai_generate_model_specs = original_ai
+    by_name = {item["name"]: item["value"] for item in specs}
+    assert by_name["Процессор"].startswith("Intel® Core™ i5-12500H")
+    assert "Wi-Fi 6" in by_name["Сетевые интерфейсы"]
+    assert by_name["Накопитель"] == "512 GB SSD M.2 NVMe™ PCIe® 3.0"
 
 
 def test_extract_msi_search_family_query_supports_family_only_input():

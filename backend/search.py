@@ -2128,6 +2128,157 @@ def _fetch_asus_support_title(product: str, support_code: str = "") -> str:
     return fallback_title
 
 
+def _build_asus_searchresult_urls(product: str, goods_type: str = "", support_code: str = "", search_key: str = "", support_title: str = "") -> list[str]:
+    support_code = support_code or _fetch_asus_support_code(product)
+    search_key = search_key or _extract_asus_search_key(product).upper()
+    support_title = support_title or _fetch_asus_support_title(product, support_code=support_code)
+    queries = [
+        support_code,
+        search_key,
+        support_title,
+        product,
+        f"ASUS {support_code}" if support_code else "",
+    ]
+    locale_roots = [
+        "https://www.asus.com/co",
+        "https://www.asus.com",
+        "https://www.asus.com/jp",
+    ]
+    type_params = ""
+    if goods_type == "laptop":
+        type_params = "&searchType=products&pdLine=laptops&category=for-home"
+    urls: list[str] = []
+    for root in locale_roots:
+        for query in queries:
+            cleaned = re.sub(r"\s+", " ", str(query or "")).strip()
+            if not cleaned:
+                continue
+            urls.append(f"{root}/searchresult?searchKey={quote_plus(cleaned)}&page=1")
+            if type_params:
+                urls.append(f"{root}/searchresult?searchKey={quote_plus(cleaned)}&page=1{type_params}")
+    return _dedupe_query_list(urls)
+
+
+def _looks_like_asus_product_url(url: str) -> bool:
+    value = str(url or "").strip()
+    if not value:
+        return False
+    parsed = urlparse(value)
+    host = str(parsed.netloc or "").lower()
+    if "asus.com" not in host:
+        return False
+    path = re.sub(r"/+", "/", str(parsed.path or ""))
+    normalized_path = path.lower()
+    if any(
+        blocked in normalized_path
+        for blocked in (
+            "/searchresult",
+            "/support",
+            "/supportonly",
+            "/helpdesk",
+            "/content/",
+            "/campaign/",
+            "/store/",
+            "/news/",
+            "/faq/",
+            "/event/",
+            "/deals/",
+            "/blog/",
+            "/review/",
+            "/manual",
+            "/warranty",
+            "/download",
+        )
+    ):
+        return False
+    segments = [segment for segment in path.split("/") if segment]
+    if segments and re.fullmatch(r"[a-z]{2}(?:-[a-z]{2})?", segments[0], flags=re.I):
+        segments = segments[1:]
+    if len(segments) < 4:
+        return False
+    return segments[0].lower() in {
+        "laptops",
+        "mobile-handhelds",
+        "displays-desktops",
+        "motherboards-components",
+        "networking-iot-servers",
+        "accessories",
+    }
+
+
+def _extract_asus_product_result_urls(markdown: str) -> list[dict]:
+    results: list[dict] = []
+    seen: set[str] = set()
+    for match in re.finditer(r"\[(?!Image)([^\]]+)\]\((https?://www\.asus\.com/[^)]+)\)", str(markdown or ""), flags=re.I):
+        title = re.sub(r"\s+", " ", match.group(1)).strip(" #")
+        url = match.group(2).strip()
+        if not _looks_like_asus_product_url(url):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        results.append({
+            "title": title,
+            "link": url,
+        })
+    return results
+
+
+def _score_asus_product_result(item: dict, product: str, support_code: str = "", search_key: str = "", support_title: str = "") -> int:
+    url = str(item.get("link", "")).strip()
+    title = str(item.get("title", "")).strip()
+    haystack = f"{url} {title}".lower()
+    upper_haystack = haystack.upper()
+    score = 0
+    if _looks_like_asus_product_url(url):
+        score += 40
+    if support_code and support_code in upper_haystack:
+        score += 70
+    if search_key and search_key in upper_haystack:
+        score += 40
+    if support_title:
+        title_tokens = [token for token in _normalize_label_key(support_title).split() if len(token) >= 4]
+        matched = sum(1 for token in title_tokens if token in haystack)
+        score += min(50, matched * 6)
+    normalized = _normalize_model_search_text(product)
+    for token in _ASUS_SERIES_FAMILY_TOKENS:
+        if token in normalized and token in haystack:
+            score += 12
+    if re.search(r"\b(?:oled|vivobook|zenbook|expertbook|proart|rog|tuf)\b", haystack):
+        score += 10
+    if re.search(r"more info|mas informacion|leer mas|see less|ver menos", haystack, flags=re.I):
+        score -= 15
+    return score
+
+
+def _extract_asus_techspec_url(markdown: str) -> str:
+    patterns = (
+        r"\[(?:Especificaciones|Specifications|Спецификации)\]\((https?://www\.asus\.com/[^)]+/techspec/?(?:#[^)]+)?)\)",
+        r"(https?://www\.asus\.com/[^)\s]+/techspec/?(?:#[^\s)]*)?)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, str(markdown or ""), flags=re.I)
+        if not match:
+            continue
+        url = match.group(1).strip()
+        if "asus.com" in url.lower():
+            return url.split("#", 1)[0]
+    return ""
+
+
+def _build_asus_techspec_candidates(product_url: str) -> list[str]:
+    base = str(product_url or "").strip().rstrip("/")
+    if not base:
+        return []
+    if base.lower().endswith("/techspec"):
+        return [f"{base}/"]
+    return [
+        f"{base}/techspec/",
+        f"{base}/techspec",
+        base,
+    ]
+
+
 def _build_exact_model_ai_aliases(product: str, goods_type: str = "") -> list[str]:
     aliases = [re.sub(r"\s+", " ", str(product or "")).strip()]
     normalized = _normalize_model_search_text(product)
@@ -2703,6 +2854,56 @@ def _resolve_asus_exact_model_specs(product: str, goods_type: str = "") -> list[
     support_code = _fetch_asus_support_code(product)
     search_key = _extract_asus_search_key(product).upper()
     support_title = _fetch_asus_support_title(product, support_code=support_code)
+    localized_results: list[dict] = []
+    seen_product_links: set[str] = set()
+
+    for search_url in _build_asus_searchresult_urls(
+        product,
+        goods_type=goods_type,
+        support_code=support_code,
+        search_key=search_key,
+        support_title=support_title,
+    )[:8]:
+        readable = _fetch_readable_page(search_url, timeout=8)
+        if not readable:
+            continue
+        for item in _extract_asus_product_result_urls(readable):
+            link = str(item.get("link", "")).strip()
+            if not link or link in seen_product_links:
+                continue
+            seen_product_links.add(link)
+            localized_results.append(item)
+
+    localized_results.sort(
+        key=lambda item: _score_asus_product_result(
+            item,
+            product,
+            support_code=support_code,
+            search_key=search_key,
+            support_title=support_title,
+        ),
+        reverse=True,
+    )
+
+    for item in localized_results[:6]:
+        product_url = str(item.get("link", "")).strip()
+        for candidate_url in _build_asus_techspec_candidates(product_url):
+            readable = _fetch_readable_page(candidate_url, timeout=10)
+            if not readable:
+                continue
+            if candidate_url == product_url:
+                extracted_techspec = _extract_asus_techspec_url(readable)
+                if extracted_techspec and extracted_techspec != candidate_url:
+                    readable = _fetch_readable_page(extracted_techspec, timeout=10)
+                    candidate_url = extracted_techspec
+                    if not readable:
+                        continue
+            specs = _parse_asus_techspec_markdown(readable)
+            if _has_sufficient_exact_model_quality(specs):
+                logger.info(f"[vendor] ASUS localized search hit: {product!r} -> {candidate_url}")
+                return specs
+            logger.info(f"[vendor] ASUS localized search weak parse: {candidate_url} specs={len(specs)}")
+
     candidate_queries = _build_asus_official_queries(
         product,
         support_code=support_code,

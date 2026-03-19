@@ -39,7 +39,20 @@ function response(statusCode, body, contentType = 'application/json; charset=utf
 }
 
 const FALLBACK_STORE_FILE = '/tmp/tz_netlify_backend_proxy_store.json';
-const DEFAULT_BACKEND_API_BASE_URL = 'https://backend-production-3b942.up.railway.app';
+const CURRENT_BACKEND_API_BASE_URL = 'https://backend-production-f736.up.railway.app';
+const DEPRECATED_BACKEND_API_BASE_URLS = new Set([
+  'https://backend-production-3b942.up.railway.app',
+]);
+const DEFAULT_BACKEND_API_BASE_URL = CURRENT_BACKEND_API_BASE_URL;
+
+function normalizeBackendApiBaseUrl(value) {
+  const normalized = String(value || '').trim().replace(/\/$/, '');
+  if (!normalized) return '';
+  if (DEPRECATED_BACKEND_API_BASE_URLS.has(normalized)) {
+    return CURRENT_BACKEND_API_BASE_URL;
+  }
+  return normalized;
+}
 
 function parseJsonBody(event) {
   try {
@@ -346,12 +359,12 @@ function fallbackApi(method, pathOnly, event) {
 }
 
 function getUpstreamBase() {
-  return envAny(
+  return normalizeBackendApiBaseUrl(envAny(
     'BACKEND_API_BASE_URL',
     'API_UPSTREAM_BASE_URL',
     'TZ_BACKEND_UPSTREAM_URL',
     'VITE_BACKEND_URL',
-  ) || DEFAULT_BACKEND_API_BASE_URL;
+  )) || DEFAULT_BACKEND_API_BASE_URL;
 }
 
 function buildPathAndQuery(event) {

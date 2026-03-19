@@ -5,10 +5,22 @@
  * - same-origin API on Netlify via /api/* proxy redirects
  */
 
+const CURRENT_BACKEND_URL = 'https://backend-production-f736.up.railway.app';
+const DEPRECATED_BACKEND_URLS = new Set([
+  'https://backend-production-3b942.up.railway.app',
+]);
+
+function normalizeBackendUrl(value: string): string {
+  const normalized = String(value || '').trim().replace(/\/$/, '');
+  if (!normalized) return '';
+  if (DEPRECATED_BACKEND_URLS.has(normalized)) return CURRENT_BACKEND_URL;
+  return normalized;
+}
+
 // If VITE_BACKEND_URL is empty, requests go to same-origin (/api/...) which
 // allows Netlify to proxy API calls to the backend service.
 // NOTE: Vite only replaces `import.meta.env.VITE_*` statically — dynamic access won't work.
-export const BACKEND_URL = (String(import.meta.env.VITE_BACKEND_URL || '')).replace(/\/$/, '');
+export const BACKEND_URL = normalizeBackendUrl(String(import.meta.env.VITE_BACKEND_URL || ''));
 const NON_LATIN1_RE = /[^\x00-\xff]/;
 
 function shouldUseSameOriginApi(): boolean {

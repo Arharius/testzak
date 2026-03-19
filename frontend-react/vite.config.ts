@@ -10,7 +10,18 @@ const base = explicitBase || (isGhPages ? '/testzak/' : '/');
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const backendTarget = (env.VITE_BACKEND_URL || 'https://backend-production-3b942.up.railway.app').replace(/\/$/, '');
+  const deprecatedBackendTargets = new Set([
+    'https://backend-production-3b942.up.railway.app',
+  ]);
+  const normalizeBackendTarget = (value: string) => {
+    const normalized = String(value || '').trim().replace(/\/$/, '');
+    if (!normalized) return 'https://backend-production-f736.up.railway.app';
+    if (deprecatedBackendTargets.has(normalized)) {
+      return 'https://backend-production-f736.up.railway.app';
+    }
+    return normalized;
+  };
+  const backendTarget = normalizeBackendTarget(env.VITE_BACKEND_URL || 'https://backend-production-f736.up.railway.app');
   const devHost = env.VITE_DEV_HOST || '127.0.0.1';
   const apiProxy = {
     '/api': {

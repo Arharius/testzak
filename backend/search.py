@@ -12,6 +12,7 @@ import logging
 import asyncio
 import re
 import time
+import httpx
 from html import unescape
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError, URLError
@@ -121,11 +122,24 @@ _ssl_ctx_unverified = ssl._create_unverified_context()
 
 def _fetch_url(url: str, timeout: int = 12) -> str:
     """Fetch URL, return text content. Retries with unverified SSL on cert errors."""
+    is_readable_proxy = "://r.jina.ai/" in str(url or "")
     headers = {
-        "User-Agent": random.choice(_USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+        "User-Agent": "curl/8.7.1" if is_readable_proxy else random.choice(_USER_AGENTS),
+        "Accept": "text/plain,text/html,application/xhtml+xml,*/*;q=0.8" if is_readable_proxy else "text/html,application/xhtml+xml,*/*;q=0.8",
         "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
     }
+    try:
+        resp = httpx.get(
+            url,
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=True,
+        )
+        if resp.status_code < 400:
+            return resp.text
+        logger.warning(f"fetch_url httpx failed {url}: HTTP {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"fetch_url httpx exception {url}: {e}")
     req = URLRequest(url, headers=headers, method="GET")
     for ctx in (_ssl_ctx, _ssl_ctx_unverified):
         try:
@@ -1906,12 +1920,17 @@ def _resolve_msi_exact_model_specs(product: str, goods_type: str = "") -> list[d
 
     for candidate_url in candidate_urls:
         readable = _fetch_readable_page(candidate_url, timeout=10)
-        if not readable or exact_model.upper() not in readable.upper():
+        if not readable:
+            logger.info(f"[vendor] MSI candidate empty: {candidate_url}")
+            continue
+        if exact_model.upper() not in readable.upper():
+            logger.info(f"[vendor] MSI candidate miss: {candidate_url} len={len(readable)}")
             continue
         specs = _parse_msi_spec_markdown(readable, exact_model)
         if _has_sufficient_exact_model_quality(specs):
             logger.info(f"[vendor] MSI exact model hit: {product!r} -> {candidate_url}")
             return specs
+        logger.info(f"[vendor] MSI candidate weak parse: {candidate_url} specs={len(specs)}")
     return []
 
 

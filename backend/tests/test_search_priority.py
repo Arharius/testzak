@@ -8,6 +8,7 @@ from search import (
     _enrich_with_baseline,
     _extract_asus_model_code,
     _extract_asus_support_code,
+    _extract_asus_support_title,
     _extract_msi_model_family,
     _extract_msi_search_family_query,
     _extract_msi_search_spec_url,
@@ -158,6 +159,13 @@ Support
     assert _extract_asus_support_code(markdown) == "X1503ZA"
 
 
+def test_extract_asus_support_title_reads_support_page_title():
+    markdown = """
+Title: ASUS Vivobook 15X OLED X1503ZA - サポート
+"""
+    assert _extract_asus_support_title(markdown) == "ASUS Vivobook 15X OLED X1503ZA"
+
+
 def test_build_exact_model_ai_aliases_enriches_asus_support_code():
     original_fetch = __import__("search")._fetch_asus_support_code
     __import__("search")._fetch_asus_support_code = lambda product: "X1503ZA"
@@ -170,9 +178,15 @@ def test_build_exact_model_ai_aliases_enriches_asus_support_code():
 
 
 def test_build_asus_official_queries_include_support_code_and_techspec_terms():
-    queries = _build_asus_official_queries("Asus Vivobook X1503", support_code="X1503ZA", search_key="X1503")
+    queries = _build_asus_official_queries(
+        "Asus Vivobook X1503",
+        support_code="X1503ZA",
+        search_key="X1503",
+        support_title="ASUS Vivobook 15X OLED X1503ZA",
+    )
     assert 'site:asus.com "X1503ZA" techspec' in queries
     assert 'site:asus.com "X1503" "vivobook"' in queries
+    assert 'site:asus.com "ASUS Vivobook 15X OLED X1503ZA" techspec' in queries
 
 
 def test_parse_asus_techspec_markdown_extracts_concrete_specs():
@@ -274,9 +288,11 @@ def test_resolve_asus_exact_model_specs_uses_official_techspec_before_ai():
     original_bing = search_module._bing_rss_search
     original_fetch = search_module._fetch_readable_page
     original_support = search_module._fetch_asus_support_code
+    original_support_title = search_module._fetch_asus_support_title
     original_ai = search_module._ai_generate_model_specs
     try:
         search_module._fetch_asus_support_code = lambda product: "X1503ZA"
+        search_module._fetch_asus_support_title = lambda product, support_code="": "ASUS Vivobook 15X OLED X1503ZA"
         search_module._bing_rss_search = lambda query, num=4, timeout=6: [
             {
                 "title": "ASUS Vivobook 15X OLED | Especificaciones",
@@ -316,6 +332,7 @@ Need Help?
         search_module._bing_rss_search = original_bing
         search_module._fetch_readable_page = original_fetch
         search_module._fetch_asus_support_code = original_support
+        search_module._fetch_asus_support_title = original_support_title
         search_module._ai_generate_model_specs = original_ai
     by_name = {item["name"]: item["value"] for item in specs}
     assert by_name["Процессор"].startswith("Intel® Core™ i5-12500H")

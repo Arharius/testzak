@@ -2077,6 +2077,22 @@ def _extract_asus_support_code(markdown: str) -> str:
     return ""
 
 
+def _extract_asus_support_title(markdown: str) -> str:
+    text = str(markdown or "")
+    for pattern in (
+        r"Title:\s*(.+)",
+        r"#\s*(ASUS[^\n]+)",
+    ):
+        match = re.search(pattern, text, flags=re.I)
+        if not match:
+            continue
+        title = re.sub(r"\s+", " ", match.group(1)).strip(" -")
+        title = re.sub(r"\s*[-|]\s*(support|soporte|サポート)$", "", title, flags=re.I).strip()
+        if title:
+            return title
+    return ""
+
+
 def _fetch_asus_support_code(product: str) -> str:
     if "asus" not in str(product or "").lower():
         return ""
@@ -2090,6 +2106,21 @@ def _fetch_asus_support_code(product: str) -> str:
     markdown = _fetch_readable_page(search_url, timeout=8)
     support_code = _extract_asus_support_code(markdown)
     return support_code or (explicit_code.upper() if explicit_code else "")
+
+
+def _fetch_asus_support_title(product: str, support_code: str = "") -> str:
+    code = (support_code or _fetch_asus_support_code(product)).strip().upper()
+    if not code:
+        return ""
+    for url in (
+        f"https://www.asus.com/supportonly/{code}/HelpDesk/",
+        f"https://www.asus.com/jp/supportonly/{code.lower()}/helpdesk/",
+    ):
+        readable = _fetch_readable_page(url, timeout=8)
+        title = _extract_asus_support_title(readable)
+        if title:
+            return title
+    return ""
 
 
 def _build_exact_model_ai_aliases(product: str, goods_type: str = "") -> list[str]:
@@ -2123,14 +2154,20 @@ def _build_exact_model_ai_aliases(product: str, goods_type: str = "") -> list[st
     return _dedupe_query_list(aliases)
 
 
-def _build_asus_official_queries(product: str, support_code: str = "", search_key: str = "") -> list[str]:
+def _build_asus_official_queries(product: str, support_code: str = "", search_key: str = "", support_title: str = "") -> list[str]:
     normalized = _normalize_model_search_text(product)
     support_code = support_code or _fetch_asus_support_code(product)
     search_key = search_key or _extract_asus_search_key(product).upper()
+    support_title = support_title or _fetch_asus_support_title(product, support_code=support_code)
     family_tokens = [token for token in _ASUS_SERIES_FAMILY_TOKENS if token in normalized]
     family_hint = family_tokens[0] if family_tokens else "laptop"
     codes = [support_code, _extract_asus_model_code(product).upper(), search_key]
     queries: list[str] = []
+    if support_title:
+        queries.extend([
+            f'site:asus.com "{support_title}"',
+            f'site:asus.com "{support_title}" techspec',
+        ])
     for code in [item for item in codes if item]:
         queries.extend([
             f'site:asus.com "{code}" techspec',
@@ -2144,7 +2181,7 @@ def _build_asus_official_queries(product: str, support_code: str = "", search_ke
     return _dedupe_query_list(queries)
 
 
-def _score_asus_official_result(item: dict, product: str, support_code: str = "", search_key: str = "") -> int:
+def _score_asus_official_result(item: dict, product: str, support_code: str = "", search_key: str = "", support_title: str = "") -> int:
     url = str(item.get("link", ""))
     title = str(item.get("title", ""))
     snippet = str(item.get("snippet", ""))
@@ -2163,6 +2200,10 @@ def _score_asus_official_result(item: dict, product: str, support_code: str = ""
         score += 25
     if search_key and search_key in upper_haystack:
         score += 15
+    if support_title:
+        title_tokens = [token for token in _normalize_label_key(support_title).split() if len(token) >= 4]
+        matched = sum(1 for token in title_tokens if token in haystack)
+        score += min(30, matched * 4)
     normalized = _normalize_model_search_text(product)
     for token in _ASUS_SERIES_FAMILY_TOKENS:
         if token in normalized and token in haystack:
@@ -2656,7 +2697,13 @@ def _resolve_asus_exact_model_specs(product: str, goods_type: str = "") -> list[
 
     support_code = _fetch_asus_support_code(product)
     search_key = _extract_asus_search_key(product).upper()
-    candidate_queries = _build_asus_official_queries(product, support_code=support_code, search_key=search_key)
+    support_title = _fetch_asus_support_title(product, support_code=support_code)
+    candidate_queries = _build_asus_official_queries(
+        product,
+        support_code=support_code,
+        search_key=search_key,
+        support_title=support_title,
+    )
     ranked_results: list[dict] = []
     seen_links: set[str] = set()
 
@@ -2669,7 +2716,13 @@ def _resolve_asus_exact_model_specs(product: str, goods_type: str = "") -> list[
             ranked_results.append(item)
 
     ranked_results.sort(
-        key=lambda item: _score_asus_official_result(item, product, support_code=support_code, search_key=search_key),
+        key=lambda item: _score_asus_official_result(
+            item,
+            product,
+            support_code=support_code,
+            search_key=search_key,
+            support_title=support_title,
+        ),
         reverse=True,
     )
 

@@ -166,6 +166,14 @@ Title: ASUS Vivobook 15X OLED X1503ZA - サポート
     assert _extract_asus_support_title(markdown) == "ASUS Vivobook 15X OLED X1503ZA"
 
 
+def test_extract_asus_support_title_reads_plain_text_support_page():
+    markdown = """
+ASUS Vivobook 15X OLED X1503ZA
+製品サポート
+"""
+    assert _extract_asus_support_title(markdown) == "ASUS Vivobook 15X OLED X1503ZA"
+
+
 def test_build_exact_model_ai_aliases_enriches_asus_support_code():
     original_fetch = __import__("search")._fetch_asus_support_code
     __import__("search")._fetch_asus_support_code = lambda product: "X1503ZA"

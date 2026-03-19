@@ -2082,6 +2082,7 @@ def _extract_asus_support_title(markdown: str) -> str:
     for pattern in (
         r"Title:\s*(.+)",
         r"#\s*(ASUS[^\n]+)",
+        r"(ASUS\s+[^\n]{0,160}?[A-Z]{1,3}\d{4}[A-Z0-9-]{0,6})",
     ):
         match = re.search(pattern, text, flags=re.I)
         if not match:

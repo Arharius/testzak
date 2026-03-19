@@ -119,6 +119,7 @@ const testCases = [
   { input: 'UserGate', expected: 'firewall_sw', mode: 'includes' },
   { input: 'Термопринтер', expected: null, mode: 'check' },
   { input: 'Патч-корд UTP cat6', expected: 'patchCord', mode: 'includes' },
+  { input: 'Тестер кабельный телефонный с генератором', expected: 'cableTester', mode: 'exact' },
   { input: 'Xerox VersaLink C7030', expected: null, mode: 'check' },
   { input: 'Гравитон Н15', expected: 'laptop', mode: 'exact' },
 ];

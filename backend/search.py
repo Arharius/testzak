@@ -250,7 +250,7 @@ _TYPE_SEARCH_HINTS: dict[str, str] = {
     "webcam": "веб-камера",
     "speakers": "колонки акустическая система",
     "opticalDrive": "внешний оптический привод dvd rw",
-    "cableTester": "кабельный тестер rj45 rj11",
+    "cableTester": "кабельный тестер rj45 rj11 телефонный тон генератор",
     "rj45Connector": "коннектор rj45 8p8c",
     "toolSet": "набор инструментов для монтажа скс",
     "patchCord": "патч корд rj45 витая пара",
@@ -263,7 +263,7 @@ _TYPE_KEYWORDS: dict[str, list[str]] = {
     "webcam": ["webcam", "camera", "веб", "камера", "uvc", "autofocus"],
     "speakers": ["speakers", "speaker", "колонк", "акустик", "rms", "audio"],
     "opticalDrive": ["dvd", "cd", "bd", "blu-ray", "bluray", "оптическ", "привод", "drive"],
-    "cableTester": ["tester", "тестер", "lan tester", "кабельный", "rj45", "rj11", "телефонный", "витая пара", "wiremap", "poe"],
+    "cableTester": ["tester", "тестер", "lan tester", "кабельный", "rj45", "rj11", "телефонный", "витая пара", "wiremap", "poe", "tone generator", "тон генератор", "генератор тона", "inductive probe", "индуктивный щуп"],
     "rj45Connector": ["rj45", "8p8c", "connector", "коннектор", "разъем", "разъём", "штекер", "cat5e", "cat6", "utp", "ftp"],
     "toolSet": ["tool kit", "набор", "инструмент", "кримпер", "обжим", "стриппер", "tester", "rj45", "rj11"],
     "patchCord": ["patch cord", "патч", "патчкорд", "rj45", "cat5e", "cat6", "utp", "ftp", "lan cable"],
@@ -1281,17 +1281,19 @@ def _build_baseline_spec_text(goods_type: str = "", query: str = "") -> str:
     if key == "cableTester":
         has_coax = bool(re.search(r"coax|коакс|bnc", normalized))
         has_poe = bool(re.search(r"\bpoe\b", normalized))
+        has_tone_generator = bool(re.search(r"тон|tone|генератор|probe|щуп|трассиров", normalized))
+        has_phone_focus = bool(re.search(r"телефон|rj11|rj12|ab\s*пара|аналогов", normalized))
         return f"""
-Тип устройства: Многофункциональный кабельный тестер
-Тестируемые типы кабелей: {"Витая пара (UTP, FTP, STP), телефонный и/или коаксиальный кабель" if has_coax else "Витая пара (UTP, FTP, STP), телефонный кабель"}
+Тип устройства: {"Телефонный кабельный тестер с генератором тона" if has_tone_generator and has_phone_focus else ("Многофункциональный кабельный тестер с генератором тона" if has_tone_generator else "Многофункциональный кабельный тестер")}
+Тестируемые типы кабелей: {"Телефонный, витая пара (UTP, FTP, STP) и/или коаксиальный кабель" if has_phone_focus and has_coax else ("Телефонный кабель и витая пара (UTP, FTP, STP)" if has_phone_focus else ("Витая пара (UTP, FTP, STP), телефонный и/или коаксиальный кабель" if has_coax else "Витая пара (UTP, FTP, STP), телефонный кабель"))}
 Категории кабелей: Cat.5, Cat.5e, Cat.6{" , Cat.6a, Cat.7" if re.search(r'cat\\s*7', normalized) else (" , Cat.6a" if re.search(r'cat\\s*6a', normalized) else "")}
 Тестируемые разъемы: {"RJ-45, RJ-11, RJ-12, BNC" if has_coax else "RJ-45, RJ-11, RJ-12"}
-Функции тестирования: Обрыв, короткое замыкание, неверная пара, перепутанные пары, экранирование{", PoE" if has_poe else ""}
+Функции тестирования: {"Трассировка линии, генерация тона, поиск пары, определение полярности, обрыв, короткое замыкание" if has_tone_generator and has_phone_focus else ("Обрыв, короткое замыкание, неверная пара, перепутанные пары, экранирование, трассировка кабеля, генерация тона" if has_tone_generator else f"Обрыв, короткое замыкание, неверная пара, перепутанные пары, экранирование{', PoE' if has_poe else ''}")}
 Дальность тестирования: не менее 300 м
 Тип индикации: Светодиодная (LED) и/или ЖК-дисплей по спецификации производителя
-Удаленный модуль: В комплекте
+Удаленный модуль: {"В комплекте и/или индуктивный щуп в комплекте" if has_tone_generator else "В комплекте"}
 Питание: Батарейки типа AAA или эквивалент
-Комплектность: Тестер, удаленный модуль, элементы питания (при наличии), чехол/сумка, документация производителя
+Комплектность: {"Тестер, генератор тона, индуктивный щуп, элементы питания (при наличии), чехол/сумка, документация производителя" if has_tone_generator else "Тестер, удаленный модуль, элементы питания (при наличии), чехол/сумка, документация производителя"}
 """
 
     if key == "rj45Connector":

@@ -176,6 +176,12 @@ const checks = [
     ok: workspace.includes("return 'shredderOil';")
       && workspace.includes("масло для шредера 350 мл"),
   },
+  {
+    name: 'Cable tester prompt covers telephone testers with tone generator',
+    ok: workspace.includes('телефонный тестер с генератором')
+      && workspace.includes('генерация тона при применимости')
+      && workspace.includes('индуктивного щупа'),
+  },
 ];
 
 let failed = 0;

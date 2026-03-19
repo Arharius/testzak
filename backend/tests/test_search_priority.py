@@ -80,6 +80,14 @@ def test_baseline_is_not_merged_into_exact_model_specs():
     assert result == source_specs
 
 
+def test_cable_tester_phone_generator_baseline_keeps_tone_generator_context():
+    specs = _get_baseline_specs("cableTester", "тестер кабельный телефонный с генератором")
+    by_name = {item["name"]: item["value"] for item in specs}
+    assert "Телефонный" in by_name["Тестируемые типы кабелей"]
+    assert "генерац" in by_name["Функции тестирования"].lower()
+    assert "щуп" in by_name["Удаленный модуль"].lower() or "щуп" in by_name["Комплектность"].lower()
+
+
 def test_exact_model_quality_rejects_generic_procurement_baseline():
     generic_specs = [
         {"name": "Процессор", "value": "Количество вычислительных ядер не менее 4; архитектура и частотные параметры по требованиям Заказчика", "unit": ""},

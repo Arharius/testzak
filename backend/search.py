@@ -989,22 +989,49 @@ _GENERIC_EXACT_MODEL_VALUE_RE = re.compile(
     r"новый, не бывший|эксплуатационной документации|заводской маркировки)",
     re.I,
 )
+_FORMAL_EXACT_MODEL_NAME_RE = re.compile(
+    r"^(состояние(?:\s+товара)?|комплект\s+поставки|документац.*|маркировк.*|гаранти.*|"
+    r"упаковка(?:\s+и\s+маркировка)?|страна\s+происхождения|условия\s+поставки)$",
+    re.I,
+)
 _CORE_EXACT_MODEL_NAME_RE = re.compile(
     r"(процессор|оперативн|памят|накопител|ssd|hdd|nvme|графическ|видеокарт|сетев|ethernet|wi-?fi|bluetooth|"
-    r"порт|usb|hdmi|displayport|vga|dvi|размер|габарит|вес|масса|питан|блок питания|мощност|диагонал|"
-    r"разрешен|матриц|камера|аккумулятор|батаре|чипсет|сокет|слот|интерфейс|форм[ -]?фактор|корпус|"
-    r"монтаж|vesa|tpm|операционная система|ос)",
+    r"порт|usb|hdmi|displayport|vga|dvi|размер|габарит|длина|ширина|высота|глубина|диаметр|толщин|"
+    r"вес|масса|питан|блок питания|мощност|диагонал|разрешен|матриц|камера|аккумулятор|батаре|чипсет|"
+    r"сокет|слот|интерфейс|форм[ -]?фактор|корпус|монтаж|vesa|tpm|операционная система|ос|типоразмер|"
+    r"тип(?!\s+товара)|материал|состав|объем|объ[её]м|емкост|[её]мкост|плотност|цвет|класс|сорт|формат|"
+    r"фасовк|колич|сло|лист|рулон|намотк|покрыти|твердост|нагрузк|производительност|давлени|расход|"
+    r"температур|напряжен|ток|ресурс|срок годности|срок хранения|совместимост|стандарт|гост|ip|snr|выпуск|смыв|"
+    r"сидень|арматур|белизн|непрозрачност|химическ|бит|жало|насадк)",
+    re.I,
+)
+_QUALITATIVE_DETAIL_VALUE_RE = re.compile(
+    r"^(щелочн|алкалин|литиев|первичн(ая|ой)? целлюлоз|вторичн(ое|ой) сыр[ьеё]|cr-v|s2|нержаве(ющая|ющая сталь)?|"
+    r"латун|керамик|полипропилен|полиэтилен|микрофибр|сенсорн|механическ|компакт|подвесн|горизонтальн|"
+    r"косой|двойн(?:ой|ое)|кругов(?:ой|ое)|аккумуляторн|сетев(?:ой|ое)|ударн|бесщеточн|бел(?:ый|ая)|"
+    r"сер(?:ый|ая)|черн(?:ый|ая)|матов(?:ый|ая)|глянцев(?:ый|ая)|перфорированн|тиснен(?:ие|ый)|"
+    r"однослойн|двухслойн|трехслойн|трёхслойн)",
     re.I,
 )
 _TECH_DETAIL_VALUE_RE = re.compile(
-    r"(\d+\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|кг|г|mah|мач|гбит/с|мбит/с|fps|dpi|порт(?:а|ов)?))|"
-    r"ddr\d|nvme|pcie|usb\s*\d|usb-c|type-c|hdmi|displayport|vga|dvi|wi-?fi\s*\d|bluetooth\s*\d|"
-    r"ethernet|rj-?45|intel|amd|core\s*i[3579]|ryzen|geforce|radeon|uhd|iris|windows|linux|"
-    r"sata|m\.2|vesa|tpm|ips|va|oled|lcd",
+    r"(\d+\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|м|кг|г|мл|л|м²|м2|м³|м3|мкм|бар|об/мин|л/мин|м/с|"
+    r"лист(?:ов)?|рулон(?:ов)?|сло(?:й|я|ев)|шт\.?|пар|mah|мач|ah|ач|в|а|°c|°с|дб|db|лм|lm|cie|dpi|"
+    r"ppi|snr|ip\d{2}|pei|гбит/с|мбит/с|fps))|aa|aaa|lr6|lr03|cr2032|cr2025|cr2016|cr-v|torx|ph\d|"
+    r"pz\d|sl\d|tx\d|e27|e14|gu10|ral\s*\d+|no frost|ffp\d|pn\d|m\d{1,2}|a4|a3|fsc|гост|ту|щелочн|"
+    r"алкалин|литиев|целлюлоз|макулатур|нержаве|латун|керамик|полипропилен|полиэтилен|микрофибр|"
+    r"двойной слив|круговой смыв|горизонтальный выпуск|косой выпуск|компакт|подвесной|сенсорный|"
+    r"механический|аккумуляторный|сетевой|ударный|бесщеточный|phillips|pozidriv",
     re.I,
 )
 _THIN_THRESHOLD_ONLY_RE = re.compile(
-    r"^не\s+(?:менее|более)\s+\d+(?:[.,]\d+)?\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|кг|г|порт(?:а|ов)?|ядер?|поток(?:ов)?|мес)?$",
+    r"^не\s+(?:менее|более)\s+\d+(?:[.,]\d+)?\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|м|кг|г|мл|л|лист(?:ов)?|"
+    r"рулон(?:ов)?|сло(?:й|я|ев)|шт\.?|пар|mah|мач|ah|ач|в|а|порт(?:а|ов)?|ядер?|поток(?:ов)?|мес)?$",
+    re.I,
+)
+_ALLOW_THRESHOLD_ONLY_EXACT_MODEL_NAME_RE = re.compile(
+    r"(размер|габарит|длина|ширина|высота|глубина|диаметр|толщин|вес|масса|объем|объ[её]м|"
+    r"емкост|[её]мкост|мощност|диагонал|напряжен|ток|колич|лист|рулон|сло|намотк|ресурс|"
+    r"срок годности|срок хранения)",
     re.I,
 )
 
@@ -1019,8 +1046,16 @@ def _is_weak_exact_model_spec(item: dict[str, Any]) -> bool:
         return True
     if "и/или" in normalized_value and not _TECH_DETAIL_VALUE_RE.search(value):
         return True
-    if _CORE_EXACT_MODEL_NAME_RE.search(name) and _THIN_THRESHOLD_ONLY_RE.match(normalized_value):
+    if (
+        _CORE_EXACT_MODEL_NAME_RE.search(name)
+        and _THIN_THRESHOLD_ONLY_RE.match(normalized_value)
+        and not _ALLOW_THRESHOLD_ONLY_EXACT_MODEL_NAME_RE.search(name)
+    ):
         return True
+    if _FORMAL_EXACT_MODEL_NAME_RE.search(name):
+        return True
+    if _CORE_EXACT_MODEL_NAME_RE.search(name) and _QUALITATIVE_DETAIL_VALUE_RE.search(normalized_value):
+        return False
     if _CORE_EXACT_MODEL_NAME_RE.search(name) and not _TECH_DETAIL_VALUE_RE.search(value) and len(normalized_value.split()) <= 6:
         return True
     return False
@@ -1033,21 +1068,23 @@ def _count_concrete_exact_model_specs(specs: list[dict]) -> int:
         value = re.sub(r"\s+", " ", str(item.get("value", ""))).strip()
         if not name or not value:
             continue
+        if _FORMAL_EXACT_MODEL_NAME_RE.search(name):
+            continue
         if not _CORE_EXACT_MODEL_NAME_RE.search(name):
             continue
         if _is_weak_exact_model_spec(item):
             continue
-        if _TECH_DETAIL_VALUE_RE.search(value) or re.search(r"\d", value):
+        if _TECH_DETAIL_VALUE_RE.search(value) or _QUALITATIVE_DETAIL_VALUE_RE.search(value.lower()) or re.search(r"\d", value):
             total += 1
     return total
 
 
 def _has_sufficient_exact_model_quality(specs: list[dict]) -> bool:
-    if len(specs or []) < 10:
+    if len(specs or []) < 7:
         return False
     weak = sum(1 for item in specs if _is_weak_exact_model_spec(item))
     concrete = _count_concrete_exact_model_specs(specs)
-    return concrete >= 6 and weak <= max(3, int(len(specs) * 0.25))
+    return concrete >= 5 and weak <= max(4, int(len(specs) * 0.35))
 
 
 def _detect_peripheral_connection_profile(source: str) -> dict[str, Any]:

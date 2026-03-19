@@ -86,3 +86,29 @@ def test_exact_model_quality_rejects_generic_procurement_baseline():
         {"name": "Упаковка", "value": "заводская упаковка", "unit": ""},
     ]
     assert _has_sufficient_exact_model_quality(generic_specs) is False
+
+
+def test_exact_model_quality_accepts_precise_household_specs():
+    household_specs = [
+        {"name": "Количество слоев", "value": "3 слоя", "unit": ""},
+        {"name": "Количество рулонов в упаковке", "value": "8 рулонов", "unit": "рулон"},
+        {"name": "Длина намотки рулона", "value": "не менее 18 м", "unit": "м"},
+        {"name": "Количество листов в рулоне", "value": "не менее 150 листов", "unit": "лист"},
+        {"name": "Состав", "value": "100% первичная целлюлоза", "unit": ""},
+        {"name": "Цвет", "value": "белый", "unit": ""},
+        {"name": "Тиснение", "value": "тиснение и перфорация", "unit": ""},
+    ]
+    assert _has_sufficient_exact_model_quality(household_specs) is True
+
+
+def test_exact_model_quality_accepts_precise_battery_specs():
+    battery_specs = [
+        {"name": "Тип элемента питания", "value": "щелочная батарейка", "unit": ""},
+        {"name": "Типоразмер", "value": "AA / LR6", "unit": ""},
+        {"name": "Напряжение", "value": "1.5 В", "unit": "В"},
+        {"name": "Ёмкость", "value": "не менее 2850 мАч", "unit": "мАч"},
+        {"name": "Количество в упаковке", "value": "4 шт.", "unit": "шт"},
+        {"name": "Срок хранения", "value": "до 10 лет", "unit": "лет"},
+        {"name": "Химическая система", "value": "алкалиновая", "unit": ""},
+    ]
+    assert _has_sufficient_exact_model_quality(battery_specs) is True

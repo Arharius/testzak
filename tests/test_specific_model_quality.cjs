@@ -46,6 +46,36 @@ const exactSpecs = [
   { name: 'Масса', value: 'не более 1.27 кг', unit: 'кг' },
 ];
 
+const batteryGenericSpecs = [
+  { name: 'Тип элемента питания', value: 'по типу товара', unit: '' },
+  { name: 'Типоразмер', value: 'по требованиям Заказчика', unit: '' },
+  { name: 'Напряжение', value: 'не менее 1.5 В', unit: 'В' },
+  { name: 'Количество в упаковке', value: 'в количестве, достаточном для эксплуатации', unit: 'шт' },
+  { name: 'Состояние товара', value: 'новый, не бывший в эксплуатации', unit: '' },
+  { name: 'Упаковка', value: 'заводская упаковка', unit: '' },
+  { name: 'Маркировка и идентификация', value: 'наличие заводской маркировки', unit: '' },
+];
+
+const batteryExactSpecs = [
+  { name: 'Тип элемента питания', value: 'щелочная батарейка', unit: '' },
+  { name: 'Типоразмер', value: 'AA / LR6', unit: '' },
+  { name: 'Напряжение', value: '1.5 В', unit: 'В' },
+  { name: 'Ёмкость', value: 'не менее 2850 мАч', unit: 'мАч' },
+  { name: 'Количество в упаковке', value: '4 шт.', unit: 'шт' },
+  { name: 'Срок хранения', value: 'до 10 лет', unit: 'лет' },
+  { name: 'Химическая система', value: 'алкалиновая', unit: '' },
+];
+
+const paperExactSpecs = [
+  { name: 'Количество слоев', value: '3 слоя', unit: '' },
+  { name: 'Количество рулонов в упаковке', value: '8 рулонов', unit: 'рулон' },
+  { name: 'Длина намотки рулона', value: 'не менее 18 м', unit: 'м' },
+  { name: 'Количество листов в рулоне', value: 'не менее 150 листов', unit: 'лист' },
+  { name: 'Состав', value: '100% первичная целлюлоза', unit: '' },
+  { name: 'Цвет', value: 'белый', unit: '' },
+  { name: 'Тиснение', value: 'тиснение и перфорация', unit: '' },
+];
+
 let failed = 0;
 
 if (!mod.isWeakExactModelSpec(genericSpecs[0])) {
@@ -67,6 +97,27 @@ if (!mod.hasSufficientExactModelCoverage(exactSpecs)) {
   console.error('FAIL exact spec pack should be accepted');
 } else {
   console.log('PASS exact spec pack is accepted');
+}
+
+if (mod.hasSufficientExactModelCoverage(batteryGenericSpecs)) {
+  failed += 1;
+  console.error('FAIL generic battery spec pack should be rejected');
+} else {
+  console.log('PASS generic battery spec pack is rejected');
+}
+
+if (!mod.hasSufficientExactModelCoverage(batteryExactSpecs)) {
+  failed += 1;
+  console.error('FAIL exact battery spec pack should be accepted');
+} else {
+  console.log('PASS exact battery spec pack is accepted');
+}
+
+if (!mod.hasSufficientExactModelCoverage(paperExactSpecs)) {
+  failed += 1;
+  console.error('FAIL exact household paper spec pack should be accepted');
+} else {
+  console.log('PASS exact household paper spec pack is accepted');
 }
 
 if (failed > 0) process.exit(1);

@@ -1,9 +1,12 @@
 import type { SpecItem } from './spec-processor';
 
 const GENERIC_EXACT_MODEL_VALUE_RE = /(по типу( товара| программного обеспечения)?|по назначению|по требованиям заказчика|в соответствии с (типом товара|требованиями заказчика)|в количестве, достаточном|достаточном для эксплуатации|типовая конфигурация|согласно требованиям|согласно документации|по спецификации производителя|при необходимости|по согласованию с заказчиком|новый, не бывший|заводская упаковка|эксплуатационной документации|наличие заводской маркировки)/i;
-const CORE_EXACT_MODEL_NAME_RE = /(процессор|оперативн|памят|накопител|ssd|hdd|nvme|графическ|видеокарт|сетев|ethernet|wi-?fi|bluetooth|порт|usb|hdmi|displayport|vga|dvi|размер|габарит|вес|масса|питан|блок питания|мощност|диагонал|разрешен|матриц|камера|аккумулятор|батаре|чипсет|сокет|слот|интерфейс|форм-фактор|корпус|монтаж|vesa|tpm|операционная система|ос)/i;
-const TECH_DETAIL_VALUE_RE = /(\d+\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|кг|г|mah|мач|гбит\/с|мбит\/с|fps|dpi|порт|порта|портов))|ddr\d|nvme|pcie|usb\s*\d|usb-c|type-c|hdmi|displayport|vga|dvi|wi-?fi\s*\d|bluetooth\s*\d|ethernet|rj-?45|intel|amd|core\s*i[3579]|ryzen|geforce|radeon|uhd|iris|windows|linux|sata|m\.2|vesa|tpm|ips|va|oled|lcd/i;
-const THIN_THRESHOLD_ONLY_RE = /^не\s+(?:менее|более)\s+\d+(?:[.,]\d+)?\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|кг|г|порт(?:а|ов)?|ядер?|поток(?:ов)?|мес)?$/i;
+const FORMAL_EXACT_MODEL_NAME_RE = /^(состояние(?:\s+товара)?|комплект\s+поставки|документац.*|маркировк.*|гаранти.*|упаковка(?:\s+и\s+маркировка)?|страна\s+происхождения|условия\s+поставки)$/i;
+const CORE_EXACT_MODEL_NAME_RE = /(процессор|оперативн|памят|накопител|ssd|hdd|nvme|графическ|видеокарт|сетев|ethernet|wi-?fi|bluetooth|порт|usb|hdmi|displayport|vga|dvi|размер|габарит|длина|ширина|высота|глубина|диаметр|толщин|вес|масса|питан|блок питания|мощност|диагонал|разрешен|матриц|камера|аккумулятор|батаре|чипсет|сокет|слот|интерфейс|форм-фактор|корпус|монтаж|vesa|tpm|операционная система|ос|типоразмер|тип(?!\s+товара)|материал|состав|объем|объём|емкост|ёмкост|плотност|цвет|класс|сорт|формат|фасовк|колич|сло|лист|рулон|намотк|покрыти|твердост|нагрузк|производительност|давлени|расход|температур|напряжен|ток|ресурс|срок годности|срок хранения|совместимост|стандарт|гост|ip|snr|выпуск|смыв|сидень|арматур|белизн|непрозрачност|химическ|бит|жало|насадк)/i;
+const QUALITATIVE_DETAIL_VALUE_RE = /^(щелочн|алкалин|литиев|первичн(ая|ой)? целлюлоз|вторичн(ое|ой) сыр[ьеё]|cr-v|s2|нержаве(ющая|ющая сталь)?|латун|керамик|полипропилен|полиэтилен|микрофибр|сенсорн|механическ|компакт|подвесн|горизонтальн|косой|двойн(?:ой|ое)|кругов(?:ой|ое)|аккумуляторн|сетев(?:ой|ое)|ударн|бесщеточн|бел(?:ый|ая)|сер(?:ый|ая)|черн(?:ый|ая)|матов(?:ый|ая)|глянцев(?:ый|ая)|перфорированн|тиснен(?:ие|ый)|однослойн|двухслойн|трехслойн|трёхслойн)/i;
+const TECH_DETAIL_VALUE_RE = /(\d+\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|м|кг|г|мл|л|м²|м2|м³|м3|мкм|бар|об\/мин|л\/мин|м\/с|лист(?:ов)?|рулон(?:ов)?|сло(?:й|я|ев)|шт\.?|пар|mah|мач|ah|ач|в|а|°c|°с|дб|db|лм|lm|cie|dpi|ppi|snr|ip\d{2}|pei|гбит\/с|мбит\/с|fps))|aa|aaa|lr6|lr03|cr2032|cr2025|cr2016|cr-v|torx|ph\d|pz\d|sl\d|tx\d|e27|e14|gu10|ral\s*\d+|no frost|ffp\d|pn\d|m\d{1,2}|a4|a3|fsc|гост|ту|щелочн|алкалин|литиев|целлюлоз|макулатур|нержаве|латун|керамик|полипропилен|полиэтилен|микрофибр|двойной слив|круговой смыв|горизонтальный выпуск|косой выпуск|компакт|подвесной|сенсорный|механический|аккумуляторный|сетевой|ударный|бесщеточный|phillips|pozidriv/i;
+const THIN_THRESHOLD_ONLY_RE = /^не\s+(?:менее|более)\s+\d+(?:[.,]\d+)?\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|м|кг|г|мл|л|лист(?:ов)?|рулон(?:ов)?|сло(?:й|я|ев)|шт\.?|пар|mah|мач|ah|ач|в|а|порт(?:а|ов)?|ядер?|поток(?:ов)?|мес)?$/i;
+const ALLOW_THRESHOLD_ONLY_EXACT_MODEL_NAME_RE = /(размер|габарит|длина|ширина|высота|глубина|диаметр|толщин|вес|масса|объем|объём|емкост|ёмкост|мощност|диагонал|напряжен|ток|колич|лист|рулон|сло|намотк|ресурс|срок годности|срок хранения)/i;
 
 function normalizeText(value: string): string {
   return String(value || '')
@@ -19,7 +22,9 @@ export function isWeakExactModelSpec(spec: Pick<SpecItem, 'name' | 'value'>): bo
   if (!name || !value) return true;
   if (GENERIC_EXACT_MODEL_VALUE_RE.test(normalizedValue)) return true;
   if (normalizedValue.includes('и/или') && !TECH_DETAIL_VALUE_RE.test(value)) return true;
-  if (CORE_EXACT_MODEL_NAME_RE.test(name) && THIN_THRESHOLD_ONLY_RE.test(normalizedValue)) return true;
+  if (CORE_EXACT_MODEL_NAME_RE.test(name) && THIN_THRESHOLD_ONLY_RE.test(normalizedValue) && !ALLOW_THRESHOLD_ONLY_EXACT_MODEL_NAME_RE.test(name)) return true;
+  if (FORMAL_EXACT_MODEL_NAME_RE.test(name)) return true;
+  if (CORE_EXACT_MODEL_NAME_RE.test(name) && QUALITATIVE_DETAIL_VALUE_RE.test(normalizedValue)) return false;
   if (CORE_EXACT_MODEL_NAME_RE.test(name) && !TECH_DETAIL_VALUE_RE.test(value) && normalizedValue.split(/\s+/).length <= 6) return true;
   return false;
 }
@@ -33,15 +38,16 @@ export function countConcreteExactModelSpecs(specs: SpecItem[]): number {
     const name = normalizeText(String(spec.name || ''));
     const value = normalizeText(String(spec.value || ''));
     if (!name || !value) return false;
+    if (FORMAL_EXACT_MODEL_NAME_RE.test(name)) return false;
     if (!CORE_EXACT_MODEL_NAME_RE.test(name)) return false;
     if (isWeakExactModelSpec(spec)) return false;
-    return TECH_DETAIL_VALUE_RE.test(value) || /\d/.test(value);
+    return TECH_DETAIL_VALUE_RE.test(value) || QUALITATIVE_DETAIL_VALUE_RE.test(value.toLowerCase()) || /\d/.test(value);
   }).length;
 }
 
 export function hasSufficientExactModelCoverage(specs: SpecItem[]): boolean {
-  if (!Array.isArray(specs) || specs.length < 10) return false;
+  if (!Array.isArray(specs) || specs.length < 7) return false;
   const weak = getWeakExactModelSpecs(specs).length;
   const concrete = countConcreteExactModelSpecs(specs);
-  return concrete >= 6 && weak <= Math.max(3, Math.floor(specs.length * 0.25));
+  return concrete >= 5 && weak <= Math.max(4, Math.floor(specs.length * 0.35));
 }

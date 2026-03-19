@@ -2,8 +2,11 @@ from pathlib import Path
 from search import (
     _build_internet_queries,
     _build_procurement_queries,
+    _build_exact_model_ai_aliases,
     _clean_specs_for_compliance,
     _enrich_with_baseline,
+    _extract_asus_model_code,
+    _extract_asus_support_code,
     _extract_msi_model_family,
     _extract_msi_search_family_query,
     _extract_msi_search_spec_url,
@@ -134,6 +137,31 @@ def test_exact_model_quality_accepts_precise_battery_specs():
 
 def test_extract_msi_model_family_parses_exact_sku():
     assert _extract_msi_model_family("MSI PRO DP21 14M-1069XRU") == ("PRO DP21 14M", "1069XRU")
+
+
+def test_extract_asus_model_code_parses_vivobook_series():
+    assert _extract_asus_model_code("Asus Vivobook X1503") == "X1503"
+    assert _extract_asus_model_code("ASUS X1503ZA") == "X1503ZA"
+
+
+def test_extract_asus_support_code_reads_supportonly_link():
+    markdown = """
+Support
+
+[X1503ZA](https://www.asus.com/supportonly/X1503ZA/HelpDesk/)
+"""
+    assert _extract_asus_support_code(markdown) == "X1503ZA"
+
+
+def test_build_exact_model_ai_aliases_enriches_asus_support_code():
+    original_fetch = __import__("search")._fetch_asus_support_code
+    __import__("search")._fetch_asus_support_code = lambda product: "X1503ZA"
+    try:
+        aliases = _build_exact_model_ai_aliases("Asus vivobook x1503", "laptop")
+    finally:
+        __import__("search")._fetch_asus_support_code = original_fetch
+    assert "ASUS X1503ZA" in aliases
+    assert "ASUS Vivobook X1503ZA" in aliases
 
 
 def test_extract_msi_search_family_query_supports_family_only_input():

@@ -107,7 +107,7 @@ try:
         search_eis_specs,
         _has_sufficient_exact_model_quality,
         _looks_like_specific_model_query,
-        _resolve_msi_exact_model_specs,
+        _resolve_exact_model_fallback_specs,
     )
     _search_import_source = "package"
 except ImportError:
@@ -117,7 +117,7 @@ except ImportError:
             search_eis_specs,
             _has_sufficient_exact_model_quality,
             _looks_like_specific_model_query,
-            _resolve_msi_exact_model_specs,
+            _resolve_exact_model_fallback_specs,
         )
         _search_import_source = "direct"
     except Exception as _search_err:
@@ -1756,11 +1756,11 @@ async def search_specs(
         logger.error(f"Internet search EXCEPTION: {e}", exc_info=True)
         specs = []
     if exact_model and not _has_sufficient_exact_model_quality(specs):
-        logger.warning(f"Internet search returned weak exact-model result for {req.product!r}, trying direct vendor resolver")
+        logger.warning(f"Internet search returned weak exact-model result for {req.product!r}, trying exact-model fallback resolver")
         try:
-            direct_specs = _resolve_msi_exact_model_specs(req.product.strip(), req.goods_type)
+            direct_specs = _resolve_exact_model_fallback_specs(req.product.strip(), req.goods_type)
         except Exception as e:
-            logger.error(f"MSI exact-model resolver EXCEPTION: {e}", exc_info=True)
+            logger.error(f"Exact-model fallback resolver EXCEPTION: {e}", exc_info=True)
             direct_specs = []
         specs = direct_specs if _has_sufficient_exact_model_quality(direct_specs) else []
     elapsed = _time.time() - t0

@@ -1945,6 +1945,86 @@ def _fetch_readable_page(url: str, timeout: int = 10) -> str:
     return _extract_text_from_html(direct, max_chars=18000) if direct else ""
 
 
+def _extract_asus_model_code(query: str) -> str:
+    upper = re.sub(r"[^A-Za-z0-9]+", " ", str(query or "")).upper()
+    for token in upper.split():
+        if re.fullmatch(r"[A-Z]{1,3}\d{4}[A-Z]{0,4}", token):
+            return token
+    for token in upper.split():
+        if re.fullmatch(r"[A-Z]{1,3}\d{4}", token):
+            return token
+    return ""
+
+
+def _extract_asus_search_key(query: str) -> str:
+    model_code = _extract_asus_model_code(query)
+    if model_code:
+        short_match = re.match(r"([A-Z]{1,3}\d{4})", model_code)
+        return (short_match.group(1) if short_match else model_code).lower()
+    normalized = _normalize_model_search_text(query)
+    token_match = re.search(r"\b([a-z]{1,3}\d{4})\b", normalized, flags=re.I)
+    if token_match:
+        return token_match.group(1).lower()
+    return ""
+
+
+def _extract_asus_support_code(markdown: str) -> str:
+    text = str(markdown or "")
+    match = re.search(r"supportonly/([A-Za-z0-9-]+)/HelpDesk", text, flags=re.I)
+    if match:
+        return match.group(1).upper()
+    match = re.search(r"\n\[([A-Z]{1,3}\d{4}[A-Z0-9-]{0,6})\]\(", text)
+    if match:
+        return match.group(1).upper()
+    return ""
+
+
+def _fetch_asus_support_code(product: str) -> str:
+    if "asus" not in str(product or "").lower():
+        return ""
+    explicit_code = _extract_asus_model_code(product)
+    if explicit_code and len(explicit_code) >= 7:
+        return explicit_code.upper()
+    search_key = _extract_asus_search_key(product)
+    if not search_key:
+        return explicit_code.upper() if explicit_code else ""
+    search_url = f"https://www.asus.com/searchresult?searchType=support&searchKey={quote_plus(search_key)}&page=1"
+    markdown = _fetch_readable_page(search_url, timeout=8)
+    support_code = _extract_asus_support_code(markdown)
+    return support_code or (explicit_code.upper() if explicit_code else "")
+
+
+def _build_exact_model_ai_aliases(product: str, goods_type: str = "") -> list[str]:
+    aliases = [re.sub(r"\s+", " ", str(product or "")).strip()]
+    normalized = _normalize_model_search_text(product)
+
+    if "asus" in normalized:
+        support_code = _fetch_asus_support_code(product)
+        if support_code:
+            aliases.extend([
+                f"{product} {support_code}",
+                f"ASUS {support_code}",
+            ])
+            if "vivobook" in normalized:
+                aliases.append(f"ASUS Vivobook {support_code}")
+            if "zenbook" in normalized:
+                aliases.append(f"ASUS Zenbook {support_code}")
+            if "expertbook" in normalized:
+                aliases.append(f"ASUS ExpertBook {support_code}")
+            if "proart" in normalized:
+                aliases.append(f"ASUS ProArt {support_code}")
+            if "tuf" in normalized:
+                aliases.append(f"ASUS TUF {support_code}")
+            if "rog" in normalized:
+                aliases.append(f"ASUS ROG {support_code}")
+
+    type_hint = _get_type_hint(goods_type)
+    if type_hint:
+        aliases.append(f"{product} {type_hint}")
+
+    return _dedupe_query_list(aliases)
+
+
 def _extract_msi_model_family(query: str) -> tuple[str, str] | None:
     cleaned = re.sub(r"\bmsi\b", " ", str(query or ""), flags=re.I)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" -_/")
@@ -2341,6 +2421,51 @@ def _resolve_msi_search_page_specs(product: str, goods_type: str = "") -> list[d
     return []
 
 
+def _resolve_asus_exact_model_specs(product: str, goods_type: str = "") -> list[dict]:
+    if "asus" not in str(product or "").lower():
+        return []
+
+    for alias in _build_exact_model_ai_aliases(product, goods_type):
+        specs = _ai_generate_model_specs(alias, goods_type)
+        if _has_sufficient_exact_model_quality(specs):
+            logger.info(f"[vendor] ASUS exact-model AI hit: {product!r} -> {alias!r}")
+            return specs
+    return []
+
+
+def _resolve_vendor_exact_model_specs(product: str, goods_type: str = "") -> list[dict]:
+    resolvers = [
+        _resolve_msi_exact_model_specs,
+        _resolve_msi_search_page_specs,
+        _resolve_asus_exact_model_specs,
+    ]
+    for resolver in resolvers:
+        try:
+            specs = resolver(product, goods_type)
+        except Exception as e:
+            logger.error(f"[exact-model] vendor resolver {resolver.__name__} failed for {product!r}: {e}", exc_info=True)
+            specs = []
+        if _has_sufficient_exact_model_quality(specs):
+            return specs
+    return []
+
+
+def _resolve_exact_model_fallback_specs(product: str, goods_type: str = "") -> list[dict]:
+    if not _looks_like_specific_model_query(product):
+        return []
+
+    vendor_specs = _resolve_vendor_exact_model_specs(product, goods_type)
+    if _has_sufficient_exact_model_quality(vendor_specs):
+        return vendor_specs
+
+    for alias in _build_exact_model_ai_aliases(product, goods_type):
+        specs = _ai_generate_model_specs(alias, goods_type)
+        if _has_sufficient_exact_model_quality(specs):
+            logger.info(f"[exact-model] generic AI fallback hit: {product!r} -> {alias!r}")
+            return specs
+    return []
+
+
 def _bing_rss_search(query: str, num: int = 5, timeout: int = 12) -> list[dict]:
     xml = _fetch_url(f"https://www.bing.com/search?format=rss&q={quote_plus(query)}", timeout=timeout)
     if not xml or "<rss" not in xml.lower():
@@ -2603,14 +2728,10 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
 
     exact_model = _looks_like_specific_model_query(product)
     if exact_model:
-        direct_vendor_specs = _resolve_msi_exact_model_specs(product, goods_type)
-        if direct_vendor_specs:
-            _cache_set(cache_key, direct_vendor_specs)
-            return direct_vendor_specs
-        family_vendor_specs = _resolve_msi_search_page_specs(product, goods_type)
-        if family_vendor_specs:
-            _cache_set(cache_key, family_vendor_specs)
-            return family_vendor_specs
+        vendor_exact_specs = _resolve_vendor_exact_model_specs(product, goods_type)
+        if vendor_exact_specs:
+            _cache_set(cache_key, vendor_exact_specs)
+            return vendor_exact_specs
     elif "msi" in product.lower():
         family_vendor_specs = _resolve_msi_search_page_specs(product, goods_type)
         if family_vendor_specs:
@@ -2650,6 +2771,10 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
     if not deduped_results:
         logger.warning(f"[internet] No relevant search results for: {search_query}")
         if exact_model:
+            fallback_specs = _resolve_exact_model_fallback_specs(product, goods_type)
+            if fallback_specs:
+                _cache_set(cache_key, fallback_specs)
+                return fallback_specs
             return []
         return baseline_specs
 
@@ -2681,6 +2806,10 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
 
     if not context_parts:
         if exact_model:
+            fallback_specs = _resolve_exact_model_fallback_specs(product, goods_type)
+            if fallback_specs:
+                _cache_set(cache_key, fallback_specs)
+                return fallback_specs
             return []
         return baseline_specs
 
@@ -2693,6 +2822,10 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
         final_specs = _clean_specs_for_compliance(_dedupe_specs(heuristic_specs))
         if not _has_sufficient_exact_model_quality(final_specs):
             logger.warning(f"[internet] Exact model result stayed generic for {product!r}")
+            fallback_specs = _resolve_exact_model_fallback_specs(product, goods_type)
+            if fallback_specs:
+                _cache_set(cache_key, fallback_specs)
+                return fallback_specs
             return []
     else:
         specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, product, goods_type))

@@ -811,6 +811,14 @@ def _has_structured_code_token(token: str) -> bool:
     return bool(re.search(r"[a-zа-я0-9]+[-_/+.][a-zа-я0-9]+", token, flags=re.I))
 
 
+def _has_brand_series_pattern(informative_tokens: list[str], has_brand_hint: bool) -> bool:
+    if not has_brand_hint or len(informative_tokens) < 2:
+        return False
+    has_brand_like_word = any(re.search(r"[a-zа-я]", token, flags=re.I) and not re.search(r"\d", token) and len(token) >= 3 for token in informative_tokens)
+    has_series_token = any(re.fullmatch(r"\d{3,5}[a-z]{0,2}", token, flags=re.I) for token in informative_tokens)
+    return has_brand_like_word and has_series_token
+
+
 def _looks_like_specific_model_query(value: str) -> bool:
     raw = str(value or "").strip()
     if not raw or len(raw) > 180:
@@ -836,6 +844,8 @@ def _looks_like_specific_model_query(value: str) -> bool:
     if looks_like_spec_sentence and not has_code_token:
         return False
     if has_code_token:
+        return True
+    if _has_brand_series_pattern(informative_tokens, has_brand_hint):
         return True
     if has_brand_hint and (long_latin_tokens >= 2 or has_upper_series):
         return True

@@ -22,6 +22,8 @@ const cases = [
   { input: 'MSI PRO DP21 14M-1069XRU', expected: true },
   { input: 'Dell OptiPlex 7010', expected: true },
   { input: 'Гравитон Н15', expected: true },
+  { input: 'asus 1503', expected: true },
+  { input: 'HP 250', expected: true },
   { input: 'MikroTik CRS326-24G-2S+RM', expected: true },
   { input: 'Astra Linux Special Edition 1.8', expected: true },
   { input: 'системный блок', expected: false },

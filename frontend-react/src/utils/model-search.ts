@@ -37,6 +37,13 @@ function hasStructuredCodeToken(token: string): boolean {
   return /[a-zа-я0-9]+[-_/+.][a-zа-я0-9]+/i.test(token);
 }
 
+function hasBrandSeriesPattern(informativeTokens: string[], hasBrandHint: boolean): boolean {
+  if (!hasBrandHint || informativeTokens.length < 2) return false;
+  const hasBrandLikeWord = informativeTokens.some((token) => /[a-zа-я]/i.test(token) && !/\d/.test(token) && token.length >= 3);
+  const hasSeriesToken = informativeTokens.some((token) => /^\d{3,5}[a-z]{0,2}$/i.test(token));
+  return hasBrandLikeWord && hasSeriesToken;
+}
+
 export function looksLikeSpecificModelQuery(value: string): boolean {
   const raw = String(value || '').trim();
   if (!raw) return false;
@@ -61,6 +68,7 @@ export function looksLikeSpecificModelQuery(value: string): boolean {
 
   if (looksLikeSpecSentence && !hasCodeToken) return false;
   if (hasCodeToken) return true;
+  if (hasBrandSeriesPattern(informativeTokens, hasBrandHint)) return true;
   if (hasBrandHint && (longLatinTokens >= 2 || hasUpperSeries)) return true;
   if (hasUpperSeries && informativeTokens.length >= 3) {
     return hasBrandHint || informativeTokens.some((token) => hasAlphaDigitMix(token));

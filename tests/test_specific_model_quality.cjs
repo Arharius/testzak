@@ -27,6 +27,8 @@ const genericSpecs = [
   { name: 'Графическая подсистема', value: 'Интегрированный и/или дискретный графический адаптер по типу товара', unit: '' },
   { name: 'Сетевые интерфейсы', value: 'Ethernet 1 Гбит/с и/или беспроводные интерфейсы по требованиям Заказчика', unit: '' },
   { name: 'Порты подключения', value: 'USB, видеоинтерфейсы и аудиоразъёмы в количестве, достаточном для эксплуатации', unit: '' },
+  { name: 'Удалённое администрирование / мониторинг состояния', value: 'наличие штатных средств диагностики, мониторинга и контроля аппаратного состояния', unit: 'наличие' },
+  { name: 'Поддержка модернизации и замены компонентов', value: 'наличие доступа к обслуживаемым компонентам и возможности штатной модернизации в рамках платформы', unit: 'наличие' },
   { name: 'Состояние товара', value: 'новый, не бывший в эксплуатации', unit: '' },
   { name: 'Упаковка', value: 'заводская упаковка', unit: '' },
   { name: 'Маркировка и идентификация', value: 'наличие заводской маркировки', unit: '' },
@@ -99,6 +101,13 @@ if (!mod.isWeakExactModelSpec(genericSpecs[0])) {
   console.error('FAIL generic processor spec should be weak');
 } else {
   console.log('PASS generic processor spec is weak');
+}
+
+if (!mod.isWeakExactModelSpec(genericSpecs[6]) || !mod.isWeakExactModelSpec(genericSpecs[7])) {
+  failed += 1;
+  console.error('FAIL generic operational specs should be weak');
+} else {
+  console.log('PASS generic operational specs are weak');
 }
 
 if (mod.hasSufficientExactModelCoverage(genericSpecs)) {

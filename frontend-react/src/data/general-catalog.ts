@@ -404,6 +404,13 @@ export const GENERAL_CATALOG: Record<string, GeneralGoodsItem> = {
     placeholder: 'Например: бумага туалетная 3 слоя, белая, 8 рулонов, 100% целлюлоза...',
     specHint: 'Количество слоёв, количество рулонов в упаковке, длина намотки рулона (м), количество листов, состав (целлюлоза/вторсырьё), цвет, тиснение/перфорация',
   },
+  shredderOil: {
+    name: 'Масло / смазка для шредера',
+    okpd2: '20.59.41.000',
+    okpd2name: 'Материалы смазочные',
+    placeholder: 'Например: масло для уничтожителей документов, шредеров, флакон 350 мл...',
+    specHint: 'Назначение (для уничтожителей документов / шредеров), форма выпуска (жидкость/флакон/капельница), объём фасовки (мл), совместимость с перекрестной/продольной резкой, безопасный состав без агрессивных растворителей, антикоррозионные и противоизносные свойства, упаковка, маркировка',
+  },
   detergent: {
     name: 'Моющие / чистящие средства',
     okpd2: '20.41.31.110',
@@ -1108,7 +1115,7 @@ export const GENERAL_GROUPS: GeneralGoodsGroup[] = [
   ]},
   { label: '📎 Канцелярские товары', items: [
     'paperA4', 'paperA3', 'stationerySet', 'pen', 'folder', 'whiteboard', 'flipchart',
-    'calculator', 'envelope',
+    'calculator', 'envelope', 'shredderOil',
   ]},
   { label: '👷 Спецодежда и СИЗ', items: [
     'workwearSuit', 'workwearWinter', 'safetyBoots', 'hardHat', 'gloves', 'vest',
@@ -1184,7 +1191,7 @@ export function getGeneralNacRegime(goodsType: string): 'pp616' | 'none' {
   // Товары без ограничений нацрежима
   const NO_REGIME = new Set([
     'paperA4', 'paperA3', 'pen', 'folder', 'envelope', 'stationerySet',
-    'waterDrinking', 'foodCatering', 'detergent', 'cleaningSet', 'toiletPaper',
+    'waterDrinking', 'foodCatering', 'detergent', 'cleaningSet', 'toiletPaper', 'shredderOil',
     'box', 'stretchFilm', 'printedMaterial', 'stamp',
     'labReagents', 'labGlassware', 'fuel',
     'bedLinen', 'curtains', 'carpet',

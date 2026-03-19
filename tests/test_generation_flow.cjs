@@ -171,6 +171,11 @@ const checks = [
       && workspace.includes("Следующий шаг: сгенерировать ТЗ")
       && workspace.includes('showPublicationControl={hasPublicationBaseline && liveLegalSummarySourceRows.length > 0}'),
   },
+  {
+    name: 'Freeform office consumables can override device autodetect for shredder oil',
+    ok: workspace.includes("return 'shredderOil';")
+      && workspace.includes("масло для шредера 350 мл"),
+  },
 ];
 
 let failed = 0;

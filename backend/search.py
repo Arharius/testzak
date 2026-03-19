@@ -2129,20 +2129,20 @@ def _fetch_asus_support_title(product: str, support_code: str = "") -> str:
 
 
 def _build_asus_searchresult_urls(product: str, goods_type: str = "", support_code: str = "", search_key: str = "", support_title: str = "") -> list[str]:
-    support_code = support_code or _fetch_asus_support_code(product)
-    search_key = search_key or _extract_asus_search_key(product).upper()
-    support_title = support_title or _fetch_asus_support_title(product, support_code=support_code)
+    support_code = str(support_code or "").strip().upper()
+    search_key = str(search_key or _extract_asus_search_key(product)).strip().upper()
+    support_title = re.sub(r"\s+", " ", str(support_title or "")).strip()
+    product = re.sub(r"\s+", " ", str(product or "")).strip()
     queries = [
         support_code,
         search_key,
-        support_title,
         product,
+        support_title,
         f"ASUS {support_code}" if support_code else "",
     ]
     locale_roots = [
         "https://www.asus.com/co",
         "https://www.asus.com",
-        "https://www.asus.com/jp",
     ]
     type_params = ""
     if goods_type == "laptop":
@@ -2153,9 +2153,9 @@ def _build_asus_searchresult_urls(product: str, goods_type: str = "", support_co
             cleaned = re.sub(r"\s+", " ", str(query or "")).strip()
             if not cleaned:
                 continue
-            urls.append(f"{root}/searchresult?searchKey={quote_plus(cleaned)}&page=1")
             if type_params:
                 urls.append(f"{root}/searchresult?searchKey={quote_plus(cleaned)}&page=1{type_params}")
+            urls.append(f"{root}/searchresult?searchKey={quote_plus(cleaned)}&page=1")
     return _dedupe_query_list(urls)
 
 
@@ -2851,9 +2851,9 @@ def _resolve_asus_exact_model_specs(product: str, goods_type: str = "") -> list[
     if "asus" not in str(product or "").lower():
         return []
 
-    support_code = _fetch_asus_support_code(product)
+    support_code = _extract_asus_model_code(product).upper()
     search_key = _extract_asus_search_key(product).upper()
-    support_title = _fetch_asus_support_title(product, support_code=support_code)
+    support_title = ""
     localized_results: list[dict] = []
     seen_product_links: set[str] = set()
 
@@ -2863,16 +2863,33 @@ def _resolve_asus_exact_model_specs(product: str, goods_type: str = "") -> list[
         support_code=support_code,
         search_key=search_key,
         support_title=support_title,
-    )[:8]:
+    )[:6]:
         readable = _fetch_readable_page(search_url, timeout=8)
         if not readable:
             continue
+        current_results: list[dict] = []
         for item in _extract_asus_product_result_urls(readable):
             link = str(item.get("link", "")).strip()
             if not link or link in seen_product_links:
                 continue
             seen_product_links.add(link)
             localized_results.append(item)
+            current_results.append(item)
+        if current_results:
+            best_current_score = max(
+                _score_asus_product_result(
+                    item,
+                    product,
+                    support_code=support_code,
+                    search_key=search_key,
+                    support_title=support_title,
+                )
+                for item in current_results
+            )
+            # Once ASUS search already returned a strongly matching product page,
+            # stop spending 30-40s on broader fallback queries.
+            if best_current_score >= 70 or len(localized_results) >= 3:
+                break
 
     localized_results.sort(
         key=lambda item: _score_asus_product_result(
@@ -2885,16 +2902,16 @@ def _resolve_asus_exact_model_specs(product: str, goods_type: str = "") -> list[
         reverse=True,
     )
 
-    for item in localized_results[:6]:
+    for item in localized_results[:3]:
         product_url = str(item.get("link", "")).strip()
         for candidate_url in _build_asus_techspec_candidates(product_url):
-            readable = _fetch_readable_page(candidate_url, timeout=10)
+            readable = _fetch_readable_page(candidate_url, timeout=8)
             if not readable:
                 continue
             if candidate_url == product_url:
                 extracted_techspec = _extract_asus_techspec_url(readable)
                 if extracted_techspec and extracted_techspec != candidate_url:
-                    readable = _fetch_readable_page(extracted_techspec, timeout=10)
+                    readable = _fetch_readable_page(extracted_techspec, timeout=8)
                     candidate_url = extracted_techspec
                     if not readable:
                         continue

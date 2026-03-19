@@ -226,6 +226,25 @@ def test_build_asus_searchresult_urls_include_localized_and_global_paths():
     assert "https://www.asus.com/co/searchresult?searchKey=X1503ZA&page=1" in urls
     assert "https://www.asus.com/searchresult?searchKey=ASUS+Vivobook+15X+OLED+X1503ZA&page=1" in urls
     assert any("searchType=products&pdLine=laptops&category=for-home" in url for url in urls)
+    assert urls[0] == "https://www.asus.com/co/searchresult?searchKey=X1503ZA&page=1&searchType=products&pdLine=laptops&category=for-home"
+
+
+def test_build_asus_searchresult_urls_do_not_depend_on_support_fetch_side_effects():
+    search_module = __import__("search")
+    original_support = search_module._fetch_asus_support_code
+    original_title = search_module._fetch_asus_support_title
+    try:
+        search_module._fetch_asus_support_code = lambda product: (_ for _ in ()).throw(AssertionError("unexpected support code fetch"))
+        search_module._fetch_asus_support_title = lambda product, support_code="": (_ for _ in ()).throw(AssertionError("unexpected support title fetch"))
+        urls = _build_asus_searchresult_urls(
+            "Asus Vivobook X1503",
+            goods_type="laptop",
+            search_key="X1503",
+        )
+    finally:
+        search_module._fetch_asus_support_code = original_support
+        search_module._fetch_asus_support_title = original_title
+    assert "https://www.asus.com/co/searchresult?searchKey=X1503&page=1&searchType=products&pdLine=laptops&category=for-home" in urls
 
 
 def test_extract_asus_product_result_urls_reads_localized_search_results():
@@ -440,7 +459,7 @@ Need Help?
 """
 
         def fake_fetch(url, timeout=10):
-            if "searchresult" in url and "X1503ZA" in url:
+            if "searchresult" in url and ("X1503ZA" in url or "X1503" in url):
                 return localized_search
             if "Vivobook-15X-OLED-X1503-12th-Gen-Intel/techspec" in url:
                 return techspec

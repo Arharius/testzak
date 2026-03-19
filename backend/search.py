@@ -819,6 +819,20 @@ def _has_brand_series_pattern(informative_tokens: list[str], has_brand_hint: boo
     return has_brand_like_word and has_series_token
 
 
+def _looks_like_asus_family_series_query(normalized: str, informative_tokens: list[str]) -> bool:
+    if "asus" not in normalized:
+        return False
+    if len(informative_tokens) < 2 or len(informative_tokens) > 4:
+        return False
+    has_strong_code_token = any(
+        re.fullmatch(r"(?:[a-z]{1,3}\d{4}[a-z0-9]{2,}|[a-z0-9]+[-_/+.][a-z0-9]+)", token, flags=re.I)
+        for token in informative_tokens
+    )
+    if has_strong_code_token:
+        return False
+    return any(re.fullmatch(r"(?:[a-z]?\d{3,5}|\d{3,5})", token, flags=re.I) for token in informative_tokens)
+
+
 def _looks_like_specific_model_query(value: str) -> bool:
     raw = str(value or "").strip()
     if not raw or len(raw) > 180:
@@ -833,6 +847,8 @@ def _looks_like_specific_model_query(value: str) -> bool:
         return False
     informative_tokens = [token for token in tokens if token not in _GENERIC_MODEL_TOKENS]
     if len(informative_tokens) < 2:
+        return False
+    if _looks_like_asus_family_series_query(normalized, informative_tokens):
         return False
     has_brand_hint = any(brand in normalized for brand in _BRAND_HINTS)
     has_code_token = any(_has_alpha_digit_mix(token) or _has_structured_code_token(token) for token in informative_tokens)

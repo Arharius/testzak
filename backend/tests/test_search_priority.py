@@ -59,7 +59,9 @@ def test_specific_model_detection_matches_frontend_expectations():
     assert _looks_like_specific_model_query("MSI PRO DP21 14M-1069XRU") is True
     assert _looks_like_specific_model_query("Dell OptiPlex 7010") is True
     assert _looks_like_specific_model_query("Гравитон Н15") is True
-    assert _looks_like_specific_model_query("asus 1503") is True
+    assert _looks_like_specific_model_query("asus 1503") is False
+    assert _looks_like_specific_model_query("Asus Vivobook X1503") is False
+    assert _looks_like_specific_model_query("ASUS X1503ZA") is True
     assert _looks_like_specific_model_query("HP 250") is True
     assert _looks_like_specific_model_query("Монитор серии 07 RDW") is False
     assert _looks_like_specific_model_query("системный блок") is False

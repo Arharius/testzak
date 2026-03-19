@@ -44,6 +44,16 @@ function hasBrandSeriesPattern(informativeTokens: string[], hasBrandHint: boolea
   return hasBrandLikeWord && hasSeriesToken;
 }
 
+function looksLikeAsusFamilySeriesQuery(normalized: string, informativeTokens: string[]): boolean {
+  if (!normalized.includes('asus')) return false;
+  if (informativeTokens.length < 2 || informativeTokens.length > 4) return false;
+
+  const hasStrongCodeToken = informativeTokens.some((token) => /^(?:[a-z]{1,3}\d{4}[a-z0-9]{2,}|[a-z0-9]+[-_/+.][a-z0-9]+)$/i.test(token));
+  if (hasStrongCodeToken) return false;
+
+  return informativeTokens.some((token) => /^(?:[a-z]?\d{3,5}|\d{3,5})$/i.test(token));
+}
+
 export function looksLikeSpecificModelQuery(value: string): boolean {
   const raw = String(value || '').trim();
   if (!raw) return false;
@@ -58,6 +68,7 @@ export function looksLikeSpecificModelQuery(value: string): boolean {
 
   const informativeTokens = tokens.filter((token) => !GENERIC_MODEL_TOKENS.has(token));
   if (informativeTokens.length < 2) return false;
+  if (looksLikeAsusFamilySeriesQuery(normalized, informativeTokens)) return false;
 
   const hasBrandHint = BRAND_HINTS.some((brand) => normalized.includes(brand));
   const hasCodeToken = informativeTokens.some((token) => hasAlphaDigitMix(token) || hasStructuredCodeToken(token));

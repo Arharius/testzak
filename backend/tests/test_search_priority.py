@@ -144,3 +144,4 @@ Product Dimension (WxDxH) (mm)Product Dimension (WxDxH) (mm) 204 x 208 x 54.8 Pr
     assert by_name["Количество ядер процессора"] == "20"
     assert by_name["Количество потоков процессора"] == "28"
     assert by_name["Беспроводные интерфейсы"] == "Wi-Fi 6E+BT"
+    assert _has_sufficient_exact_model_quality(specs) is True

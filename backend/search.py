@@ -1085,6 +1085,15 @@ _QUALITATIVE_DETAIL_VALUE_RE = re.compile(
     r"однослойн|двухслойн|трехслойн|трёхслойн)",
     re.I,
 )
+_STRUCTURED_EXACT_MODEL_VALUE_RE = re.compile(
+    r"(\d+\s*(gb|mb|tb|ghz|mhz|hz|w|kg|g|mm|cm|m|v|a)\b|"
+    r"\d+gb\(\d+gb[*x]\d+\)|\d+x\s*(?:\(v?\d(?:\.\d+)?\))?|"
+    r"\d+(?:\.\d+)?\s*x\s*\d+(?:\.\d+)?(?:\s*x\s*\d+(?:\.\d+)?)?|"
+    r"\b(?:ddr\d|so-?dimm|sdram|wi-?fi\s*\d[\w.+-]*|bluetooth|intel\s+core|amd\s+ryzen|"
+    r"h\d{3,4}|q\d{3,4}|b\d{3,4}|z\d{3,4}|rj-?45|usb\s*\d(?:\.\d)?|hdmi|displayport|"
+    r"nvme|m\.?2|sata)\b)",
+    re.I,
+)
 _TECH_DETAIL_VALUE_RE = re.compile(
     r"(\d+\s*(гб|мб|тб|ггц|мгц|вт|дюйм|мм|см|м|кг|г|мл|л|м²|м2|м³|м3|мкм|бар|об/мин|л/мин|м/с|"
     r"лист(?:ов)?|рулон(?:ов)?|сло(?:й|я|ев)|шт\.?|пар|mah|мач|ah|ач|в|а|°c|°с|дб|db|лм|lm|cie|dpi|"
@@ -1106,12 +1115,22 @@ _ALLOW_THRESHOLD_ONLY_EXACT_MODEL_NAME_RE = re.compile(
     r"срок годности|срок хранения)",
     re.I,
 )
+_ALLOW_PLAIN_NUMERIC_EXACT_MODEL_NAME_RE = re.compile(
+    r"(ядер|поток|слот|порт|вес|масса|размер|габарит|длина|ширина|высота|глубина|"
+    r"диаметр|толщин|объем|объ[её]м|емкост|[её]мкост|частот|скорост)",
+    re.I,
+)
 
 
 def _is_weak_exact_model_spec(item: dict[str, Any]) -> bool:
     name = re.sub(r"\s+", " ", str(item.get("name", ""))).strip().lower().replace("ё", "е")
     value = re.sub(r"\s+", " ", str(item.get("value", ""))).strip()
     normalized_value = value.lower().replace("ё", "е")
+    normalized_tokens = [token for token in re.split(r"\s+", normalized_value) if token]
+    has_structured_token = any(
+        _has_alpha_digit_mix(token) or _has_structured_code_token(token)
+        for token in normalized_tokens
+    )
     if not name or not value:
         return True
     if _GENERIC_EXACT_MODEL_VALUE_RE.search(normalized_value):
@@ -1127,6 +1146,14 @@ def _is_weak_exact_model_spec(item: dict[str, Any]) -> bool:
     if _FORMAL_EXACT_MODEL_NAME_RE.search(name):
         return True
     if _CORE_EXACT_MODEL_NAME_RE.search(name) and _QUALITATIVE_DETAIL_VALUE_RE.search(normalized_value):
+        return False
+    if (
+        _CORE_EXACT_MODEL_NAME_RE.search(name)
+        and re.fullmatch(r"\d+(?:[.,]\d+)?", normalized_value)
+        and _ALLOW_PLAIN_NUMERIC_EXACT_MODEL_NAME_RE.search(name)
+    ):
+        return False
+    if _CORE_EXACT_MODEL_NAME_RE.search(name) and (_STRUCTURED_EXACT_MODEL_VALUE_RE.search(normalized_value) or has_structured_token):
         return False
     if _CORE_EXACT_MODEL_NAME_RE.search(name) and not _TECH_DETAIL_VALUE_RE.search(value) and len(normalized_value.split()) <= 6:
         return True

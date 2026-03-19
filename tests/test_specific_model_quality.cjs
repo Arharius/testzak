@@ -76,6 +76,22 @@ const paperExactSpecs = [
   { name: 'Тиснение', value: 'тиснение и перфорация', unit: '' },
 ];
 
+const msiVendorSpecs = [
+  { name: 'Чипсет', value: 'H610', unit: '' },
+  { name: 'Объем оперативной памяти', value: '16GB(8GB*2)', unit: '' },
+  { name: 'Тип оперативной памяти', value: 'DDR5 SDRAM', unit: '' },
+  { name: 'Процессор', value: 'Intel Core i7 Processor 14700', unit: '' },
+  { name: 'Количество ядер процессора', value: '20', unit: '' },
+  { name: 'Количество потоков процессора', value: '28', unit: '' },
+  { name: 'Объем SSD', value: '512GB', unit: '' },
+  { name: 'Беспроводные интерфейсы', value: 'Wi-Fi 6E+BT', unit: '' },
+  { name: 'Порт Ethernet RJ-45', value: '1', unit: '' },
+  { name: 'Порт HDMI', value: '1x (v2.1)', unit: '' },
+  { name: 'Порт DisplayPort', value: '1x (v1.4)', unit: '' },
+  { name: 'Масса нетто', value: '1.27', unit: '' },
+  { name: 'Размеры корпуса', value: '204 x 208 x 54.8', unit: '' },
+];
+
 let failed = 0;
 
 if (!mod.isWeakExactModelSpec(genericSpecs[0])) {
@@ -118,6 +134,13 @@ if (!mod.hasSufficientExactModelCoverage(paperExactSpecs)) {
   console.error('FAIL exact household paper spec pack should be accepted');
 } else {
   console.log('PASS exact household paper spec pack is accepted');
+}
+
+if (!mod.hasSufficientExactModelCoverage(msiVendorSpecs)) {
+  failed += 1;
+  console.error('FAIL MSI vendor spec pack should be accepted');
+} else {
+  console.log('PASS MSI vendor spec pack is accepted');
 }
 
 if (failed > 0) process.exit(1);

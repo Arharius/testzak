@@ -1778,7 +1778,7 @@ export function getNacRegime(goodsType: string): NacRegime {
 const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   // ── Ноутбуки (бренды + линейки) ──
   { tokens: [
-    'ноутбук','notebook','laptop',
+    'ноутбук','ноут','notebook','laptop',
     'vivobook','zenbook','thinkpad','macbook','matebook','probook','elitebook',
     'inspiron','latitude','pavilion','envy','spectre','ideapad','legion',
     'travelmate','extensa','swift','spin','chromebook','predator','nitro',
@@ -1799,7 +1799,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
 
   // ── Системные блоки / десктопы ──
   { tokens: [
-    'системный блок','десктоп','desktop','nettop','мини-пк','mini pc','неттоп',
+    'системный блок','системник','десктоп','desktop','nettop','мини-пк','mini pc','неттоп',
     'гравитон','graviton','iru ','iru офис','iru office',
     'aquarius pro','aquarius cmp','yadro vegman n','irbis','nuc','optiplex',
     'prodesk','elitedesk','thinkcentre','thinkstation',
@@ -1864,7 +1864,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['гарнитура','headset','наушники с микрофон','jabra evolve','poly blackwire','plantronics'], type: 'headset' },
 
   // ── Клавиатуры ──
-  { tokens: ['клавиатура','keyboard','клав'], type: 'keyboard' },
+  { tokens: ['клавиатура','keyboard','клав','клава'], type: 'keyboard' },
 
   // ── Мыши ──
   { tokens: ['мышь','мышка','mouse','манипулятор'], type: 'mouse' },
@@ -1923,10 +1923,10 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['hdd','жёсткий диск','жесткий диск','seagate','western digital','wd purple','wd red','wd gold','toshiba enterprise'], type: 'hdd' },
 
   // ── RAM ──
-  { tokens: ['оперативная память','озу','ram','dimm','so-dimm','ecc dimm','rdimm','lrdimm','ddr4','ddr5','kingston fury','crucial ballistix','samsung m3','hynix hma'], type: 'ram' },
+  { tokens: ['оперативная память','оперативка','озу','ram','dimm','so-dimm','ecc dimm','rdimm','lrdimm','ddr4','ddr5','kingston fury','crucial ballistix','samsung m3','hynix hma'], type: 'ram' },
 
   // ── Флешки ──
-  { tokens: ['флеш-накопитель','флешка','flash drive','usb flash','usb накопитель','transcend jetflash','sandisk cruzer'], type: 'flashDrive' },
+  { tokens: ['флеш-накопитель','флеш накопитель','флешка','флэшка','флеш','flash drive','usb flash','usb накопитель','usb-накопитель','usb флеш','юсб флеш','transcend jetflash','sandisk cruzer'], type: 'flashDrive' },
 
   // ── Оптические носители / ленточные ──
   { tokens: ['cd-rw','cdrw','перезаписываемый cd','компакт-диск rw'], type: 'cdrw' },
@@ -1960,8 +1960,8 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
 
   // ── Комплектующие ──
   { tokens: ['процессор','cpu','intel core','amd ryzen','intel xeon','amd epyc','эльбрус','байкал-м'], type: 'cpu' },
-  { tokens: ['видеокарта','gpu','graphics card','geforce','radeon','nvidia a','nvidia t','quadro'], type: 'gpu' },
-  { tokens: ['материнская плата','motherboard','mainboard','системная плата'], type: 'motherboard' },
+  { tokens: ['видеокарта','видюха','gpu','graphics card','geforce','radeon','nvidia a','nvidia t','quadro'], type: 'gpu' },
+  { tokens: ['материнская плата','материнка','motherboard','mainboard','системная плата'], type: 'motherboard' },
   { tokens: ['блок питания пк','блок питания для','psu','power supply','бп 500w','бп 650w','бп 750w','бп 850w'], type: 'psu' },
   { tokens: ['система охлаждения','кулер','cooler','радиатор','вентилятор','fan 120','fan 140','thermalright','noctua','deepcool','be quiet'], type: 'cooling' },
 

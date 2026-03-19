@@ -88,6 +88,7 @@ type WorkspaceRowsTableProps = {
   onRefreshRowFromSource: (rowId: number, source: 'internet' | 'eis') => void;
   onOpenAuthPanel: () => void;
   onGenerate: () => void;
+  onGenerateRow: (rowId: number) => void;
   onUpdateSpec: (rowId: number, specIdx: number, field: 'name' | 'value' | 'unit' | 'group', newVal: string) => void;
   onDeleteSpec: (rowId: number, specIdx: number) => void;
   onAddSpec: (rowId: number, afterIdx?: number) => void;
@@ -138,6 +139,7 @@ export function WorkspaceRowsTable({
   onRefreshRowFromSource,
   onOpenAuthPanel,
   onGenerate,
+  onGenerateRow,
   onUpdateSpec,
   onDeleteSpec,
   onAddSpec,
@@ -305,9 +307,9 @@ export function WorkspaceRowsTable({
                         <button
                           type="button"
                           className="row-inline-action"
-                          onClick={onGenerate}
+                          onClick={() => onGenerateRow(row.id)}
                           disabled={!canStartGeneration || generationPending}
-                          title={canStartGeneration ? 'Запустить генерацию ТЗ для текущего черновика' : 'Сначала заполните строки и проверьте доступ к AI'}
+                          title={canStartGeneration ? 'Запустить генерацию для этой строки' : 'Сначала заполните строки и проверьте доступ к AI'}
                         >
                           {generationPending ? '⏳ Генерация...' : '🚀 Сгенерировать'}
                         </button>

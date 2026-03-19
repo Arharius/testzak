@@ -462,6 +462,7 @@ type SpecsCandidate = {
 type GenerateOptions = {
   forceAutopilot?: boolean;
   trigger?: 'manual' | 'autopilot_button';
+  rowId?: number;
 };
 
 type GenerationProgress = {
@@ -8341,14 +8342,20 @@ ${hint || '- Используй детальные, проверяемые эк�
         return;
       }
       const autopilotEnabled = !!options?.forceAutopilot;
-      if (!rows.every((r) => r.model.trim().length > 0 || !!lookupCatalog(r.type)?.hardTemplate)) {
+      const targetRowId = options?.rowId ?? null;
+      const targetRows = targetRowId ? rows.filter((row) => row.id === targetRowId) : rows;
+      if (targetRows.length === 0) {
+        showToast('❌ Строка для генерации не найдена', false);
+        return;
+      }
+      if (!targetRows.every((r) => r.model.trim().length > 0 || !!lookupCatalog(r.type)?.hardTemplate)) {
         showToast('❌ Заполните поле «Модель / описание» для всех строк', false);
         return;
       }
       // Allow generation if all rows have hardTemplate (no API key needed)
-      const allHaveTemplate = rows.every((r) => !!lookupCatalog(r.type)?.hardTemplate);
+      const allHaveTemplate = targetRows.every((r) => !!lookupCatalog(r.type)?.hardTemplate);
       if (!useBackend && !hasUserApiKey && !allHaveTemplate) {
-        const allRowsCanUseSeedSpecs = rows.every((r) => hasImportedSeedSpecs(r) || !!lookupCatalog(r.type)?.hardTemplate);
+        const allRowsCanUseSeedSpecs = targetRows.every((r) => hasImportedSeedSpecs(r) || !!lookupCatalog(r.type)?.hardTemplate);
         if (!allRowsCanUseSeedSpecs) {
           showToast('❌ Нужен вход в аккаунт или API-ключ', false);
           return;
@@ -8357,19 +8364,23 @@ ${hint || '- Используй детальные, проверяемые эк�
 
       const next = [...rows];
       const sourceStats = { template: 0, imported: 0, internet: 0, eis: 0, ai: 0, error: 0 };
-      const hasUniversalRows = next.some((row) => isUniversalGoodsType(row.type));
-      const batchSize = next.length >= 240
+      const targetIndices = targetRowId
+        ? next.map((row, index) => row.id === targetRowId ? index : -1).filter((index) => index >= 0)
+        : next.map((_, index) => index);
+      const totalRowsToProcess = targetIndices.length;
+      const hasUniversalRows = targetIndices.some((index) => isUniversalGoodsType(next[index].type));
+      const batchSize = totalRowsToProcess >= 240
         ? 24
-        : next.length >= 160
+        : totalRowsToProcess >= 160
           ? 20
-          : next.length >= 100
+          : totalRowsToProcess >= 100
             ? 16
-            : next.length >= 60
+            : totalRowsToProcess >= 60
               ? 12
-              : next.length >= 30
+              : totalRowsToProcess >= 30
                 ? 8
-                : Math.max(1, next.length);
-      const totalBatches = Math.max(1, Math.ceil(next.length / batchSize));
+                : Math.max(1, totalRowsToProcess);
+      const totalBatches = Math.max(1, Math.ceil(totalRowsToProcess / batchSize));
 
       if (autopilotEnabled || hasUniversalRows) {
         setInternetSearching(true);
@@ -8377,19 +8388,20 @@ ${hint || '- Используй детальные, проверяемые эк�
       }
       setGenerationProgress({
         current: 0,
-        total: next.length,
+        total: totalRowsToProcess,
         batchSize,
-        batchIndex: next.length > 0 ? 1 : 0,
+        batchIndex: totalRowsToProcess > 0 ? 1 : 0,
         totalBatches,
       });
       setDocxReady(false);
       try {
-        for (let i = 0; i < next.length; i++) {
+        for (let processedIndex = 0; processedIndex < targetIndices.length; processedIndex++) {
+          const i = targetIndices[processedIndex];
           setGenerationProgress({
-            current: i,
-            total: next.length,
+            current: processedIndex,
+            total: totalRowsToProcess,
             batchSize,
-            batchIndex: Math.floor(i / batchSize) + 1,
+            batchIndex: Math.floor(processedIndex / batchSize) + 1,
             totalBatches,
           });
           next[i] = { ...next[i], status: 'loading', error: '' };
@@ -8424,7 +8436,7 @@ ${hint || '- Используй детальные, проверяемые эк�
             };
             sourceStats.imported += 1;
             setRows([...next]);
-            if ((i + 1) % batchSize === 0 && i < next.length - 1) {
+            if ((processedIndex + 1) % batchSize === 0 && processedIndex < targetIndices.length - 1) {
               await new Promise((resolve) => window.setTimeout(resolve, 0));
             }
             continue;
@@ -8562,7 +8574,8 @@ ${hint || '- Используй детальные, проверяемые эк�
           } catch (e) {
             const rawMsg = e instanceof Error ? e.message : 'generation_error';
             const providerAuthFailed = isAiProviderAuthErrorMessage(rawMsg);
-            if (providerAuthFailed) {
+            const shouldTrySearchFallback = providerAuthFailed || isBackendTimeoutMessage(rawMsg) || !specificModelRequested;
+            if (shouldTrySearchFallback) {
               try {
                 const [internetResult, eisResult] = await Promise.allSettled([
                   fetchInternetCandidateForRow(currentRow),
@@ -8626,13 +8639,13 @@ ${hint || '- Используй детальные, проверяемые эк�
           }
           setRows([...next]);
           setGenerationProgress({
-            current: i + 1,
-            total: next.length,
+            current: processedIndex + 1,
+            total: totalRowsToProcess,
             batchSize,
-            batchIndex: Math.floor(i / batchSize) + 1,
+            batchIndex: Math.floor(processedIndex / batchSize) + 1,
             totalBatches,
           });
-          if ((i + 1) % batchSize === 0 && i < next.length - 1) {
+          if ((processedIndex + 1) % batchSize === 0 && processedIndex < targetIndices.length - 1) {
             await new Promise((resolve) => window.setTimeout(resolve, 0));
           }
         }
@@ -10374,6 +10387,7 @@ ${hint || '- Используй детальные, проверяемые эк�
         benchmarkingEnabled={enterpriseSettings.benchmarking}
         onOpenAuthPanel={() => setAuthPanelOpen(true)}
         onGenerate={() => mutation.mutate({ trigger: 'manual' })}
+        onGenerateRow={(rowId) => mutation.mutate({ trigger: 'manual', rowId })}
         onSetRowRef={setRowRef}
         lookupCatalog={lookupCatalog}
         getUnifiedNacRegime={getUnifiedNacRegime}

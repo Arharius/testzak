@@ -3,9 +3,11 @@ from search import (
     _build_internet_queries,
     _build_procurement_queries,
     _enrich_with_baseline,
+    _extract_msi_model_family,
     _get_astra_fast_specs,
     _has_sufficient_exact_model_quality,
     _looks_like_specific_model_query,
+    _parse_msi_spec_markdown,
 )
 
 
@@ -112,3 +114,33 @@ def test_exact_model_quality_accepts_precise_battery_specs():
         {"name": "Химическая система", "value": "алкалиновая", "unit": ""},
     ]
     assert _has_sufficient_exact_model_quality(battery_specs) is True
+
+
+def test_extract_msi_model_family_parses_exact_sku():
+    assert _extract_msi_model_family("MSI PRO DP21 14M-1069XRU") == ("PRO DP21 14M", "1069XRU")
+
+
+def test_parse_msi_spec_markdown_extracts_exact_column():
+    markdown = """
+MKT Spec MKT Spec PRO DP21 14M-1055XRU MKT Spec PRO DP21 14M-1069XRU MKT Spec PRO DP21 14M-1071XRU
+Chipsets Chipsets H610 Chipsets H610 Chipsets H610
+Memory Size Memory Size 8GB(8GB*1) Memory Size 16GB(8GB*2) Memory Size 8GB(8GB*1)
+Memory Type Memory Type DDR5 SDRAM Memory Type DDR5 SDRAM Memory Type DDR5 SDRAM
+CPU Number CPU Number Intel Core i5 Processor 14400 CPU Number Intel Core i7 Processor 14700 CPU Number Intel Core i3 Processor 14100
+CPU Cores CPU Cores 10 CPU Cores 20 CPU Cores 4
+Threads Threads 16 Threads 28 Threads 8
+SSD Size SSD Size 512GB SSD Size 512GB SSD Size 512GB
+WLAN Version WLAN Version Wi-Fi 6E+BT WLAN Version Wi-Fi 6E+BT WLAN Version -
+RJ45 RJ45 1 RJ45 1 RJ45 1
+HDMI out HDMI out 1x (v2.1) HDMI out 1x (v2.1) HDMI out 1x (v2.1)
+DP out DP out 1x (v1.4) DP out 1x (v1.4) DP out 1x (v1.4)
+Weight (Net kg)Weight (Net kg) 1.27 Weight (Net kg) 1.27 Weight (Net kg) 1.27
+Product Dimension (WxDxH) (mm)Product Dimension (WxDxH) (mm) 204 x 208 x 54.8 Product Dimension (WxDxH) (mm) 204 x 208 x 54.8 Product Dimension (WxDxH) (mm) 204 x 208 x 54.8
+"""
+    specs = _parse_msi_spec_markdown(markdown, "PRO DP21 14M-1069XRU")
+    by_name = {item["name"]: item["value"] for item in specs}
+    assert by_name["Процессор"] == "Intel Core i7 Processor 14700"
+    assert by_name["Объем оперативной памяти"] == "16GB(8GB*2)"
+    assert by_name["Количество ядер процессора"] == "20"
+    assert by_name["Количество потоков процессора"] == "28"
+    assert by_name["Беспроводные интерфейсы"] == "Wi-Fi 6E+BT"

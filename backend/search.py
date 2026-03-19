@@ -340,6 +340,64 @@ _NOISY_RESULT_PATTERNS = (
     re.compile(r"что такое", re.I),
 )
 
+_MSI_CATEGORY_PATHS_BY_TYPE: dict[str, list[str]] = {
+    "pc": ["Business-Productivity-PC"],
+    "monoblock": ["Business-Productivity-PC"],
+    "thinClient": ["Business-Productivity-PC"],
+    "laptop": ["Business-Productivity-Laptop", "Laptops"],
+    "monitor": ["Monitor"],
+    "motherboard": ["Motherboard"],
+    "gpu": ["Graphics-Card"],
+}
+
+_MSI_FIELD_NAME_MAP: dict[str, str] = {
+    "Operating Systems": "Поддерживаемая операционная система",
+    "Chipsets": "Чипсет",
+    "Memory Size": "Объем оперативной памяти",
+    "Memory Type": "Тип оперативной памяти",
+    "Memory Speed": "Частота оперативной памяти",
+    "Memory Slot(Total)": "Количество слотов памяти",
+    "Memory Slot(Free)": "Свободные слоты памяти",
+    "Max Capacity": "Максимальный объем оперативной памяти",
+    "CPU Number": "Процессор",
+    "CPU Clock": "Базовая частота процессора",
+    "CPU Cores": "Количество ядер процессора",
+    "Threads": "Количество потоков процессора",
+    "TDP": "Теплопакет процессора",
+    "Max Turbo Frequency": "Максимальная частота процессора",
+    "Cache": "Кэш-память процессора",
+    "Audio Chipset": "Аудиочип",
+    "Audio Type": "Аудиосистема",
+    "SSD Interface": "Интерфейс SSD",
+    "SSD Form Factor": "Форм-фактор SSD",
+    "SSD Config": "Конфигурация SSD",
+    "SSD Size": "Объем SSD",
+    "M.2 slots(Total)": "Количество слотов M.2",
+    "M.2 slots(Free)": "Свободные слоты M.2",
+    "2.5\" Drive Bays(Total)": "Отсеки 2.5 дюйма",
+    "2.5\" Drive Bays (Free)": "Свободные отсеки 2.5 дюйма",
+    "3.5\" Drive Bays(Free)": "Свободные отсеки 3.5 дюйма",
+    "WLAN Version": "Беспроводные интерфейсы",
+    "USB 3.2 Gen 1 (5G) Type A": "USB 3.2 Gen 1 Type-A",
+    "USB 2.0 Type A (R)": "USB 2.0 Type-A",
+    "RJ45": "Порт Ethernet RJ-45",
+    "HDMI out": "Порт HDMI",
+    "DP out": "Порт DisplayPort",
+    "COM Port": "COM-порт",
+    "Lock type": "Тип замка безопасности",
+    "USB 3.2 Gen 2 (10G) Type C (R)": "USB Type-C",
+    "USB 3.2 Gen 2 (10G) Type A (R)": "USB 3.2 Gen 2 Type-A",
+    "Warranty": "Гарантия производителя",
+    "Weight (Net kg)": "Масса нетто",
+    "Weight (Gross kg)": "Масса брутто",
+    "Product Dimension (WxDxH) (mm)": "Размеры корпуса",
+    "Keyboard Interface": "Интерфейс клавиатуры",
+    "Mouse": "Мышь в комплекте",
+    "Mouse Interface": "Интерфейс мыши",
+    "Audio Mic-in": "Микрофонный вход",
+    "Audio Headphone-out": "Выход на наушники",
+}
+
 
 # ── DuckDuckGo (primary, free, no API key) ─────────────────────
 def _duckduckgo_search(query: str, num: int = 5) -> list[dict]:
@@ -1761,6 +1819,102 @@ def _fetch_readable_page(url: str, timeout: int = 10) -> str:
     return _extract_text_from_html(direct, max_chars=18000) if direct else ""
 
 
+def _extract_msi_model_family(query: str) -> tuple[str, str] | None:
+    cleaned = re.sub(r"\bmsi\b", " ", str(query or ""), flags=re.I)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" -_/")
+    match = re.search(r"([A-Za-z0-9+./ ]+?)-([A-Za-z0-9]{3,})\b", cleaned)
+    if not match:
+        return None
+    family = re.sub(r"\s+", " ", match.group(1)).strip(" -_/")
+    suffix = match.group(2).strip()
+    if len(family.split()) < 2:
+        return None
+    return family, suffix
+
+
+def _split_repeated_label_values(line: str) -> tuple[str, list[str]] | None:
+    normalized = re.sub(r"\s+", " ", str(line or "")).strip()
+    if not normalized:
+        return None
+    repeated = re.match(r"^([A-Za-z0-9 .()\"/+:-]+?)\s*\1\s+", normalized)
+    if not repeated:
+        return None
+    label = repeated.group(1).strip()
+    parts = re.split(rf"{re.escape(label)}\s+", normalized)
+    values = [part.strip(" :") for part in parts if part and part.strip(" :")]
+    if not values:
+        return None
+    return label, values
+
+
+def _parse_msi_spec_markdown(markdown: str, exact_model: str) -> list[dict]:
+    lines = [re.sub(r"\s+", " ", line).strip() for line in str(markdown or "").splitlines()]
+    rows: dict[str, list[str]] = {}
+    for line in lines:
+        parsed = _split_repeated_label_values(line)
+        if not parsed:
+            continue
+        label, values = parsed
+        if len(values) >= 2:
+            rows[label] = values
+
+    model_values = rows.get("MKT Spec", [])
+    if not model_values:
+        return []
+
+    target = re.sub(r"\s+", " ", str(exact_model or "")).strip().upper()
+    try:
+        target_index = next(i for i, value in enumerate(model_values) if value.strip().upper() == target)
+    except StopIteration:
+        return []
+
+    specs: list[dict] = []
+    seen_names: set[str] = set()
+    for label, values in rows.items():
+        if label == "MKT Spec" or target_index >= len(values):
+            continue
+        value = re.sub(r"\s+", " ", values[target_index]).strip(" :")
+        if not value or value == "-":
+            continue
+        friendly_name = _MSI_FIELD_NAME_MAP.get(label, label)
+        if friendly_name in seen_names:
+            continue
+        specs.append({"name": friendly_name, "value": value, "unit": ""})
+        seen_names.add(friendly_name)
+    return _clean_specs_for_compliance(_dedupe_specs(specs))
+
+
+def _resolve_msi_exact_model_specs(product: str, goods_type: str = "") -> list[dict]:
+    if "msi" not in str(product or "").lower():
+        return []
+
+    family_info = _extract_msi_model_family(product)
+    if not family_info:
+        return []
+
+    family, suffix = family_info
+    exact_model = f"{family}-{suffix}"
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", family).strip("-")
+    if not slug:
+        return []
+
+    categories = _MSI_CATEGORY_PATHS_BY_TYPE.get(goods_type, ["Business-Productivity-PC", "Business-Productivity-Laptop", "Monitor"])
+    candidate_urls: list[str] = []
+    for host in ("ru.msi.com", "www.msi.com"):
+        for category in categories:
+            candidate_urls.append(f"https://{host}/{category}/{slug}/Specification")
+
+    for candidate_url in candidate_urls:
+        readable = _fetch_readable_page(candidate_url, timeout=10)
+        if not readable or exact_model.upper() not in readable.upper():
+            continue
+        specs = _parse_msi_spec_markdown(readable, exact_model)
+        if _has_sufficient_exact_model_quality(specs):
+            logger.info(f"[vendor] MSI exact model hit: {product!r} -> {candidate_url}")
+            return specs
+    return []
+
+
 def _bing_rss_search(query: str, num: int = 5, timeout: int = 12) -> list[dict]:
     xml = _fetch_url(f"https://www.bing.com/search?format=rss&q={quote_plus(query)}", timeout=timeout)
     if not xml or "<rss" not in xml.lower():
@@ -2019,6 +2173,13 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
         logger.info(f"[internet] Cache hit: {product!r} ({len(cached)} specs)")
         return cached
 
+    exact_model = _looks_like_specific_model_query(product)
+    if exact_model:
+        direct_vendor_specs = _resolve_msi_exact_model_specs(product, goods_type)
+        if direct_vendor_specs:
+            _cache_set(cache_key, direct_vendor_specs)
+            return direct_vendor_specs
+
     fast_specs = _get_astra_fast_specs(goods_type, product)
     if fast_specs:
         logger.info(f"[internet] Fast catalog hit: {product!r} type={goods_type!r} ({len(fast_specs)} specs)")
@@ -2027,7 +2188,6 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
 
     baseline_specs = _get_baseline_specs(goods_type, product)
     search_query = _build_type_aware_query(product, goods_type)
-    exact_model = _looks_like_specific_model_query(product)
     queries = _build_internet_queries(product, goods_type)
 
     logger.info(f"[internet] Search: {search_query!r}")

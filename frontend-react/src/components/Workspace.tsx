@@ -5906,7 +5906,10 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   const isSW = !!g.isSoftware;
   const resolvedCommercial = getResolvedCommercialContext(row);
-  const minSpecs = getMinimumSpecCount(row, resolvedCommercial);
+  const exactModelRequested = looksLikeSpecificModelQuery(row.model);
+  const minSpecs = exactModelRequested
+    ? Math.min(getMinimumSpecCount(row, resolvedCommercial), isSW ? 14 : 12)
+    : getMinimumSpecCount(row, resolvedCommercial);
   const hint = getDetailedSpecHint(row.type);
   const importedBlock = buildImportedSpecsPromptBlock(row);
   const ldapRoleHint = row.type === 'ldap'
@@ -5920,10 +5923,13 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
 ОКПД2: ${g.okpd2}
 ${importedBlock}
 
-Задача: укажи реальные характеристики именно этой модели/версии, как указаны у производителя (или ближайшего аналога по классу). Характеристики должны быть МАКСИМАЛЬНО ДЕТАЛЬНЫМИ — уровень реальных ТЗ из ЕИС (zakupki.gov.ru).
+Задача: укажи реальные характеристики именно этой модели/версии, как указаны у производителя и в открытых спецификациях. Характеристики должны быть МАКСИМАЛЬНО ДЕТАЛЬНЫМИ — уровень реальных ТЗ из ЕИС (zakupki.gov.ru).
 
 КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать «не указан», «не указано», «не указаны», «н/д», «неизвестно», «нет данных» в значениях.
-Если точное значение неизвестно — укажи ТИПИЧНОЕ значение для данного класса товаров с формулировкой «не менее» / «не более».
+${exactModelRequested
+  ? 'Если точное значение для этой модели не подтверждено источниками, НЕ подставляй типичное значение класса товара и не заменяй его общим требованием.'
+  : 'Если точное значение неизвестно — укажи ТИПИЧНОЕ значение для данного класса товаров с формулировкой «не менее» / «не более».'
+}
 
 Правила формулировок (44-ФЗ, ст. 33):
 - Не указывать торговые марки, производителей, артикулы и точные модели
@@ -6011,7 +6017,10 @@ function buildEisStylePrompt(row: GoodsRow, g: GoodsItem, eisContext: string): s
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   const isSW = !!g.isSoftware;
   const resolvedCommercial = getResolvedCommercialContext(row);
-  const minSpecs = getMinimumSpecCount(row, resolvedCommercial);
+  const exactModelRequested = looksLikeSpecificModelQuery(row.model);
+  const minSpecs = exactModelRequested
+    ? Math.min(getMinimumSpecCount(row, resolvedCommercial), isSW ? 14 : 12)
+    : getMinimumSpecCount(row, resolvedCommercial);
   const hint = getDetailedSpecHint(row.type);
   const ldapRoleHint = row.type === 'ldap'
     ? getLdapRoleHint(resolvedCommercial.ldapProfile, resolvedCommercial.suggestedLicenseType)
@@ -6036,7 +6045,11 @@ ${ctx}
 - Единицы: ГГц, МГц, ГБ, МБ, ТБ
 - Сокеты процессора НЕ УКАЗЫВАТЬ${isSW ? '\n- ПО: реестр Минцифры (ПП РФ № 1236), сертификаты ФСТЭК/ФСБ где применимо\n- Перечислить ВСЕ функциональные модули и возможности' : ''}
 - Не менее ${minSpecs} характеристик, сгруппированных по разделам
-- КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать «не указан», «не указано», «не указаны», «н/д», «неизвестно» в значениях. Если точное значение неизвестно — укажи ТИПИЧНОЕ значение для данного класса с «не менее»/«не более».
+- КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО писать «не указан», «не указано», «не указаны», «н/д», «неизвестно» в значениях.
+${exactModelRequested
+  ? '- Для конкретной модели запрещено подставлять типовые характеристики класса товара, если они не подтверждены найденными источниками.'
+  : '- Если точное значение неизвестно — укажи ТИПИЧНОЕ значение для данного класса с «не менее»/«не более».'
+}
 - Поле meta.law175_basis не оставлять пустым: кратко обоснуй выбранную меру ПП РФ № 1875 либо неприменимость; исключение указывай только при документированном основании.
 ${hint ? '\nВключить как минимум:\n' + hint.split('\n').filter((l: string) => l.startsWith('- ')).slice(0, 20).join('\n') : ''}
 ${ldapRoleHint}
@@ -7898,6 +7911,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     if (!row.model.trim()) return null;
     const g = lookupCatalog(row.type);
     const isUniversal = isUniversalGoodsType(row.type);
+    const specificModelRequested = looksLikeSpecificModelQuery(row.model);
     let universalContext = '';
     let sourceSpecs: SpecItem[] = [];
 
@@ -7928,14 +7942,22 @@ ${hint || '- Используй детальные, проверяемые эк�
             row,
             backendSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' })),
           );
-          const enrichedSpecs = await expandSpecsToMinimum(row, mappedSpecs, {
-            okpd2_code: g.okpd2,
-            okpd2_name: g.okpd2name,
-            ktru_code: g.ktruFixed ?? '',
-          });
+          const preparedSpecs = sanitizeProcurementSpecs({
+            type: row.type,
+            model: row.model,
+            licenseType: getResolvedCommercialContext(row).suggestedLicenseType,
+            term: getResolvedCommercialContext(row).suggestedTerm,
+          }, mappedSpecs);
+          const finalSpecs = specificModelRequested
+            ? preparedSpecs
+            : await expandSpecsToMinimum(row, mappedSpecs, {
+              okpd2_code: g.okpd2,
+              okpd2_name: g.okpd2name,
+              ktru_code: g.ktruFixed ?? '',
+            });
           return {
             source: 'internet',
-            specs: enrichedSpecs,
+            specs: finalSpecs,
             meta: normalizeResolvedMeta(row.type, {
               okpd2_code: g.okpd2,
               okpd2_name: g.okpd2name,
@@ -7961,11 +7983,22 @@ ${hint || '- Используй детальные, проверяемые эк�
     }
     const { meta, specs } = parseAiResponse(raw);
     const processed = adjustSpecsForCommercialContext(row, postProcessSpecs(specs));
-    const enriched = await expandSpecsToMinimum(row, processed, meta);
+    const enriched = specificModelRequested
+      ? sanitizeProcurementSpecs({
+        type: row.type,
+        model: row.model,
+        licenseType: getResolvedCommercialContext(row).suggestedLicenseType,
+        term: getResolvedCommercialContext(row).suggestedTerm,
+      }, processed)
+      : await expandSpecsToMinimum(row, processed, meta);
     const resolvedMeta = await resolveUniversalMeta(row, meta, universalContext);
     // Reject candidate if most spec values are placeholders like "не указан"
     if (!hasRealSpecValues(enriched)) {
       console.warn('[autopilot] Internet AI candidate rejected: mostly placeholder values');
+      return null;
+    }
+    if (specificModelRequested && getWeakSpecEntries(enriched).length > 0) {
+      console.warn('[autopilot] Internet AI candidate rejected: exact model still has weak/generic values');
       return null;
     }
     return {
@@ -7982,6 +8015,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     if (!row.model.trim()) return null;
     const g = lookupCatalog(row.type);
     const isUniversal = isUniversalGoodsType(row.type);
+    const specificModelRequested = looksLikeSpecificModelQuery(row.model);
     let universalContext = '';
     let sourceSpecs: SpecItem[] = [];
 
@@ -8012,14 +8046,22 @@ ${hint || '- Используй детальные, проверяемые эк�
             row,
             eisSpecs.map((s) => ({ name: s.name, value: s.value, unit: s.unit, group: '' })),
           );
-          const enrichedSpecs = await expandSpecsToMinimum(row, mappedSpecs, {
-            okpd2_code: g.okpd2,
-            okpd2_name: g.okpd2name,
-            ktru_code: g.ktruFixed ?? '',
-          });
+          const preparedSpecs = sanitizeProcurementSpecs({
+            type: row.type,
+            model: row.model,
+            licenseType: getResolvedCommercialContext(row).suggestedLicenseType,
+            term: getResolvedCommercialContext(row).suggestedTerm,
+          }, mappedSpecs);
+          const finalSpecs = specificModelRequested
+            ? preparedSpecs
+            : await expandSpecsToMinimum(row, mappedSpecs, {
+              okpd2_code: g.okpd2,
+              okpd2_name: g.okpd2name,
+              ktru_code: g.ktruFixed ?? '',
+            });
           return {
             source: 'eis',
-            specs: enrichedSpecs,
+            specs: finalSpecs,
             meta: normalizeResolvedMeta(row.type, {
               okpd2_code: g.okpd2,
               okpd2_name: g.okpd2name,
@@ -8057,11 +8099,22 @@ ${hint || '- Используй детальные, проверяемые эк�
     }
     const { meta, specs } = parseAiResponse(raw);
     const processed = adjustSpecsForCommercialContext(row, postProcessSpecs(specs));
-    const enriched = await expandSpecsToMinimum(row, processed, meta);
+    const enriched = specificModelRequested
+      ? sanitizeProcurementSpecs({
+        type: row.type,
+        model: row.model,
+        licenseType: getResolvedCommercialContext(row).suggestedLicenseType,
+        term: getResolvedCommercialContext(row).suggestedTerm,
+      }, processed)
+      : await expandSpecsToMinimum(row, processed, meta);
     const resolvedMeta = await resolveUniversalMeta(row, meta, `${universalContext}${eisContext ? `\n\n${eisContext}` : ''}`);
     // Reject candidate if most spec values are placeholders like "не указан"
     if (!hasRealSpecValues(enriched)) {
       console.warn('[autopilot] EIS AI candidate rejected: mostly placeholder values');
+      return null;
+    }
+    if (specificModelRequested && getWeakSpecEntries(enriched).length > 0) {
+      console.warn('[autopilot] EIS AI candidate rejected: exact model still has weak/generic values');
       return null;
     }
     return {
@@ -8076,6 +8129,9 @@ ${hint || '- Используй детальные, проверяемые эк�
 
   const getMinimumSearchSpecs = useCallback((row: GoodsRow): number => {
     const catalogItem = lookupCatalog(row.type);
+    if (looksLikeSpecificModelQuery(row.model)) {
+      return catalogItem?.isSoftware ? 10 : 8;
+    }
     const isUniversal = isUniversalGoodsType(row.type);
     if (isUniversal) {
       return catalogItem?.isSoftware ? 18 : 14;
@@ -8091,7 +8147,13 @@ ${hint || '- Используй детальные, проверяемые эк�
   ): SpecsCandidate | null => {
     if (!internetCandidate && !eisCandidate) return null;
     const minQualitySpecs = getMinimumSearchSpecs(row);
-    const isAcceptable = (candidate: SpecsCandidate | null) => !!candidate && candidate.specs.length >= minQualitySpecs;
+    const specificModelRequested = looksLikeSpecificModelQuery(row.model);
+    const isAcceptable = (candidate: SpecsCandidate | null) => {
+      if (!candidate) return false;
+      if (candidate.specs.length < minQualitySpecs) return false;
+      if (!specificModelRequested) return true;
+      return getWeakSpecEntries(candidate.specs).length === 0;
+    };
     if (!autoPickTopCandidate) {
       if (isAcceptable(eisCandidate)) return eisCandidate;
       if (isAcceptable(internetCandidate)) return internetCandidate;
@@ -8241,10 +8303,11 @@ ${hint || '- Используй детальные, проверяемые эк�
           }
 
           try {
+            const specificModelRequested = looksLikeSpecificModelQuery(currentRow.model);
             const shouldSearchBeforeGenerate =
               autopilotEnabled
               || isUniversalGoodsType(currentRow.type)
-              || looksLikeSpecificModelQuery(currentRow.model);
+              || specificModelRequested;
             if (shouldSearchBeforeGenerate) {
               let internetCandidate: SpecsCandidate | null = null;
               let eisCandidate: SpecsCandidate | null = null;
@@ -8277,12 +8340,15 @@ ${hint || '- Используй детальные, проверяемые эк�
               }
             }
 
-            const { system: sysMsg, user: userMsg } = buildPrompt(currentRow, lawMode);
+            const modelAwarePrompt = specificModelRequested ? buildSpecSearchPrompt(currentRow, g) : '';
+            const { system: sysMsg, user: userMsg } = specificModelRequested ? { system: '', user: '' } : buildPrompt(currentRow, lawMode);
             let raw: string;
-            const messages = [
-              { role: 'system', content: sysMsg },
-              { role: 'user', content: userMsg },
-            ];
+            const messages = specificModelRequested
+              ? [{ role: 'user', content: modelAwarePrompt }]
+              : [
+                { role: 'system', content: sysMsg },
+                { role: 'user', content: userMsg },
+              ];
 
             // Retry logic: при таймауте или сетевой ошибке — повторяем до 2 раз
             const MAX_RETRIES = 2;
@@ -8318,7 +8384,17 @@ ${hint || '- Используй детальные, проверяемые эк�
             const processed = postProcessSpecs(specs);
             const validatedMeta = await resolveUniversalMeta(currentRow, meta);
             const adjustedSpecs = adjustSpecsForCommercialContext(currentRow, processed);
-            const enrichedSpecs = await expandSpecsToMinimum(currentRow, adjustedSpecs, validatedMeta);
+            const enrichedSpecs = specificModelRequested
+              ? sanitizeProcurementSpecs({
+                type: currentRow.type,
+                model: currentRow.model,
+                licenseType: getResolvedCommercialContext(currentRow).suggestedLicenseType,
+                term: getResolvedCommercialContext(currentRow).suggestedTerm,
+              }, adjustedSpecs)
+              : await expandSpecsToMinimum(currentRow, adjustedSpecs, validatedMeta);
+            if (!hasRealSpecValues(enrichedSpecs) || (specificModelRequested && getWeakSpecEntries(enrichedSpecs).length > 0)) {
+              throw new Error('характеристики не найдены');
+            }
             const finalMeta = normalizeResolvedMeta(currentRow.type, { ...validatedMeta, classification_source: 'ai' });
             next[i] = {
               ...currentRow,

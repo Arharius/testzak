@@ -313,6 +313,17 @@ _PREFERRED_SOURCE_WEIGHTS = {
     "zakupki.mos.ru": 28,
     "gisp.gov.ru": 26,
     "minpromtorg.gov.ru": 22,
+    "msi.com": 18,
+    "dell.com": 18,
+    "hp.com": 18,
+    "lenovo.com": 18,
+    "asus.com": 18,
+    "acer.com": 18,
+    "hpe.com": 18,
+    "cisco.com": 18,
+    "mikrotik.com": 18,
+    "tp-link.com": 18,
+    "samsung.com": 18,
 }
 _BLOCKED_RESULT_HOSTS = (
     "stackoverflow.com", "facebook.com", "support.google.com", "youtube.com", "vk.com",
@@ -621,6 +632,214 @@ def _build_type_aware_query(query: str, goods_type: str = "") -> str:
     return f"{type_hint} {raw}".strip()
 
 
+_GENERIC_MODEL_TOKENS = {
+    "системный", "блок", "ноутбук", "монитор", "сервер", "моноблок", "компьютер", "рабочая", "станция",
+    "клавиатура", "мышь", "гарнитура", "принтер", "мфу", "сканер", "коммутатор", "маршрутизатор",
+    "точка", "доступа", "накопитель", "кабель", "адаптер", "патч", "корд", "лицензия", "подписка",
+    "поддержка", "техподдержка", "программное", "обеспечение", "операционная", "система", "комплект",
+    "оборудование", "товар", "изделие", "устройство", "цвет", "черный", "черная", "черныйи",
+    "размер", "длина", "ширина", "высота", "вес", "масса", "поставка", "поставляемого", "для",
+    "на", "по", "и", "или", "с", "без", "pro", "mini",
+    "system", "unit", "desktop", "pc", "computer", "server", "monitor", "printer", "scanner",
+    "switch", "router", "access", "point", "storage", "ssd", "hdd", "software", "license",
+    "support", "subscription", "with", "without", "black", "white",
+}
+_BRAND_HINTS = (
+    "msi", "asus", "acer", "dell", "hp", "hewlett", "lenovo", "huawei", "xiaomi", "apple",
+    "graviton", "гравитон", "aquarius", "аквариус", "iru", "айру", "yadro", "ядро",
+    "gigabyte", "asrock", "supermicro", "hpe", "hpе", "ibm", "cisco", "juniper", "mikrotik",
+    "tp link", "tp-link", "zyxel", "keenetic", "samsung", "kingston", "apc", "epson",
+    "xerox", "kyocera", "pantum", "ricoh", "canon", "brother", "intel", "amd", "nvidia",
+    "astra", "рупост", "rupost", "termidesk", "ald", "brest",
+)
+_OFFICIAL_VENDOR_DOMAINS: dict[str, tuple[str, ...]] = {
+    "msi": ("msi.com",),
+    "dell": ("dell.com",),
+    "hp": ("hp.com", "hpe.com"),
+    "hewlett": ("hp.com", "hpe.com"),
+    "lenovo": ("lenovo.com",),
+    "asus": ("asus.com",),
+    "acer": ("acer.com",),
+    "huawei": ("huawei.com",),
+    "apple": ("apple.com",),
+    "mikrotik": ("mikrotik.com",),
+    "cisco": ("cisco.com",),
+    "juniper": ("juniper.net",),
+    "tp link": ("tp-link.com",),
+    "tp-link": ("tp-link.com",),
+    "zyxel": ("zyxel.com",),
+    "keenetic": ("keenetic.com",),
+    "samsung": ("samsung.com",),
+    "epson": ("epson.com",),
+    "xerox": ("xerox.com",),
+    "kyocera": ("kyoceradocumentsolutions.com", "kyocera.com"),
+    "canon": ("canon.com",),
+    "brother": ("brother.com",),
+}
+
+
+def _normalize_model_search_text(value: str) -> str:
+    text = str(value or "").lower().replace("ё", "е")
+    text = re.sub(r"[^a-zа-я0-9+./_-]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _has_alpha_digit_mix(token: str) -> bool:
+    return bool(re.search(r"[a-zа-я]", token, flags=re.I) and re.search(r"\d", token))
+
+
+def _has_structured_code_token(token: str) -> bool:
+    return bool(re.search(r"[a-zа-я0-9]+[-_/+.][a-zа-я0-9]+", token, flags=re.I))
+
+
+def _looks_like_specific_model_query(value: str) -> bool:
+    raw = str(value or "").strip()
+    if not raw or len(raw) > 180:
+        return False
+    normalized = _normalize_model_search_text(raw)
+    if not normalized:
+        return False
+    if re.search(r"(?:техподдерж|поддержк|support|сопровождени|оказани[ея]|услуг)", normalized, flags=re.I):
+        return False
+    tokens = [token for token in normalized.split(" ") if token]
+    if len(tokens) < 2:
+        return False
+    informative_tokens = [token for token in tokens if token not in _GENERIC_MODEL_TOKENS]
+    if len(informative_tokens) < 2:
+        return False
+    has_brand_hint = any(brand in normalized for brand in _BRAND_HINTS)
+    has_code_token = any(_has_alpha_digit_mix(token) or _has_structured_code_token(token) for token in informative_tokens)
+    long_latin_tokens = sum(1 for token in informative_tokens if re.search(r"[a-z]", token, flags=re.I) and len(token) >= 3)
+    has_upper_series = bool(re.search(r"(?:^|[\s(])([A-Z]{2,}[A-Z0-9/+._-]{1,}|[A-Z]?\d+[A-Z0-9._/-]+)(?:$|[\s)])", raw))
+    measured_cues = re.findall(r"\d+\s*(?:гб|gb|tb|тб|mhz|мгц|ггц|вт|мм|см|кг|г|шт|mah|мач|дюйм|hz)", raw, flags=re.I)
+    looks_like_spec_sentence = bool(re.search(r"[:,;]", raw) or (len(measured_cues) >= 2 and len(informative_tokens) >= 4))
+
+    if looks_like_spec_sentence and not has_code_token:
+        return False
+    if has_code_token:
+        return True
+    if has_brand_hint and (long_latin_tokens >= 2 or has_upper_series):
+        return True
+    if has_upper_series and len(informative_tokens) >= 3:
+        return True
+    return False
+
+
+def _infer_official_domains(query: str) -> list[str]:
+    normalized = _normalize_model_search_text(query)
+    if not normalized:
+        return []
+    domains: list[str] = []
+    for brand, brand_domains in _OFFICIAL_VENDOR_DOMAINS.items():
+        if brand in normalized:
+            for domain in brand_domains:
+                if domain not in domains:
+                    domains.append(domain)
+    return domains
+
+
+def _dedupe_query_list(queries: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in queries:
+        query = re.sub(r"\s+", " ", str(item or "")).strip()
+        if not query:
+            continue
+        key = query.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(query)
+    return result
+
+
+def _build_internet_queries(product: str, goods_type: str = "") -> list[str]:
+    product = _clean_search_query(product)
+    search_query = _build_type_aware_query(product, goods_type)
+    exact_model = _looks_like_specific_model_query(product)
+    if not exact_model:
+        return [
+            f"{search_query} характеристики",
+            f"{search_query} технические характеристики",
+            f"{search_query} specification",
+            f"{search_query} datasheet",
+        ]
+
+    quoted_product = f"\"{product}\""
+    type_hint = _get_type_hint(goods_type)
+    queries = [
+        f"{quoted_product} технические характеристики",
+        f"{quoted_product} specification",
+        f"{quoted_product} datasheet",
+        f"{quoted_product} pdf",
+        f"{product} технические характеристики",
+        f"{product} specification",
+        f"{product} datasheet",
+    ]
+    for domain in _infer_official_domains(product):
+        queries.extend([
+            f"site:{domain} {quoted_product}",
+            f"site:{domain} {product} specification",
+            f"site:{domain} {product} datasheet",
+        ])
+    if type_hint:
+        queries.extend([
+            f"{product} {type_hint} характеристики",
+            f"{product} {type_hint} specification",
+        ])
+    queries.extend([
+        f"{search_query} технические характеристики",
+        f"{search_query} specification",
+    ])
+    return _dedupe_query_list(queries)
+
+
+def _build_procurement_queries(query: str, goods_type: str = "") -> list[str]:
+    base = _clean_search_query(query)
+    search_query = _build_type_aware_query(base, goods_type)
+    type_hint = _get_type_hint(goods_type) or search_query
+    exact_model = _looks_like_specific_model_query(base)
+    if not exact_model:
+        return [
+            f"site:zakupki.gov.ru {type_hint} КТРУ характеристики",
+            f"site:zakupki.gov.ru {search_query} техническое задание",
+            f"site:zakupki.gov.ru {search_query} описание объекта закупки",
+            f"site:zakupki.gov.ru {type_hint} описание объекта закупки",
+            f"site:rostender.info {search_query} техническое задание",
+            f"site:rostender.info {type_hint} описание объекта закупки",
+            f"site:zakupki.mos.ru {search_query} техническое задание",
+            f"site:zakupki.mos.ru {search_query} описание объекта закупки",
+            f"site:zakupki.mos.ru {type_hint} описание объекта закупки",
+            f"site:gisp.gov.ru {type_hint} характеристики",
+            f"site:gisp.gov.ru {search_query} характеристики",
+            f"site:gisp.gov.ru {type_hint} реестр российской промышленной продукции",
+            f"site:minpromtorg.gov.ru {type_hint} характеристики",
+            f"site:minpromtorg.gov.ru {search_query} технические характеристики",
+            f"site:minpromtorg.gov.ru {search_query} реестр российской промышленной продукции",
+        ]
+
+    quoted = f"\"{base}\""
+    queries = [
+        f"site:zakupki.gov.ru {quoted} техническое задание",
+        f"site:zakupki.gov.ru {quoted} описание объекта закупки",
+        f"site:rostender.info {quoted} техническое задание",
+        f"site:zakupki.mos.ru {quoted} техническое задание",
+        f"site:gisp.gov.ru {quoted} характеристики",
+        f"site:minpromtorg.gov.ru {quoted} технические характеристики",
+        f"site:zakupki.gov.ru {base} техническое задание",
+        f"site:zakupki.gov.ru {base} описание объекта закупки",
+        f"site:rostender.info {base} техническое задание",
+        f"site:zakupki.mos.ru {base} техническое задание",
+        f"site:gisp.gov.ru {base} характеристики",
+        f"site:minpromtorg.gov.ru {base} технические характеристики",
+        f"site:zakupki.gov.ru {type_hint} КТРУ характеристики",
+        f"site:zakupki.gov.ru {search_query} техническое задание",
+        f"site:gisp.gov.ru {search_query} характеристики",
+        f"site:minpromtorg.gov.ru {search_query} технические характеристики",
+    ]
+    return _dedupe_query_list(queries)
+
+
 def _build_entity_tokens(query: str, goods_type: str = "") -> list[str]:
     type_words = set(_normalize_text(_get_type_hint(goods_type)).split())
     type_words.update(_normalize_text(item) for item in _get_goods_type_keywords(goods_type))
@@ -641,6 +860,10 @@ def _score_search_result(item: dict[str, Any], query: str, goods_type: str = "")
     if any(pattern.search(joined) for pattern in _NOISY_RESULT_PATTERNS):
         return -80
     score = 0
+    exact_model = _looks_like_specific_model_query(query)
+    normalized_query = _normalize_text(query)
+    if exact_model and normalized_query and normalized_query in text:
+        score += 60
     for token in _get_goods_type_keywords(goods_type):
         token_norm = _normalize_text(token)
         if token_norm and token_norm in text:
@@ -650,12 +873,15 @@ def _score_search_result(item: dict[str, Any], query: str, goods_type: str = "")
             score += 4
     for token in _build_entity_tokens(query, goods_type):
         if token in text:
-            score += 10
+            score += 12 if exact_model else 10
     if re.search(r"spec|характерист|technical|техническ|datasheet|product", joined, flags=re.I):
-        score += 10
+        score += 14 if exact_model else 10
     for domain, weight in _PREFERRED_SOURCE_WEIGHTS.items():
         if domain in text:
             score += weight
+    for domain in _infer_official_domains(query):
+        if domain in text:
+            score += 20
     if re.search(r"logitech\.com|microsoft\.com|hp\.com|lenovo\.com|dell\.com|asus\.com|acer\.com|a4tech|defender\.ru|sven", joined, flags=re.I):
         score += 6
     return score
@@ -667,11 +893,21 @@ def _is_relevant_search_result(item: dict[str, Any], query: str, goods_type: str
         return False
     text = _normalize_text(" ".join(str(item.get(part, "")) for part in ("title", "snippet", "link")))
     entity_tokens = _build_entity_tokens(query, goods_type)
+    entity_match_count = sum(1 for token in entity_tokens if token in text)
+    exact_model = _looks_like_specific_model_query(query)
     if entity_tokens and not any(token in text for token in entity_tokens):
         return False
     if procurement_only and not any(domain in text for domain in _PROCUREMENT_DOMAINS):
         return False
     keywords = _get_goods_type_keywords(goods_type)
+    if exact_model:
+        if len(entity_tokens) >= 3 and entity_match_count < 2:
+            return False
+        if keywords and any(_normalize_text(token) in text for token in keywords):
+            return True
+        if any(domain in text for domain in _infer_official_domains(query)):
+            return True
+        return entity_match_count >= min(3, len(entity_tokens) or 1)
     if not keywords:
         return True
     return any(_normalize_text(token) in text for token in keywords)
@@ -1391,6 +1627,8 @@ def _enrich_with_baseline(specs: list[dict], goods_type: str = "", query: str = 
         return _dedupe_specs(specs)
     if not specs:
         return baseline
+    if _looks_like_specific_model_query(query):
+        return _dedupe_specs(specs)
     if _should_prefer_query_baseline(goods_type):
         return _merge_specs(baseline, specs)
     if len(specs) < 8:
@@ -1461,12 +1699,19 @@ def _ai_extract_specs(context_text: str, product: str, goods_type: str = "") -> 
     system_prompt = _build_extraction_prompt(product, goods_type, is_software)
 
     type_hint = _TYPE_SEARCH_HINTS.get(goods_type, "")
+    exact_model = _looks_like_specific_model_query(product)
     type_context = f" (тип: {type_hint})" if type_hint else ""
+    exact_model_block = (
+        "\n\nВАЖНО: это запрос по конкретной модели. Извлекай только явно подтверждённые в тексте характеристики именно этой модели."
+        "\nНе подставляй типовые параметры класса товара и не додумывай отсутствующие значения."
+        "\nЕсли значение в тексте не подтверждено, просто не включай такую характеристику."
+        if exact_model else ""
+    )
 
     user_prompt = (
         f"Товар: {product}{type_context}\n\n"
         f"Текст для анализа (из реальных ТЗ и спецификаций):\n{context_text[:8000]}\n\n"
-        "Извлеки ВСЕ технические характеристики. Верни ТОЛЬКО JSON-массив."
+        f"Извлеки ВСЕ технические характеристики. Верни ТОЛЬКО JSON-массив.{exact_model_block}"
     )
 
     payload = {
@@ -1614,12 +1859,8 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
 
     baseline_specs = _get_baseline_specs(goods_type, product)
     search_query = _build_type_aware_query(product, goods_type)
-    queries = [
-        f"{search_query} характеристики",
-        f"{search_query} технические характеристики",
-        f"{search_query} specification",
-        f"{search_query} datasheet",
-    ]
+    exact_model = _looks_like_specific_model_query(product)
+    queries = _build_internet_queries(product, goods_type)
 
     logger.info(f"[internet] Search: {search_query!r}")
     loop = asyncio.get_event_loop()
@@ -1643,7 +1884,7 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
 
     if not deduped_results:
         logger.warning(f"[internet] No relevant search results for: {search_query}")
-        return baseline_specs
+        return [] if exact_model else baseline_specs
 
     logger.info(f"[internet] Search returned {len(deduped_results)} relevant results")
 
@@ -1672,11 +1913,15 @@ async def search_internet_specs(product: str, goods_type: str = "") -> list[dict
                 context_parts.append(f"[{url}]:\n{text}")
 
     if not context_parts:
-        return baseline_specs
+        return [] if exact_model else baseline_specs
 
     full_context = "\n\n".join(context_parts)
     specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, product, goods_type))
-    final_specs = _clean_specs_for_compliance(_enrich_with_baseline(specs, goods_type, product))
+    heuristic_specs = _extract_spec_pairs(full_context, max_items=40)
+    merged_specs = _merge_specs(specs, heuristic_specs)
+    final_specs = _clean_specs_for_compliance(
+        _dedupe_specs(merged_specs) if exact_model else _enrich_with_baseline(merged_specs, goods_type, product)
+    )
     logger.info(f"[internet] Extracted {len(specs)} specs, final {len(final_specs)} specs for {product!r}")
     if final_specs:
         _cache_set(cache_key, final_specs)
@@ -1705,24 +1950,8 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
 
     base = str(query or "").strip()
     search_query = _build_type_aware_query(base, goods_type)
-    type_hint = _get_type_hint(goods_type) or search_query
-    site_queries = [
-        f"site:zakupki.gov.ru {type_hint} КТРУ характеристики",
-        f"site:zakupki.gov.ru {search_query} техническое задание",
-        f"site:zakupki.gov.ru {search_query} описание объекта закупки",
-        f"site:zakupki.gov.ru {type_hint} описание объекта закупки",
-        f"site:rostender.info {search_query} техническое задание",
-        f"site:rostender.info {type_hint} описание объекта закупки",
-        f"site:zakupki.mos.ru {search_query} техническое задание",
-        f"site:zakupki.mos.ru {search_query} описание объекта закупки",
-        f"site:zakupki.mos.ru {type_hint} описание объекта закупки",
-        f"site:gisp.gov.ru {type_hint} характеристики",
-        f"site:gisp.gov.ru {search_query} характеристики",
-        f"site:gisp.gov.ru {type_hint} реестр российской промышленной продукции",
-        f"site:minpromtorg.gov.ru {type_hint} характеристики",
-        f"site:minpromtorg.gov.ru {search_query} технические характеристики",
-        f"site:minpromtorg.gov.ru {search_query} реестр российской промышленной продукции",
-    ]
+    exact_model = _looks_like_specific_model_query(base)
+    site_queries = _build_procurement_queries(base, goods_type)
 
     logger.info(f"[eis] Search: {search_query!r}")
     loop = asyncio.get_event_loop()
@@ -1778,7 +2007,11 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
 
     full_context = "\n".join(context_parts)
     specs = await loop.run_in_executor(None, lambda: _ai_extract_specs(full_context, query, goods_type))
-    final_specs = _clean_specs_for_compliance(_enrich_with_baseline(specs, goods_type, query))
+    heuristic_specs = _extract_spec_pairs(full_context, max_items=40)
+    merged_specs = _merge_specs(specs, heuristic_specs)
+    final_specs = _clean_specs_for_compliance(
+        _dedupe_specs(merged_specs) if exact_model else _enrich_with_baseline(merged_specs, goods_type, query)
+    )
     logger.info(f"[eis] Extracted {len(specs)} specs, final {len(final_specs)} specs for {query!r}")
 
     if final_specs:

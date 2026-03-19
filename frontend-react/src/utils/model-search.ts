@@ -47,6 +47,9 @@ function hasBrandSeriesPattern(informativeTokens: string[], hasBrandHint: boolea
 function looksLikeAsusFamilySeriesQuery(normalized: string, informativeTokens: string[]): boolean {
   if (!normalized.includes('asus')) return false;
   if (informativeTokens.length < 2 || informativeTokens.length > 4) return false;
+  if (informativeTokens.some((token) => ['vivobook', 'zenbook', 'expertbook', 'proart', 'tuf', 'rog', 'chromebook'].includes(token))) {
+    return false;
+  }
 
   const hasStrongCodeToken = informativeTokens.some((token) => /^(?:[a-z]{1,3}\d{4}[a-z0-9]{2,}|[a-z0-9]+[-_/+.][a-z0-9]+)$/i.test(token));
   if (hasStrongCodeToken) return false;

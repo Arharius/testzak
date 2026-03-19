@@ -3,6 +3,7 @@ from search import (
     _build_internet_queries,
     _build_procurement_queries,
     _build_exact_model_ai_aliases,
+    _build_asus_official_queries,
     _clean_specs_for_compliance,
     _enrich_with_baseline,
     _extract_asus_model_code,
@@ -14,8 +15,10 @@ from search import (
     _get_baseline_specs,
     _has_sufficient_exact_model_quality,
     _looks_like_specific_model_query,
+    _parse_asus_techspec_markdown,
     _parse_msi_family_spec_markdown,
     _parse_msi_spec_markdown,
+    _resolve_asus_exact_model_specs,
 )
 
 
@@ -60,7 +63,7 @@ def test_specific_model_detection_matches_frontend_expectations():
     assert _looks_like_specific_model_query("Dell OptiPlex 7010") is True
     assert _looks_like_specific_model_query("Гравитон Н15") is True
     assert _looks_like_specific_model_query("asus 1503") is False
-    assert _looks_like_specific_model_query("Asus Vivobook X1503") is False
+    assert _looks_like_specific_model_query("Asus Vivobook X1503") is True
     assert _looks_like_specific_model_query("ASUS X1503ZA") is True
     assert _looks_like_specific_model_query("HP 250") is True
     assert _looks_like_specific_model_query("Монитор серии 07 RDW") is False
@@ -164,6 +167,159 @@ def test_build_exact_model_ai_aliases_enriches_asus_support_code():
         __import__("search")._fetch_asus_support_code = original_fetch
     assert "ASUS X1503ZA" in aliases
     assert "ASUS Vivobook X1503ZA" in aliases
+
+
+def test_build_asus_official_queries_include_support_code_and_techspec_terms():
+    queries = _build_asus_official_queries("Asus Vivobook X1503", support_code="X1503ZA", search_key="X1503")
+    assert 'site:asus.com "X1503ZA" techspec' in queries
+    assert 'site:asus.com "X1503" "vivobook"' in queries
+
+
+def test_parse_asus_techspec_markdown_extracts_concrete_specs():
+    markdown = """
+# ASUS Vivobook 15X OLED (X1503, 12a Gen Intel)
+
+X1503ZA
+
+Modelo
+
+X1503ZA
+
+Sistema Operativo
+
+Windows 11 Home - ASUS recomienda Windows 11 Pro para empresas
+
+Procesador
+
+Intel® Core™ i5-12500H 2.5 GHz (18M Caché, hasta 4.5 GHz, 4P+8E núcleos)
+
+Gráficos
+
+Gráficos Intel®
+
+Pantalla
+
+15,6", FHD (1920 x 1080) OLED 16:9, tasa de refresco 60Hz, 600nits
+
+Memoria
+
+8GB DDR4 on board
+8GB DDR4 SO-DIMM
+
+Almacenamiento
+
+512 GB SSD M.2 NVMe™ PCIe® 3.0
+
+Ranuras de expansión
+
+- 1x M.2 2280 PCIe 4.0x4
+Ranura 1x DDR4 SO-DIMM
+
+Puertos E/S
+
+2x USB 3.2 Gen 1 Tipo-A
+1x USB 3.2 Gen 1 Tipo C
+1x USB 2.0 Tipo-A, 1x DC-in
+1x 3.5mm Conector de audio combinado
+
+Teclado y touchpad
+
+Teclado tipo chiclet, Precision Touchpad
+
+Cámara
+
+Cámara HD 720p, Con persiana de privacidad
+
+Audio
+
+Built-in array microphone
+Built-in speaker
+SonicMaster
+
+Redes y comunicación
+
+Wi-Fi 6(802.11ax)+Bluetooth 5.0 (Dual band) 2*2
+
+Batería
+
+70WHrs, 3S1P, 3-cell Li-ion
+
+Alimentación
+
+adaptador 90 W CA; Salida: 19 V CC, 4,74 A, 90 W
+
+Peso
+
+1.70 kg (3.75 lbs)
+
+Dimensiones
+
+35.68 x 22.76 x 1.99 cm (14.05" x 8.96" x 0.78")
+
+Need Help?
+"""
+    specs = _parse_asus_techspec_markdown(markdown)
+    by_name = {item["name"]: item["value"] for item in specs}
+    assert by_name["Процессор"].startswith("Intel® Core™ i5-12500H")
+    assert by_name["Оперативная память"] == "8GB DDR4 on board; 8GB DDR4 SO-DIMM"
+    assert by_name["Накопитель"] == "512 GB SSD M.2 NVMe™ PCIe® 3.0"
+    assert "USB 3.2 Gen 1 Tipo-A" in by_name["Порты"]
+    assert by_name["Масса"] == "1.70 kg"
+    assert by_name["Габариты"] == "35.68 x 22.76 x 1.99 cm"
+    assert _has_sufficient_exact_model_quality(specs) is True
+
+
+def test_resolve_asus_exact_model_specs_uses_official_techspec_before_ai():
+    search_module = __import__("search")
+    original_bing = search_module._bing_rss_search
+    original_fetch = search_module._fetch_readable_page
+    original_support = search_module._fetch_asus_support_code
+    original_ai = search_module._ai_generate_model_specs
+    try:
+        search_module._fetch_asus_support_code = lambda product: "X1503ZA"
+        search_module._bing_rss_search = lambda query, num=4, timeout=6: [
+            {
+                "title": "ASUS Vivobook 15X OLED | Especificaciones",
+                "link": "https://www.asus.com/co/laptops/for-home/vivobook/vivobook-15x-oled-x1503-12th-gen-intel/techspec/",
+                "snippet": "X1503ZA techspec",
+            }
+        ]
+        search_module._fetch_readable_page = lambda url, timeout=10: """
+Procesador
+Intel® Core™ i5-12500H 2.5 GHz (18M Caché, hasta 4.5 GHz, 4P+8E núcleos)
+Pantalla
+15,6\", FHD (1920 x 1080) OLED 16:9, 60Hz, 600nits
+Memoria
+8GB DDR4 on board
+8GB DDR4 SO-DIMM
+Almacenamiento
+512 GB SSD M.2 NVMe™ PCIe® 3.0
+Puertos E/S
+2x USB 3.2 Gen 1 Tipo-A
+1x USB 3.2 Gen 1 Tipo C
+1x USB 2.0 Tipo-A, 1x DC-in
+Redes y comunicación
+Wi-Fi 6(802.11ax)+Bluetooth 5.0 (Dual band) 2*2
+Batería
+70WHrs, 3S1P, 3-cell Li-ion
+Alimentación
+adaptador 90 W CA; Salida: 19 V CC, 4,74 A, 90 W
+Peso
+1.70 kg (3.75 lbs)
+Dimensiones
+35.68 x 22.76 x 1.99 cm (14.05\" x 8.96\" x 0.78\")
+Need Help?
+"""
+        search_module._ai_generate_model_specs = lambda product, goods_type="": []
+        specs = _resolve_asus_exact_model_specs("Asus Vivobook X1503", "laptop")
+    finally:
+        search_module._bing_rss_search = original_bing
+        search_module._fetch_readable_page = original_fetch
+        search_module._fetch_asus_support_code = original_support
+        search_module._ai_generate_model_specs = original_ai
+    by_name = {item["name"]: item["value"] for item in specs}
+    assert by_name["Процессор"].startswith("Intel® Core™ i5-12500H")
+    assert "Wi-Fi 6" in by_name["Сетевые интерфейсы"]
 
 
 def test_extract_msi_search_family_query_supports_family_only_input():

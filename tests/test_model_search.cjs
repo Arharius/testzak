@@ -23,7 +23,7 @@ const cases = [
   { input: 'Dell OptiPlex 7010', expected: true },
   { input: 'Гравитон Н15', expected: true },
   { input: 'asus 1503', expected: false },
-  { input: 'Asus Vivobook X1503', expected: false },
+  { input: 'Asus Vivobook X1503', expected: true },
   { input: 'ASUS X1503ZA', expected: true },
   { input: 'HP 250', expected: true },
   { input: 'MikroTik CRS326-24G-2S+RM', expected: true },

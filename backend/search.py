@@ -13,6 +13,7 @@ import asyncio
 import re
 import time
 import httpx
+import unicodedata
 from html import unescape
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError, URLError
@@ -459,6 +460,77 @@ _MSI_IGNORED_FIELDS = {
     "Gross Weight (lbs)",
 }
 
+_ASUS_SERIES_FAMILY_TOKENS = {
+    "vivobook",
+    "zenbook",
+    "expertbook",
+    "proart",
+    "tuf",
+    "rog",
+    "chromebook",
+}
+
+_ASUS_TECHSPEC_FIELD_MAP: dict[str, str] = {
+    "operating system": "Операционная система",
+    "sistema operativo": "Операционная система",
+    "processor": "Процессор",
+    "procesador": "Процессор",
+    "graphics": "Графическая подсистема",
+    "graficos": "Графическая подсистема",
+    "display": "Дисплей",
+    "pantalla": "Дисплей",
+    "memory": "Оперативная память",
+    "memoria": "Оперативная память",
+    "storage": "Накопитель",
+    "almacenamiento": "Накопитель",
+    "expansion slots": "Слоты расширения",
+    "ranuras de expansion": "Слоты расширения",
+    "i o ports": "Порты",
+    "puertos e s": "Порты",
+    "keyboard and touchpad": "Клавиатура и тачпад",
+    "teclado y touchpad": "Клавиатура и тачпад",
+    "camera": "Камера",
+    "camara": "Камера",
+    "audio": "Аудиоподсистема",
+    "network and communication": "Сетевые интерфейсы",
+    "redes y comunicacion": "Сетевые интерфейсы",
+    "battery": "Аккумулятор",
+    "bateria": "Аккумулятор",
+    "power supply": "Блок питания",
+    "alimentacion": "Блок питания",
+    "weight": "Масса",
+    "peso": "Масса",
+    "dimensions": "Габариты",
+    "dimensiones": "Габариты",
+    "security": "Средства безопасности",
+    "seguridad": "Средства безопасности",
+    "military grade": "Стандарт надежности",
+    "grado militar": "Стандарт надежности",
+}
+
+_ASUS_TECHSPEC_IGNORED_KEYS = {
+    "model",
+    "modelo",
+    "applications",
+    "aplicaciones",
+    "myasus functionalities",
+    "funcionalidades myasus",
+    "asus exclusive technology",
+    "tecnologia exclusiva de asus",
+    "exclusive subscription offers",
+    "microsoft office",
+    "regulatory compliance",
+    "cumplimiento normativo",
+    "disclaimer",
+    "descargo de responsabilidad",
+}
+
+_ASUS_TECHSPEC_STOP_KEYS = {
+    "need help",
+    "comprar y mas informacion",
+    "buy and learn more",
+}
+
 
 # ── DuckDuckGo (primary, free, no API key) ─────────────────────
 def _duckduckgo_search(query: str, num: int = 5) -> list[dict]:
@@ -823,6 +895,8 @@ def _looks_like_asus_family_series_query(normalized: str, informative_tokens: li
     if "asus" not in normalized:
         return False
     if len(informative_tokens) < 2 or len(informative_tokens) > 4:
+        return False
+    if any(token in _ASUS_SERIES_FAMILY_TOKENS for token in informative_tokens):
         return False
     has_strong_code_token = any(
         re.fullmatch(r"(?:[a-z]{1,3}\d{4}[a-z0-9]{2,}|[a-z0-9]+[-_/+.][a-z0-9]+)", token, flags=re.I)
@@ -1961,6 +2035,14 @@ def _fetch_readable_page(url: str, timeout: int = 10) -> str:
     return _extract_text_from_html(direct, max_chars=18000) if direct else ""
 
 
+def _normalize_label_key(value: str) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _extract_asus_model_code(query: str) -> str:
     upper = re.sub(r"[^A-Za-z0-9]+", " ", str(query or "")).upper()
     for token in upper.split():
@@ -2039,6 +2121,137 @@ def _build_exact_model_ai_aliases(product: str, goods_type: str = "") -> list[st
         aliases.append(f"{product} {type_hint}")
 
     return _dedupe_query_list(aliases)
+
+
+def _build_asus_official_queries(product: str, support_code: str = "", search_key: str = "") -> list[str]:
+    normalized = _normalize_model_search_text(product)
+    support_code = support_code or _fetch_asus_support_code(product)
+    search_key = search_key or _extract_asus_search_key(product).upper()
+    family_tokens = [token for token in _ASUS_SERIES_FAMILY_TOKENS if token in normalized]
+    family_hint = family_tokens[0] if family_tokens else "laptop"
+    codes = [support_code, _extract_asus_model_code(product).upper(), search_key]
+    queries: list[str] = []
+    for code in [item for item in codes if item]:
+        queries.extend([
+            f'site:asus.com "{code}" techspec',
+            f'site:asus.com "{code}" specifications',
+            f'site:asus.com "{code}" "{family_hint}"',
+        ])
+    queries.extend([
+        f'site:asus.com "{product}" techspec',
+        f'site:asus.com "{product}" specifications',
+    ])
+    return _dedupe_query_list(queries)
+
+
+def _score_asus_official_result(item: dict, product: str, support_code: str = "", search_key: str = "") -> int:
+    url = str(item.get("link", ""))
+    title = str(item.get("title", ""))
+    snippet = str(item.get("snippet", ""))
+    haystack = f"{url} {title} {snippet}".lower()
+    upper_haystack = haystack.upper()
+    score = 0
+    if "asus.com" in haystack:
+        score += 40
+    if "/techspec" in haystack or "specification" in haystack or "specifications" in haystack or "especificaciones" in haystack:
+        score += 60
+    if "/supportonly/" in haystack or "helpdesk" in haystack or "_bios" in haystack:
+        score -= 40
+    if "/review/" in haystack or "/news/" in haystack:
+        score -= 20
+    if support_code and support_code in upper_haystack:
+        score += 25
+    if search_key and search_key in upper_haystack:
+        score += 15
+    normalized = _normalize_model_search_text(product)
+    for token in _ASUS_SERIES_FAMILY_TOKENS:
+        if token in normalized and token in haystack:
+            score += 8
+    return score
+
+
+def _clean_asus_spec_value(name: str, value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", str(value or "")).strip(" ;:")
+    if not cleaned:
+        return ""
+    if name == "Масса":
+        cleaned = re.sub(r"\([^)]*lbs[^)]*\)", "", cleaned, flags=re.I).strip(" ;:")
+    if name == "Габариты":
+        cleaned = re.sub(r"\([^)]*\"\s*(?:~\s*[^)]*)?\)", "", cleaned).strip(" ;:")
+    if name == "Блок питания":
+        cleaned = cleaned.replace("Salida:", "Выход:").replace("Entrada:", "Вход:")
+    return cleaned
+
+
+def _parse_asus_techspec_markdown(markdown: str) -> list[dict]:
+    specs: list[dict] = []
+    seen_names: set[str] = set()
+    current_name: str | None = None
+    current_values: list[str] = []
+    started = False
+
+    def flush_current() -> None:
+        nonlocal current_name, current_values
+        if not current_name:
+            current_values = []
+            return
+        value = _clean_asus_spec_value(current_name, "; ".join(
+            item.strip(" ;:")
+            for item in current_values
+            if item and item.strip(" ;:")
+        ))
+        if value and current_name not in seen_names:
+            specs.append({
+                "name": current_name,
+                "value": value,
+                "unit": _infer_unit(current_name, value),
+            })
+            seen_names.add(current_name)
+        current_name = None
+        current_values = []
+
+    for raw_line in str(markdown or "").splitlines():
+        line = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", raw_line or "")
+        line = re.sub(r"^#+\s*", "", line)
+        line = re.sub(r"^\*\s+", "", line)
+        line = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", line)
+        line = re.sub(r"\s+", " ", line).strip(" :-")
+        if not line:
+            continue
+        if line.startswith(("Title:", "URL Source:", "Markdown Content:")):
+            continue
+
+        normalized = _normalize_label_key(line)
+        if not normalized:
+            continue
+        if normalized in _ASUS_TECHSPEC_STOP_KEYS:
+            flush_current()
+            break
+        if normalized in _ASUS_TECHSPEC_FIELD_MAP:
+            flush_current()
+            started = True
+            current_name = _ASUS_TECHSPEC_FIELD_MAP[normalized]
+            current_values = []
+            continue
+        if normalized in _ASUS_TECHSPEC_IGNORED_KEYS:
+            flush_current()
+            started = True
+            current_name = None
+            current_values = []
+            continue
+        if not started:
+            continue
+        if normalized.startswith("viewing ") or normalized.startswith("viendo "):
+            continue
+        if normalized.startswith("asus vivobook") or normalized == "x1503za":
+            continue
+        if "todos los derechos reservados" in normalized or "all rights reserved" in normalized:
+            flush_current()
+            break
+        current_values.append(line)
+
+    flush_current()
+    return _clean_specs_for_compliance(_dedupe_specs(specs))
 
 
 def _extract_msi_model_family(query: str) -> tuple[str, str] | None:
@@ -2440,6 +2653,36 @@ def _resolve_msi_search_page_specs(product: str, goods_type: str = "") -> list[d
 def _resolve_asus_exact_model_specs(product: str, goods_type: str = "") -> list[dict]:
     if "asus" not in str(product or "").lower():
         return []
+
+    support_code = _fetch_asus_support_code(product)
+    search_key = _extract_asus_search_key(product).upper()
+    candidate_queries = _build_asus_official_queries(product, support_code=support_code, search_key=search_key)
+    ranked_results: list[dict] = []
+    seen_links: set[str] = set()
+
+    for query in candidate_queries[:5]:
+        for item in _bing_rss_search(query, num=4, timeout=6):
+            link = str(item.get("link", "")).strip()
+            if not link or link in seen_links or "asus.com" not in link.lower():
+                continue
+            seen_links.add(link)
+            ranked_results.append(item)
+
+    ranked_results.sort(
+        key=lambda item: _score_asus_official_result(item, product, support_code=support_code, search_key=search_key),
+        reverse=True,
+    )
+
+    for item in ranked_results[:6]:
+        url = str(item.get("link", "")).strip()
+        readable = _fetch_readable_page(url, timeout=10)
+        if not readable:
+            continue
+        specs = _parse_asus_techspec_markdown(readable)
+        if _has_sufficient_exact_model_quality(specs):
+            logger.info(f"[vendor] ASUS techspec hit: {product!r} -> {url}")
+            return specs
+        logger.info(f"[vendor] ASUS techspec weak parse: {url} specs={len(specs)}")
 
     for alias in _build_exact_model_ai_aliases(product, goods_type):
         specs = _ai_generate_model_specs(alias, goods_type)

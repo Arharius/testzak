@@ -233,7 +233,6 @@ export function createWorkspacePublicationTools({
   }
 
   function buildLegalSummaryRow(row: GoodsRow, index: number, lawMode: LawMode): LegalSummaryRow {
-    const goods = lookupCatalog(row.type);
     const okpd2 = getResolvedOkpd2Code(row) || '—';
     const okpd2Name = getResolvedOkpd2Name(row);
     const ktru = getResolvedKtruCode(row);
@@ -246,7 +245,7 @@ export function createWorkspacePublicationTools({
 
     return {
       index: String(index + 1),
-      item: `${goods.name}${row.model ? ` (${row.model})` : ''}`,
+      item: getRowDisplayLabel(row),
       classifier: classifierParts.join('\n'),
       measure: basisDisplay ? `${measureLabel}\n${basisDisplay}` : measureLabel,
       action: getLegalEvidenceAction(row, lawMode),
@@ -767,7 +766,7 @@ export function createWorkspacePublicationTools({
 
     return {
       index: String(index + 1),
-      item: `${goods.name}${row.model ? ` (${row.model})` : ''}`,
+      item: getRowDisplayLabel(row),
       status,
       classifier: classifierParts.join('\n'),
       quality: qualityParts.join('\n'),

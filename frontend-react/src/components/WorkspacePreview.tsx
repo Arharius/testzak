@@ -348,7 +348,7 @@ export function WorkspacePreview({
               return (
                 <tr key={row.id}>
                   <td style={tdC}>{idx + 1}</td>
-                  <td style={tdC}>{goods.name}{row.model ? ` (${row.model})` : ''}</td>
+                  <td style={tdC}>{goods.name}</td>
                   {showCommercialTerms && <td style={tdC}>{getCommercialValue(commercial.suggestedLicenseType)}</td>}
                   {showCommercialTerms && <td style={tdC}>{getCommercialValue(commercial.suggestedTerm)}</td>}
                   <td style={tdC}>{row.qty} {getRowQtyUnitShort(row)}</td>
@@ -399,7 +399,7 @@ export function WorkspacePreview({
             <hr style={{ borderTop: '2px dashed color-mix(in srgb, var(--doc-accent) 58%, transparent)', margin: '24px 0' }} />
             <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 14, color: 'var(--doc-accent)', marginBottom: 4 }}>Приложение {idx + 1}</div>
             <div style={{ textAlign: 'center', fontWeight: 600, fontSize: 13, marginBottom: 8, color: 'var(--doc-heading)' }}>
-              {goods.name}{row.model ? ` (${row.model})` : ''} — {row.qty} {getRowQtyUnitShort(row)}
+              {goods.name} — {row.qty} {getRowQtyUnitShort(row)}
               {[commercial.suggestedLicenseType, commercial.suggestedTerm].filter(Boolean).length > 0
                 ? ` / ${[commercial.suggestedLicenseType, commercial.suggestedTerm].filter(Boolean).join(' / ')}`
                 : ''}

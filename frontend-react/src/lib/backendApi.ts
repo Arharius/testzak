@@ -1,3 +1,5 @@
+import { GOODS_CATALOG } from '../data/goods-catalog';
+
 /**
  * Backend API client for TZ Generator.
  * Supports:
@@ -627,7 +629,8 @@ function buildTZTitle(data: { title?: string; rows?: unknown[] }): { title: stri
     : {};
   const goodsType = String(first.type || '');
   const model = String(first.model || '');
-  const generated = `${goodsType} — ${model}`.trim().replace(/^—\s*|\s*—$/g, '');
+  const catalogName = goodsType && GOODS_CATALOG[goodsType] ? GOODS_CATALOG[goodsType].name : '';
+  const generated = catalogName || goodsType || 'Без названия';
   return {
     title: explicitTitle || generated || 'Без названия',
     goodsType,

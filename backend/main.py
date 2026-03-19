@@ -1962,8 +1962,7 @@ def save_tz_document(
     if not title and req.rows:
         first = req.rows[0] if isinstance(req.rows[0], dict) else {}
         goods_type = first.get("type", "")
-        model_name = first.get("model", "")
-        title = f"{goods_type} — {model_name}".strip(" — ") or "Без названия"
+        title = str(goods_type or "").strip() or "Без названия"
 
     # Extract primary goods_type and model from first row
     first_row = req.rows[0] if req.rows and isinstance(req.rows[0], dict) else {}

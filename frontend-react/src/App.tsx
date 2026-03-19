@@ -17,9 +17,12 @@ import {
 } from './lib/api';
 import {
   sendMagicLink,
+  getMe,
+  getStoredToken,
   loginWithPassword,
   verifyMagicToken,
   getStoredUser,
+  isLoggedIn,
   setStoredToken,
   clearStoredAuth,
   isBackendApiAvailable,
@@ -105,6 +108,36 @@ export function App() {
         });
     }
   }, []);
+
+  useEffect(() => {
+    if (!backendAvailable) return;
+    if (!isLoggedIn()) {
+      if (backendUser) {
+        clearStoredAuth();
+        setBackendUser(null);
+      }
+      return;
+    }
+    let cancelled = false;
+    getMe()
+      .then((user) => {
+        if (cancelled) return;
+        const token = getStoredToken();
+        if (token) setStoredToken(token, user);
+        setBackendUser(user);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message.toLowerCase() : '';
+        if (/401|403|авторизац|unauthorized|forbidden/.test(message)) {
+          clearStoredAuth();
+          setBackendUser(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [backendAvailable]);
 
   useEffect(() => {
     const onLogUpdated = () => setRefreshTick((x) => x + 1);

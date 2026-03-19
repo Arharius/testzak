@@ -6926,6 +6926,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   // Hosted mode: use backend when explicit BACKEND_URL is configured.
   // Local mode keeps previous behavior (requires signed-in user).
   const useBackend = !!(BACKEND_URL || (backendUser && isBackendApiAvailable()));
+  const hasBackendSession = !!backendUser || isLoggedIn();
   const [lawMode, setLawMode] = useState<LawMode>('44');
   const [catalogMode, setCatalogMode] = useState<CatalogMode>('it');
   const [provider, _setProvider] = useState<Provider>('deepseek');  // eslint-disable-line @typescript-eslint/no-unused-vars
@@ -6961,6 +6962,25 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [historyItems, setHistoryItems] = useState<TZDocumentSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [currentDocId, setCurrentDocId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!hasBackendSession) return;
+    setRows((prev) => {
+      let changed = false;
+      const next = prev.map((row) => {
+        if (row.status === 'error' && /требуется авторизац/i.test(String(row.error || ''))) {
+          changed = true;
+          return {
+            ...row,
+            status: row.specs?.length ? 'done' : 'idle',
+            error: '',
+          };
+        }
+        return row;
+      });
+      return changed ? next : prev;
+    });
+  }, [hasBackendSession]);
   // Выпадающая таблица типов при вводе бренда
   const [typeSuggestions, setTypeSuggestions] = useState<{ rowId: number; items: Array<{ type: string; name: string; okpd2: string }>; loading?: boolean; rect?: { top: number; left: number; width: number } } | null>(null);
   const aiSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -10306,7 +10326,9 @@ ${hint || '- Используй детальные, проверяемые эк�
         editingRowId={editingRowId}
         expandedRowMetaId={expandedRowMetaId}
         canUseAiAssist={canUseAiAssist}
+        hasBackendSession={hasBackendSession}
         benchmarkingEnabled={enterpriseSettings.benchmarking}
+        onOpenAuthPanel={() => setAuthPanelOpen(true)}
         onSetRowRef={setRowRef}
         lookupCatalog={lookupCatalog}
         getUnifiedNacRegime={getUnifiedNacRegime}

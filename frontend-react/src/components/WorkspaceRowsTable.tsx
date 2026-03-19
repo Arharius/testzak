@@ -51,6 +51,7 @@ type WorkspaceRowsTableProps = {
   editingRowId: number | null;
   expandedRowMetaId: number | null;
   canUseAiAssist: boolean;
+  hasBackendSession: boolean;
   benchmarkingEnabled: boolean;
   lookupCatalog: (key: string) => CatalogLike;
   getUnifiedNacRegime: (key: string) => string;
@@ -83,6 +84,7 @@ type WorkspaceRowsTableProps = {
   onToggleRowEditing: (rowId: number) => void;
   onRefreshRowClassification: (rowId: number) => void;
   onRefreshRowFromSource: (rowId: number, source: 'internet' | 'eis') => void;
+  onOpenAuthPanel: () => void;
   onUpdateSpec: (rowId: number, specIdx: number, field: 'name' | 'value' | 'unit' | 'group', newVal: string) => void;
   onDeleteSpec: (rowId: number, specIdx: number) => void;
   onAddSpec: (rowId: number, afterIdx?: number) => void;
@@ -99,6 +101,7 @@ export function WorkspaceRowsTable({
   editingRowId,
   expandedRowMetaId,
   canUseAiAssist,
+  hasBackendSession,
   benchmarkingEnabled,
   lookupCatalog,
   getUnifiedNacRegime,
@@ -128,6 +131,7 @@ export function WorkspaceRowsTable({
   onToggleRowEditing,
   onRefreshRowClassification,
   onRefreshRowFromSource,
+  onOpenAuthPanel,
   onUpdateSpec,
   onDeleteSpec,
   onAddSpec,
@@ -160,6 +164,7 @@ export function WorkspaceRowsTable({
         <tbody>
           {rows.map((row, idx) => {
             const needsQuickClassificationAction = !getResolvedOkpd2Code(row) || requiresManualClassificationReview(row) || row.status === 'error';
+            const rowNeedsAuth = row.status === 'error' && /требуется авторизац/i.test(String(row.error || ''));
             const rowStateClassName = rowActionState?.rowId === row.id
               ? 'rows-table-row is-busy'
               : focusedRowId === row.id
@@ -294,11 +299,27 @@ export function WorkspaceRowsTable({
                         <button
                           type="button"
                           className="row-inline-action"
-                          onClick={() => onRefreshRowClassification(row.id)}
-                          disabled={!canUseAiAssist || !!rowActionState || publicationAutopilotRunning}
-                          title={!canUseAiAssist ? 'Требуется доступ к backend/AI для уточнения классификации' : 'Быстро добрать ОКПД2, КТРУ и статус ПП1875 для этой строки'}
+                          onClick={() => {
+                            if (rowNeedsAuth && !hasBackendSession) {
+                              onOpenAuthPanel();
+                              return;
+                            }
+                            onRefreshRowClassification(row.id);
+                          }}
+                          disabled={rowNeedsAuth ? false : (!canUseAiAssist || !!rowActionState || publicationAutopilotRunning)}
+                          title={rowNeedsAuth
+                            ? (hasBackendSession
+                              ? 'Сессия уже активна. Повторите уточнение для этой строки.'
+                              : 'Откройте вход в аккаунт, чтобы продолжить работу с этой строкой.')
+                            : !canUseAiAssist
+                              ? 'Требуется доступ к backend/AI для уточнения классификации'
+                              : 'Быстро добрать ОКПД2, КТРУ и статус ПП1875 для этой строки'}
                         >
-                          {rowActionState?.rowId === row.id && rowActionState.source === 'classify' ? '⏳ Уточнение...' : '🧭 Уточнить'}
+                          {rowNeedsAuth
+                            ? (hasBackendSession ? '🔄 Повторить' : '🔐 Войти')
+                            : rowActionState?.rowId === row.id && rowActionState.source === 'classify'
+                              ? '⏳ Уточнение...'
+                              : '🧭 Уточнить'}
                         </button>
                       )}
                       <button

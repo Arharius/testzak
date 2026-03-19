@@ -88,6 +88,7 @@ export type BackendUser = {
 };
 
 export function getStoredUser(): BackendUser | null {
+  if (!getStoredToken()) return null;
   const raw = localStorage.getItem(USER_KEY);
   if (!raw) return null;
   try { return JSON.parse(raw); } catch { return null; }

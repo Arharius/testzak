@@ -8,6 +8,7 @@ from search import (
     _extract_msi_search_family_query,
     _extract_msi_search_spec_url,
     _get_astra_fast_specs,
+    _get_baseline_specs,
     _has_sufficient_exact_model_quality,
     _looks_like_specific_model_query,
     _parse_msi_family_spec_markdown,
@@ -323,3 +324,12 @@ def test_clean_specs_for_compliance_removes_model_identity_fields():
         {"name": "Процессор", "value": "Intel Core i7 Processor 14700", "unit": ""},
     ])
     assert specs == [{"name": "Процессор", "value": "Intel Core i7 Processor 14700", "unit": ""}]
+
+
+def test_monitor_baseline_is_monitor_specific_not_generic_peripheral():
+    specs = _get_baseline_specs("monitor", "Монитор серии 07 RDW")
+    by_name = {item["name"]: item["value"] for item in specs}
+    assert by_name["Тип устройства"] == "Монитор для подключения к персональному компьютеру"
+    assert "Диагональ экрана" in by_name
+    assert by_name["Разрешение экрана"].startswith("не менее")
+    assert "Видеоинтерфейсы" in by_name

@@ -1392,6 +1392,32 @@ def _build_baseline_spec_text(goods_type: str = "", query: str = "") -> str:
 Длина встроенного кабеля: не менее 1.5 м
 """
 
+    if key == "monitor":
+        diagonal_match = re.search(r"(\d{2}(?:[.,]\d)?)\s*(?:\"|дюйм)", raw, flags=re.I)
+        refresh_match = re.search(r"(\d{2,3})\s*(?:гц|hz)", raw, flags=re.I)
+        if re.search(r"\b(4k|3840\s*[x×]\s*2160)\b", normalized):
+            resolution = "не менее 3840 x 2160"
+        elif re.search(r"\b(qhd|2k|2560\s*[x×]\s*1440)\b", normalized):
+            resolution = "не менее 2560 x 1440"
+        else:
+            resolution = "не менее 1920 x 1080"
+        diagonal = diagonal_match.group(1).replace(",", ".") if diagonal_match else "23.8"
+        refresh = refresh_match.group(1) if refresh_match else "60"
+        return f"""
+Тип устройства: Монитор для подключения к персональному компьютеру
+Диагональ экрана: не менее {diagonal} дюйм
+Тип матрицы: IPS, VA или эквивалент
+Разрешение экрана: {resolution}
+Частота обновления экрана: не менее {refresh} Гц
+Яркость: не менее 250 кд/м²
+Контрастность: не менее 1000:1
+Углы обзора: не менее 178° / 178°
+Видеоинтерфейсы: HDMI и/или DisplayPort по спецификации производителя
+Регулировка положения экрана: Наклон и/или иные регулировки по модели поставки
+Крепление VESA: Наличие и/или совместимость с кронштейнами по типу устройства
+Комплектность: Монитор, кабель питания, видеокабель (при наличии в штатной поставке), документация производителя
+"""
+
     if key == "keyboard":
         return """
 Тип устройства: Клавиатура компьютерная

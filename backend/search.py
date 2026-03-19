@@ -2113,15 +2113,19 @@ def _fetch_asus_support_title(product: str, support_code: str = "") -> str:
     code = (support_code or _fetch_asus_support_code(product)).strip().upper()
     if not code:
         return ""
+    fallback_title = ""
     for url in (
-        f"https://www.asus.com/supportonly/{code}/HelpDesk/",
         f"https://www.asus.com/jp/supportonly/{code.lower()}/helpdesk/",
+        f"https://www.asus.com/supportonly/{code}/HelpDesk/",
     ):
         readable = _fetch_readable_page(url, timeout=8)
         title = _extract_asus_support_title(readable)
         if title:
+            if title.upper() == code or len(title.split()) <= 1:
+                fallback_title = fallback_title or title
+                continue
             return title
-    return ""
+    return fallback_title
 
 
 def _build_exact_model_ai_aliases(product: str, goods_type: str = "") -> list[str]:

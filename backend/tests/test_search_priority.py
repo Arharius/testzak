@@ -9,6 +9,7 @@ from search import (
     _extract_asus_model_code,
     _extract_asus_support_code,
     _extract_asus_support_title,
+    _fetch_asus_support_title,
     _extract_msi_model_family,
     _extract_msi_search_family_query,
     _extract_msi_search_spec_url,
@@ -172,6 +173,20 @@ ASUS Vivobook 15X OLED X1503ZA
 製品サポート
 """
     assert _extract_asus_support_title(markdown) == "ASUS Vivobook 15X OLED X1503ZA"
+
+
+def test_fetch_asus_support_title_prefers_descriptive_localized_page():
+    search_module = __import__("search")
+    original_fetch = search_module._fetch_readable_page
+    try:
+        responses = {
+            "https://www.asus.com/jp/supportonly/x1503za/helpdesk/": "Title: ASUS Vivobook 15X OLED X1503ZA - サポート",
+            "https://www.asus.com/supportonly/X1503ZA/HelpDesk/": "Title: X1503ZA - Support",
+        }
+        search_module._fetch_readable_page = lambda url, timeout=8: responses.get(url, "")
+        assert _fetch_asus_support_title("Asus Vivobook X1503", support_code="X1503ZA") == "ASUS Vivobook 15X OLED X1503ZA"
+    finally:
+        search_module._fetch_readable_page = original_fetch
 
 
 def test_build_exact_model_ai_aliases_enriches_asus_support_code():

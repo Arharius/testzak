@@ -2175,7 +2175,9 @@ def _parse_json_with_repair(text: str) -> list | None:
 
 # ── Post-processing: clean specs for 44-ФЗ compliance ────────────
 _PROHIBITED_SPEC_NAMES_RE = re.compile(
-    r"^(модель|model|артикул|арт\b|part\s*number|p/n|pn|sku|бренд|brand|производитель|manufacturer|торговая\s+марка)$",
+    r"^(модель|model|mkt\s*name|mkt\s*spec|артикул|арт\b|part\s*(?:number|no\.?)|p/?n|pn|sku|"
+    r"s/?n|sn|serial(?:\s*number)?|серийн(?:ый|ого)\s+номер|product\s*code|код\s+товара|"
+    r"бренд|brand|производитель|manufacturer|торговая\s+марка)$",
     re.IGNORECASE,
 )
 _PLACEHOLDER_VALUE_RE = re.compile(

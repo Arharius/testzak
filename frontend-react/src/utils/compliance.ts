@@ -35,9 +35,10 @@ type RowForCompliance = {
 };
 
 const BRAND_RE = /\b(Intel|AMD|Nvidia|Samsung|Micron|Kingston|WD|Western\s+Digital|Seagate|Toshiba|Qualcomm|Broadcom|Realtek|Marvell|Mellanox|Hynix|SK\s*Hynix|Lenovo|Huawei|Cisco|Dell|Acer|Asus|Apple|MSI|Gigabyte|Supermicro|HP|HPE|TP-?Link|D-?Link|Juniper|Aruba|ZTE|Hikvision|Dahua|Canon|Epson|Ricoh|Kyocera|Brother|Xerox|Pantum|LG|BenQ|ViewSonic|AOC|iiyama|Logitech|Jabra|Plantronics|Poly|Synology|QNAP|NetApp|MikroTik|Ubiquiti|Zyxel|Eltex|APC|Eaton|Vertiv|Noctua|Corsair|be\s*quiet|Chieftec|Thermaltake|Cooler\s*Master|DeepCool|Интел|Самсунг|Леново|Хуавей|Делл|Кэнон|Эпсон)\b/i;
-const ARTICLE_RE = /\b(артикул|арт\.?|part\s*number|p\/n|pn)\b/i;
-const MODEL_WORD_RE = /\b(модель|model)\b/i;
+const ARTICLE_RE = /\b(артикул|арт\.?|part\s*(?:number|no\.?)|p\/n|pn|sku|product\s*code|код\s+товара)\b/i;
+const MODEL_WORD_RE = /\b(модель|model|mkt\s*name|mkt\s*spec|serial(?:\s*number)?|серийн(?:ый|ого)\s+номер)\b/i;
 const ARTICLE_CODE_RE = /\b[A-ZА-Я]{1,6}-\d{2,8}[A-ZА-Я0-9-]*\b/;
+const IDENTITY_SPEC_NAME_RE = /^(модель|model|mkt\s*name|mkt\s*spec|артикул|арт\.?|part\s*(?:number|no\.?)|p\/?n|pn|sku|s\/?n|sn|serial(?:\s*number)?|серийн(?:ый|ого)\s+номер|product\s*code|код\s+товара|бренд|brand|производитель|manufacturer|торговая\s+марка)$/i;
 const OPERATOR_RE = /(>=|<=|>|<)/;
 const STRICT_WEAK_VALUE_RE = /(по типу( товара| программного обеспечения)?|по назначению|в соответствии с технической документацией производителя( и требованиями заказчика)?|по условиям поставки и требованиям заказчика|актуальная поддерживаемая версия по документации производителя|в соответствии с требованиями заказчика|при необходимости|по описанию|по согласованию с заказчиком|типовая конфигурация|конкретное значение|согласно документации|согласно требованиям|или иное по требованию|или иное — по требованию|уточнить при необходимости)/i;
 const GENERIC_NAME_RE = /^(функциональные возможности|технические характеристики|характеристики|параметры|описание|назначение|тип товара)$/i;
@@ -288,6 +289,7 @@ export function sanitizeProcurementSpecs(row: Pick<RowForCompliance, 'type' | 'm
     const unit = String(original.unit || '').replace(/\s+/g, ' ').trim();
     const group = String(original.group || 'Общие сведения').replace(/\s+/g, ' ').trim() || 'Общие сведения';
     if (!name || !value) continue;
+    if (IDENTITY_SPEC_NAME_RE.test(name)) continue;
     if (GENERIC_NAME_RE.test(name) && isWeakStrictValue(value)) continue;
     const prepared: SpecItem = {
       ...original,

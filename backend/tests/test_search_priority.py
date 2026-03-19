@@ -2,6 +2,7 @@ from pathlib import Path
 from search import (
     _build_internet_queries,
     _build_procurement_queries,
+    _clean_specs_for_compliance,
     _enrich_with_baseline,
     _extract_msi_model_family,
     _get_astra_fast_specs,
@@ -145,3 +146,13 @@ Product Dimension (WxDxH) (mm)Product Dimension (WxDxH) (mm) 204 x 208 x 54.8 Pr
     assert by_name["Количество потоков процессора"] == "28"
     assert by_name["Беспроводные интерфейсы"] == "Wi-Fi 6E+BT"
     assert _has_sufficient_exact_model_quality(specs) is True
+
+
+def test_clean_specs_for_compliance_removes_model_identity_fields():
+    specs = _clean_specs_for_compliance([
+        {"name": "Part No", "value": "9S6-B0A431-1069", "unit": ""},
+        {"name": "MKT Name", "value": "PRO DP21 14M", "unit": ""},
+        {"name": "MKT Spec", "value": "PRO DP21 14M-1069XRU", "unit": ""},
+        {"name": "Процессор", "value": "Intel Core i7 Processor 14700", "unit": ""},
+    ])
+    assert specs == [{"name": "Процессор", "value": "Intel Core i7 Processor 14700", "unit": ""}]

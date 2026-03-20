@@ -1449,6 +1449,23 @@ html[data-theme='contrast'] .workspace-kpi-chip {
   background: var(--accent);
   border-radius: 2px 0 0 2px;
 }
+.workspace-gen-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: var(--gen-pct, 0%);
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent) 0%, #60a5fa 100%);
+  border-radius: 0 2px 2px 0;
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: gen-bar-shimmer 1.8s linear infinite;
+}
+@keyframes gen-bar-shimmer {
+  0%   { filter: brightness(1); }
+  50%  { filter: brightness(1.35); }
+  100% { filter: brightness(1); }
+}
+
 html[data-theme='contrast'] .workspace-progress-strip {
   background:
     linear-gradient(90deg, rgba(35, 81, 199, 0.055), transparent 35%),
@@ -1686,6 +1703,34 @@ html[data-theme='contrast'] .workspace-disclosure {
   margin-left: 6px;
   font-size: 10px;
   opacity: 0.7;
+}
+
+.workspace-catalog-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(37, 99, 235, 0.18);
+  color: #93c5fd;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.workspace-catalog-btn.is-active .workspace-catalog-tag {
+  background: rgba(255,255,255,0.18);
+  color: #fff;
+}
+.workspace-catalog-tag--general {
+  background: rgba(180, 83, 9, 0.2);
+  color: #fbbf24;
+}
+.workspace-catalog-btn.is-active.is-general .workspace-catalog-tag--general {
+  background: rgba(255,255,255,0.18);
+  color: #fff;
 }
 
 .workspace-inline-note {

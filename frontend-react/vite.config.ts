@@ -29,6 +29,11 @@ export default defineConfig(({ mode }) => {
       changeOrigin: true,
       secure: true,
     },
+    '/health': {
+      target: backendTarget,
+      changeOrigin: true,
+      secure: true,
+    },
     '/proxy/zakupki': {
       target: 'https://zakupki.gov.ru',
       changeOrigin: true,

@@ -590,12 +590,42 @@ function makeImportedRow(params: {
   };
 }
 
+function isValidSpecName(name: string): boolean {
+  if (!name) return false;
+  if (/^#+\s/.test(name)) return false;
+  if (/^\[/.test(name)) return false;
+  if (/^!\[/.test(name)) return false;
+  if (/^https?:\/\//i.test(name)) return false;
+  if (/^\/\//.test(name)) return false;
+  return true;
+}
+
+function isValidSpecValue(value: string): boolean {
+  if (!value) return true;
+  if (/^https?:\/\//i.test(value)) return false;
+  if (/^\/\/[a-z0-9]/i.test(value)) return false;
+  return true;
+}
+
 function isSpecTable(rows: string[][]): boolean {
   if (rows.length < 2) return false;
   const headerIndex = rows[0].length === 1 && rows.length > 2 ? 1 : 0;
   const headers = rows[headerIndex].map((cell) => normalizeHeader(cell));
-  return headers.some((cell) => cell === 'наименование характеристики')
+  const hasSpecHeaders = headers.some((cell) => cell === 'наименование характеристики')
     && headers.some((cell) => cell === 'значение характеристики');
+  if (!hasSpecHeaders) return false;
+  const dataRows = rows.slice(headerIndex + 1).filter((row) => {
+    const name = normalizeCell(row[0] || '');
+    const value = normalizeCell(row[1] || '');
+    return (name || value) && !(name && !value && !(row[2] || '').trim());
+  });
+  if (dataRows.length === 0) return true;
+  const validCount = dataRows.filter((row) => {
+    const name = normalizeCell(row[0] || '');
+    const value = normalizeCell(row[1] || '');
+    return isValidSpecName(name) && isValidSpecValue(value);
+  }).length;
+  return validCount / dataRows.length >= 0.4;
 }
 
 function parseSpecTable(rows: string[][]): SpecItem[] {
@@ -611,6 +641,7 @@ function parseSpecTable(rows: string[][]): SpecItem[] {
       currentGroup = name;
       continue;
     }
+    if (!isValidSpecName(name) || !isValidSpecValue(value)) continue;
     specs.push({
       group: currentGroup,
       name,

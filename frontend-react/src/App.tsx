@@ -85,21 +85,36 @@ export function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [showPricing, setShowPricing] = useState(false);
 
-  // ── Handle magic link from URL on load ──────────────────────────────────
+  // ── Handle magic link or direct JWT from URL on load ────────────────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const magicToken = params.get('magic');
+    const directJwt = params.get('jwt');
+
     if (magicToken) {
-      // Remove token from URL
       params.delete('magic');
       const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
       window.history.replaceState({}, '', newUrl);
-      // Verify token
       verifyMagicToken(magicToken)
         .then((res) => {
           setStoredToken(res.token, res.user);
           setBackendUser(res.user);
           setAuthMsg(`✅ Вход выполнен: ${res.user.email}`);
+          setTimeout(() => setAuthMsg(''), 4000);
+        })
+        .catch((err) => {
+          setAuthMsg(`❌ Ошибка входа: ${err.message}`);
+          setTimeout(() => setAuthMsg(''), 6000);
+        });
+    } else if (directJwt) {
+      params.delete('jwt');
+      const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+      window.history.replaceState({}, '', newUrl);
+      getMe(directJwt)
+        .then((user) => {
+          setStoredToken(directJwt, user);
+          setBackendUser(user);
+          setAuthMsg(`✅ Вход выполнен: ${user.email}`);
           setTimeout(() => setAuthMsg(''), 4000);
         })
         .catch((err) => {

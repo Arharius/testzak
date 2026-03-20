@@ -236,7 +236,12 @@ export async function verifyMagicToken(token: string): Promise<{
   return apiGet(`/api/auth/verify?token=${encodeURIComponent(token)}`);
 }
 
-export async function getMe(): Promise<BackendUser & { subscription_until: string | null }> {
+export async function getMe(overrideToken?: string): Promise<BackendUser & { subscription_until: string | null }> {
+  if (overrideToken) {
+    const headers: Record<string, string> = { Authorization: `Bearer ${overrideToken}` };
+    const resp = await fetchWithTimeout(buildApiUrl('/api/auth/me'), { headers }, SHORT_TIMEOUT_MS);
+    return _handleResponse(resp);
+  }
   return apiGet('/api/auth/me', true);
 }
 

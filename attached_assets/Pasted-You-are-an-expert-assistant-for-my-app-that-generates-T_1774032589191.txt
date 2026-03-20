@@ -1,0 +1,72 @@
+You are an expert assistant for my app that generates Technical Assignments (TZ) for Russian tenders under 44‑FZ and 223‑FZ.
+
+I want to add an AI TZ‑review mode to the app so that a user can click “Проверить и исправить ТЗ” and get:
+
+A structured review of the current TZ text (risks, legal issues, technical inconsistencies).
+
+Concrete, ready‑to‑insert replacement texts for each issue.
+
+Your tasks in this codebase:
+
+Implement a new backend endpoint, e.g. POST /api/review-tz, which accepts:
+
+tzText (string, full current TZ),
+
+lawMode ("44-FZ" or "223-FZ").
+It calls the LLM with a prompt that:
+
+finds issues on 3 levels:
+
+blocking issues / FAS complaint risks (e.g. missing object description, comments left in text, hidden “single vendor” requirements),
+
+legal inaccuracies / excessive requirements (e.g. demanding MinTsifry extracts instead of registry numbers),
+
+technical/logical inconsistencies (e.g. 60 days for electronic delivery, implicit FSTEK license requirements),
+
+and returns a JSON array of suggested fixes.
+
+Define the JSON format of AI response, for example:
+
+json
+[
+  {
+    "id": "issue-1",
+    "level": "blocking" | "legal" | "technical",
+    "title": "Short human-readable title",
+    "originalText": "Exact snippet from tzText",
+    "problemExplanation": "Why this is a problem under 44-FZ/223-FZ or practice",
+    "suggestedText": "Proposed corrected wording in Russian",
+    "autoSafe": true | false
+  }
+]
+In the frontend workspace:
+
+Add a “Проверить и исправить ТЗ” button that:
+
+sends current TZ text to /api/review-tz,
+
+shows the list of issues grouped by level,
+
+for each issue shows: originalText → suggestedText, explanation, checkbox “Применить”.
+
+Add a button “Применить выбранные исправления” that:
+
+sends the selected issues back to the backend or applies them locally,
+
+updates the TZ text with the suggestedText for each selected issue.
+
+Important constraints:
+
+Do NOT weaken existing legal rules already in the app (no brands, no OKPD2/KTRU in description, at least two manufacturers, 44‑FZ vs 223‑FZ modes).
+
+Keep changes incremental and safe.
+
+Before coding, scan the repo and list:
+
+where TZ text is stored/edited,
+
+where AI calls are implemented,
+
+main workspace UI components.
+
+First, explore the repo and propose a short 3–5 step implementation plan for this TZ review-and-fix feature. Wait for my confirmation before large refactors.

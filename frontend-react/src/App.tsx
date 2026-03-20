@@ -279,6 +279,9 @@ export function App() {
         procurementMethod: platformSettings.procurementMethod,
         organization: platformSettings.orgName,
         customerInn: platformSettings.customerInn,
+        organizationProfile: platformSettings.industryPreset,
+        organizationInstructions: platformSettings.organizationInstructions,
+        defaultWarrantyMonths: platformSettings.defaultWarrantyMonths,
         items: []
       };
       const endpoint = platformSettings.endpoint || '/api/v1/integration/draft';
@@ -757,6 +760,9 @@ export function App() {
                   law: platformSettings.profile === 'eis_223' ? '223-FZ' : '44-FZ',
                   organization: platformSettings.orgName,
                   customerInn: platformSettings.customerInn,
+                  organizationProfile: platformSettings.industryPreset,
+                  organizationInstructions: platformSettings.organizationInstructions,
+                  defaultWarrantyMonths: platformSettings.defaultWarrantyMonths,
                   items: []
                 };
                 download(`procurement_pack_${Date.now()}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');

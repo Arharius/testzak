@@ -4,7 +4,9 @@ const path = require('path');
 const componentDir = path.join(__dirname, '..', 'frontend-react', 'src', 'components');
 const utilsDir = path.join(__dirname, '..', 'frontend-react', 'src', 'utils');
 const libDir = path.join(__dirname, '..', 'frontend-react', 'src', 'lib');
+const typesDir = path.join(__dirname, '..', 'frontend-react', 'src', 'types');
 const workspace = [
+  path.join(__dirname, '..', 'frontend-react', 'src', 'App.tsx'),
   path.join(componentDir, 'Workspace.tsx'),
   path.join(componentDir, 'WorkspacePanels.tsx'),
   path.join(componentDir, 'WorkspaceReviewSections.tsx'),
@@ -17,12 +19,15 @@ const workspace = [
   path.join(componentDir, 'WorkspaceRowsTable.tsx'),
   path.join(componentDir, 'WorkspaceSpecEditor.tsx'),
   path.join(componentDir, 'WorkspaceTypeSuggestions.tsx'),
+  path.join(componentDir, 'PlatformPanel.tsx'),
   path.join(componentDir, 'workspace-panels.types.ts'),
   path.join(componentDir, 'workspace-publication.ts'),
   path.join(utilsDir, 'build-info.ts'),
+  path.join(utilsDir, 'organization-memory.ts'),
   path.join(utilsDir, 'row-trust.ts'),
   path.join(utilsDir, 'row-import.ts'),
   path.join(libDir, 'backendApi.ts'),
+  path.join(typesDir, 'schemas.ts'),
 ].map((filePath) => fs.readFileSync(filePath, 'utf-8')).join('\n');
 
 const checks = [
@@ -196,6 +201,15 @@ const checks = [
     ok: workspace.includes('FALLBACK_BUILD_LABEL')
       && workspace.includes('APP_BUILD_META')
       && workspace.includes("import { APP_BUILD_LABEL } from '../utils/build-info';"),
+  },
+  {
+    name: 'Organization memory flows through settings, prompts and export payloads',
+    ok: workspace.includes('buildOrganizationMemoryPromptBlock')
+      && workspace.includes('industryPreset')
+      && workspace.includes('organizationInstructions')
+      && workspace.includes('defaultWarrantyMonths')
+      && workspace.includes('Профиль организации')
+      && workspace.includes('organizationProfileLabel'),
   },
 ];
 

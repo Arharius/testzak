@@ -40,6 +40,7 @@ import { deriveCommercialContext, resolveCommercialTerms, type LdapLicenseProfil
 import { looksLikeSpecificModelQuery } from '../utils/model-search';
 import { hasSufficientExactModelCoverage } from '../utils/model-quality';
 import { type LawMode } from '../utils/npa-blocks';
+import { buildOrganizationMemoryPromptBlock, getOrganizationPresetMeta } from '../utils/organization-memory';
 import { parseImportedRows, type ImportedRowImportInfo } from '../utils/row-import';
 import { APP_BUILD_LABEL } from '../utils/build-info';
 import { WorkspaceRowsTable } from './WorkspaceRowsTable';
@@ -2656,12 +2657,18 @@ function buildSearchSpecsContext(specs: SpecFromSearch[]): string {
     .slice(0, 4000);
 }
 
-function buildUniversalSearchPrompt(row: GoodsRow, sourceLabel: string, contextText = ''): string {
+function buildUniversalSearchPrompt(
+  row: GoodsRow,
+  sourceLabel: string,
+  contextText = '',
+  platformSettings?: PlatformIntegrationSettings
+): string {
   const trimmedContext = contextText.trim().slice(0, 5000);
   const contextBlock = trimmedContext
     ? `\nКонтекст найденных характеристик (${sourceLabel}):\n---\n${trimmedContext}\n---\n`
     : `\nКонтекст ${sourceLabel} недоступен. Используй описание товара и отраслевые знания о типичных характеристиках этого класса изделий.\n`;
   const importedBlock = buildImportedSpecsPromptBlock(row);
+  const organizationBlock = buildOrganizationMemoryPromptBlock(platformSettings, isUniversalServiceType(row.type));
   const commercial = getResolvedCommercialContext(row);
   const minSpecs = getMinimumSpecCount(row, commercial);
   if (isUniversalServiceType(row.type)) {
@@ -2672,6 +2679,7 @@ ${contextBlock}
 Количество / объем: ${row.qty}
 ${commercial.suggestedTerm ? `Срок / период оказания услуг: ${commercial.suggestedTerm}\n` : ''}${commercial.suggestedLicenseType ? `Тип услуги / формат сопровождения: ${commercial.suggestedLicenseType}\n` : ''}
 ${importedBlock}
+${organizationBlock}
 
 Определи и верни:
 1. Код ОКПД2 услуги
@@ -2715,6 +2723,7 @@ ${importedBlock}
 Количество: ${row.qty} шт.
 ${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n` : ''}${contextBlock}
 ${importedBlock}
+${organizationBlock}
 ТВОЯ ЗАДАЧА:
 1. Определить тип товара и его назначение
 2. Определить корректный ОКПД2 и полное наименование ОКПД2
@@ -2748,13 +2757,18 @@ ${importedBlock}
 }`;
 }
 
-function buildUniversalMetaPrompt(row: GoodsRow, contextText = ''): string {
+function buildUniversalMetaPrompt(
+  row: GoodsRow,
+  contextText = '',
+  platformSettings?: PlatformIntegrationSettings
+): string {
   const isService = isUniversalServiceType(row.type);
   const trimmedContext = contextText.trim().slice(0, 4000);
   const contextBlock = trimmedContext
     ? `\nКонтекст для классификации:\n---\n${trimmedContext}\n---\n`
     : '';
   const importedBlock = buildImportedSpecsPromptBlock(row);
+  const organizationBlock = buildOrganizationMemoryPromptBlock(platformSettings, isService);
   return `Ты — эксперт по классификации предметов закупки для РФ.
 Нужно определить только метаданные позиции без генерации полного перечня характеристик.
 
@@ -2762,6 +2776,7 @@ function buildUniversalMetaPrompt(row: GoodsRow, contextText = ''): string {
 Тип позиции: ${isService ? 'услуга' : 'товар'}
 Количество / объем: ${row.qty}
 ${contextBlock}${importedBlock}
+${organizationBlock}
 Верни строго один JSON:
 {
   "meta": {
@@ -5789,7 +5804,11 @@ function adjustSpecsForCommercialContext(row: GoodsRow, specs: SpecItem[]): Spec
   return enrichSpecsByCatalogDepth(row, next, resolved);
 }
 
-function buildPrompt(row: GoodsRow, lawMode: LawMode): { system: string; user: string } {
+function buildPrompt(
+  row: GoodsRow,
+  lawMode: LawMode,
+  platformSettings?: PlatformIntegrationSettings
+): { system: string; user: string } {
   const g = lookupCatalog(row.type);
   const goodsName = g.name;
   const okpd2 = g.okpd2;
@@ -5806,6 +5825,7 @@ function buildPrompt(row: GoodsRow, lawMode: LawMode): { system: string; user: s
     explicitTerm ? `- Срок действия / технической поддержки: ${explicitTerm}` : '',
   ].filter(Boolean).join('\n');
   const importedBlock = buildImportedSpecsPromptBlock(row);
+  const organizationBlock = buildOrganizationMemoryPromptBlock(platformSettings, isService);
 
   // ── Единый SYSTEM-промпт для всех типов ──
   const systemPrompt = `Ты — ведущий эксперт по формированию технических заданий для государственных закупок РФ (${law}).
@@ -5838,6 +5858,7 @@ function buildPrompt(row: GoodsRow, lawMode: LawMode): { system: string; user: s
 Количество / объем: ${row.qty}
 ${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n` : ''}
 ${importedBlock}
+${organizationBlock}
 
 ТВОЯ ЗАДАЧА:
 1. Определить правильный код ОКПД2 услуги
@@ -5878,6 +5899,7 @@ ${importedBlock}
 Количество: ${row.qty} шт.
 ${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n` : ''}
 ${importedBlock}
+${organizationBlock}
 
 ТВОЯ ЗАДАЧА:
 1. Определить правильный код ОКПД2 (до 3 знаков после точки минимум)
@@ -5994,6 +6016,7 @@ ${importedBlock}
 Количество: ${row.qty} шт.
 ${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n- Отрази эти параметры в итоговых характеристиках без изменения их смысла.\n` : ''}
 ${importedBlock}
+${organizationBlock}
 ОКПД2: ${okpd2}${ktru ? '\nКТРУ: ' + ktru : ''}
 
 ${isSW ? `Национальный режим — ПО (ПП РФ № 1875 + ПП РФ № 1236):
@@ -6054,9 +6077,13 @@ function hasRealSpecValues(specs: SpecItem[]): boolean {
 }
 
 // ── Промпт: поиск реальных характеристик конкретной модели через ИИ ───────────
-function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
+function buildSpecSearchPrompt(
+  row: GoodsRow,
+  g: GoodsItem,
+  platformSettings?: PlatformIntegrationSettings
+): string {
   if (isUniversalGoodsType(row.type)) {
-    return buildUniversalSearchPrompt(row, 'интернет-поиск');
+    return buildUniversalSearchPrompt(row, 'интернет-поиск', '', platformSettings);
   }
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   const isSW = !!g.isSoftware;
@@ -6067,6 +6094,7 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
     : getMinimumSpecCount(row, resolvedCommercial);
   const hint = getDetailedSpecHint(row.type);
   const importedBlock = buildImportedSpecsPromptBlock(row);
+  const organizationBlock = buildOrganizationMemoryPromptBlock(platformSettings, !!g.isService);
   const ldapRoleHint = row.type === 'ldap'
     ? getLdapRoleHint(resolvedCommercial.ldapProfile, resolvedCommercial.suggestedLicenseType)
     : '';
@@ -6077,6 +6105,7 @@ function buildSpecSearchPrompt(row: GoodsRow, g: GoodsItem): string {
 Тип: ${g.name}
 ОКПД2: ${g.okpd2}
 ${importedBlock}
+${organizationBlock}
 
 Задача: укажи реальные характеристики именно этой модели/версии, как указаны у производителя и в открытых спецификациях. Характеристики должны быть МАКСИМАЛЬНО ДЕТАЛЬНЫМИ — уровень реальных ТЗ из ЕИС (zakupki.gov.ru).
 
@@ -6165,9 +6194,14 @@ async function fetchEisContext(g: GoodsItem, searchQuery: string, signal: AbortS
 }
 
 // ── Промпт: генерация ТЗ в стиле реальных закупок ЕИС ────────────────────────
-function buildEisStylePrompt(row: GoodsRow, g: GoodsItem, eisContext: string): string {
+function buildEisStylePrompt(
+  row: GoodsRow,
+  g: GoodsItem,
+  eisContext: string,
+  platformSettings?: PlatformIntegrationSettings
+): string {
   if (isUniversalGoodsType(row.type)) {
-    return buildUniversalSearchPrompt(row, 'ЕИС / закупочные площадки', eisContext);
+    return buildUniversalSearchPrompt(row, 'ЕИС / закупочные площадки', eisContext, platformSettings);
   }
   const nac = SW_PROMPT_TYPES.includes(row.type) ? 'pp1236' : 'pp878';
   const isSW = !!g.isSoftware;
@@ -6177,6 +6211,7 @@ function buildEisStylePrompt(row: GoodsRow, g: GoodsItem, eisContext: string): s
     ? Math.min(getMinimumSpecCount(row, resolvedCommercial), isSW ? 14 : 12)
     : getMinimumSpecCount(row, resolvedCommercial);
   const hint = getDetailedSpecHint(row.type);
+  const organizationBlock = buildOrganizationMemoryPromptBlock(platformSettings, !!g.isService);
   const ldapRoleHint = row.type === 'ldap'
     ? getLdapRoleHint(resolvedCommercial.ldapProfile, resolvedCommercial.suggestedLicenseType)
     : '';
@@ -6190,6 +6225,7 @@ function buildEisStylePrompt(row: GoodsRow, g: GoodsItem, eisContext: string): s
 Тип товара: ${g.name}
 ОКПД2: ${g.okpd2}
 ${ctx}
+${organizationBlock}
 
 Требования к ТЗ:
 - Реалистичные характеристики для российского рынка поставщиков
@@ -7544,7 +7580,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
 
     try {
       const g = lookupCatalog(row.type);
-      const { system } = buildPrompt(row, lawMode);
+      const { system } = buildPrompt(row, lawMode, platformSettings);
       const missing = Math.max(1, target - seededSpecs.length);
       const hint = getDetailedSpecHint(row.type)
         .split('\n')
@@ -7645,7 +7681,7 @@ ${hint || '- Используй детальные, проверяемые эк�
         term: resolvedCommercial.suggestedTerm,
       }, seededSpecs);
     }
-  }, [apiKey, lawMode, model, provider, useBackendAi]);
+  }, [apiKey, lawMode, model, platformSettings, provider, useBackendAi]);
 
   const resolveUniversalMeta = useCallback(async (
     row: GoodsRow,
@@ -7657,7 +7693,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       return normalized;
     }
     try {
-      const prompt = buildUniversalMetaPrompt(row, contextText);
+      const prompt = buildUniversalMetaPrompt(row, contextText, platformSettings);
       const raw = useBackendAi
         ? await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 2048)
         : await generateItemSpecs(provider, apiKey, model, prompt);
@@ -7666,7 +7702,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     } catch {
       return normalized;
     }
-  }, [apiKey, model, provider, useBackendAi]);
+  }, [apiKey, model, platformSettings, provider, useBackendAi]);
 
   const runComplianceGate = useCallback((sourceRows: GoodsRow[]): ComplianceReport => {
     const report = buildAntiFasReport(
@@ -7966,6 +8002,10 @@ ${hint || '- Используй детальные, проверяемые эк�
       procurementMethodLabel: PROCUREMENT_METHOD_LABELS[platformSettings.procurementMethod] || platformSettings.procurementMethod,
       organization: platformSettings.orgName,
       customerInn: platformSettings.customerInn,
+      organizationProfile: platformSettings.industryPreset,
+      organizationProfileLabel: getOrganizationPresetMeta(platformSettings.industryPreset).label,
+      organizationInstructions: platformSettings.organizationInstructions,
+      defaultWarrantyMonths: platformSettings.defaultWarrantyMonths || null,
       readiness: buildStoredReadinessPayload(payloadReadiness),
       publicationDossier,
       items: sourceRows.map((r) => ({
@@ -8003,6 +8043,9 @@ ${hint || '- Используй детальные, проверяемые эк�
     platformSettings.procurementMethod,
     platformSettings.orgName,
     platformSettings.customerInn,
+    platformSettings.industryPreset,
+    platformSettings.organizationInstructions,
+    platformSettings.defaultWarrantyMonths,
   ]);
 
   const exportPackage = useCallback((sourceRows: GoodsRow[] = rows, sourceComplianceReport: ComplianceReport | null = complianceReport): boolean => {
@@ -8038,6 +8081,12 @@ ${hint || '- Используй детальные, проверяемые эк�
       profile: platformSettings.profile,
       procurementMethod: platformSettings.procurementMethod,
       procurementMethodLabel: PROCUREMENT_METHOD_LABELS[platformSettings.procurementMethod] || platformSettings.procurementMethod,
+      organization: platformSettings.orgName,
+      customerInn: platformSettings.customerInn,
+      organizationProfile: platformSettings.industryPreset,
+      organizationProfileLabel: getOrganizationPresetMeta(platformSettings.industryPreset).label,
+      organizationInstructions: platformSettings.organizationInstructions,
+      defaultWarrantyMonths: platformSettings.defaultWarrantyMonths || null,
       readiness: buildStoredReadinessPayload(exportReadiness),
       publicationDossier,
       items: sourceRows.map((r) => ({
@@ -8085,6 +8134,11 @@ ${hint || '- Используй детальные, проверяемые эк�
     lawMode,
     platformSettings.profile,
     platformSettings.procurementMethod,
+    platformSettings.orgName,
+    platformSettings.customerInn,
+    platformSettings.industryPreset,
+    platformSettings.organizationInstructions,
+    platformSettings.defaultWarrantyMonths,
     rows,
     showToast,
   ]);
@@ -8165,10 +8219,10 @@ ${hint || '- Используй детальные, проверяемые эк�
     }
 
     const prompt = isUniversal && universalContext
-      ? buildUniversalSearchPrompt(row, 'интернет-поиск', universalContext)
+      ? buildUniversalSearchPrompt(row, 'интернет-поиск', universalContext, platformSettings)
       : (specificModelRequested && exactModelContext
-        ? `${buildSpecSearchPrompt(row, g)}\n\nНайденный контекст по модели:\n${exactModelContext}\n\nИспользуй только подтвержденные характеристики именно этой модели. Не подставляй типовые параметры класса товара.`
-        : buildSpecSearchPrompt(row, g));
+        ? `${buildSpecSearchPrompt(row, g, platformSettings)}\n\nНайденный контекст по модели:\n${exactModelContext}\n\nИспользуй только подтвержденные характеристики именно этой модели. Не подставляй типовые параметры класса товара.`
+        : buildSpecSearchPrompt(row, g, platformSettings));
     let raw: string;
     if (useBackendAi) {
       raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 4096);
@@ -8203,7 +8257,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       sourceCompareLabel: 'Интернет-источники',
       sourceContextText: universalContext,
     };
-  }, [useBackend, useBackendAi, provider, model, apiKey, expandSpecsToMinimum, resolveUniversalMeta]);
+  }, [useBackend, useBackendAi, provider, model, apiKey, expandSpecsToMinimum, platformSettings, resolveUniversalMeta]);
 
   const fetchEisCandidateForRow = useCallback(async (row: GoodsRow): Promise<SpecsCandidate | null> => {
     if (!row.model.trim()) return null;
@@ -8293,10 +8347,10 @@ ${hint || '- Используй детальные, проверяемые эк�
       // proxy недоступен
     }
     const prompt = isUniversal && universalContext
-      ? buildUniversalSearchPrompt(row, 'ЕИС / закупочные площадки / Минпромторг', `${universalContext}${eisContext ? `\n\n${eisContext}` : ''}`)
+      ? buildUniversalSearchPrompt(row, 'ЕИС / закупочные площадки / Минпромторг', `${universalContext}${eisContext ? `\n\n${eisContext}` : ''}`, platformSettings)
       : (specificModelRequested && exactModelContext
-        ? `${buildEisStylePrompt(row, g, eisContext)}\n\nНайденный контекст по модели:\n${exactModelContext}\n\nИспользуй только подтвержденные характеристики именно этой модели. Не подставляй типовые параметры класса товара.`
-        : buildEisStylePrompt(row, g, eisContext));
+        ? `${buildEisStylePrompt(row, g, eisContext, platformSettings)}\n\nНайденный контекст по модели:\n${exactModelContext}\n\nИспользуй только подтвержденные характеристики именно этой модели. Не подставляй типовые параметры класса товара.`
+        : buildEisStylePrompt(row, g, eisContext, platformSettings));
     let raw: string;
     if (useBackendAi) {
       raw = await generateWithBackend(provider, model, [{ role: 'user', content: prompt }], 0.1, 4096);
@@ -8331,7 +8385,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       sourceCompareLabel: 'ЕИС / КТРУ / площадки',
       sourceContextText: `${universalContext}${eisContext ? `${universalContext ? '\n\n' : ''}${eisContext}` : ''}`.trim(),
     };
-  }, [useBackend, useBackendAi, provider, model, apiKey, expandSpecsToMinimum, resolveUniversalMeta]);
+  }, [useBackend, useBackendAi, provider, model, apiKey, expandSpecsToMinimum, platformSettings, resolveUniversalMeta]);
 
   const getMinimumSearchSpecs = useCallback((row: GoodsRow): number => {
     const catalogItem = lookupCatalog(row.type);
@@ -8555,8 +8609,8 @@ ${hint || '- Используй детальные, проверяемые эк�
               }
             }
 
-            const modelAwarePrompt = specificModelRequested ? buildSpecSearchPrompt(currentRow, g) : '';
-            const { system: sysMsg, user: userMsg } = specificModelRequested ? { system: '', user: '' } : buildPrompt(currentRow, lawMode);
+            const modelAwarePrompt = specificModelRequested ? buildSpecSearchPrompt(currentRow, g, platformSettings) : '';
+            const { system: sysMsg, user: userMsg } = specificModelRequested ? { system: '', user: '' } : buildPrompt(currentRow, lawMode, platformSettings);
             let raw: string;
             const messages = specificModelRequested
               ? [{ role: 'user', content: modelAwarePrompt }]

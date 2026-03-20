@@ -4,6 +4,7 @@ import {
   platformIntegrationSchema,
   type PlatformIntegrationSettings
 } from '../types/schemas';
+import { ORGANIZATION_PRESET_OPTIONS } from '../utils/organization-memory';
 
 type Props = {
   value: PlatformIntegrationSettings;
@@ -77,6 +78,43 @@ export function PlatformPanel({
         Организация
         <input {...form.register('orgName')} placeholder="Наименование заказчика" />
       </label>
+      <div className="grid two">
+        <label>
+          Профиль организации
+          <select {...form.register('industryPreset')}>
+            {ORGANIZATION_PRESET_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Гарантия по умолчанию, мес
+          <input
+            type="number"
+            min={0}
+            max={120}
+            step={1}
+            {...form.register('defaultWarrantyMonths', {
+              setValueAs: (value) => {
+                const num = Number(value);
+                return Number.isFinite(num) && num >= 0 ? num : 0;
+              }
+            })}
+            placeholder="0 = не подмешивать"
+          />
+        </label>
+      </div>
+      <label>
+        Внутренние правила заказчика
+        <textarea
+          {...form.register('organizationInstructions')}
+          rows={4}
+          placeholder="Например: делаем акцент на учебные классы; обязательно русская документация; для техники предпочитаем гарантию не менее 24 мес."
+        />
+      </label>
+      <div className="muted">Этот профиль автоматически подмешивается в генерацию, публикационный контроль и экспортный пакет.</div>
       <div className="checks">
         <label><input type="checkbox" {...form.register('autoExport')} /> Автоэкспорт пакета после генерации</label>
         <label><input type="checkbox" {...form.register('autoSendDraft')} /> Автоотправка черновика в коннектор</label>

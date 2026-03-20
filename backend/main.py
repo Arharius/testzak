@@ -1686,6 +1686,31 @@ def get_me(user: User = Depends(get_current_user)):
     resp["subscription_until"] = user.subscription_until.isoformat() if user.subscription_until else None
     return resp
 
+# ── Универсальность описания (brand-avoidance) ────────────────
+_BRAND_AVOIDANCE_INSTRUCTION = (
+    "\nВАЖНО: В тексте описания товара ЗАПРЕЩЕНО упоминать конкретные торговые марки, "
+    "названия производителей и модели (например, «HP LaserJet», «Samsung 970 EVO»). "
+    "Используй только описательные характеристики: тип устройства, класс, диапазоны "
+    "параметров. Формулировка должна подходить минимум для двух товаров разных "
+    "производителей (требование ст. 33 44-ФЗ)."
+)
+
+
+def _check_universality(text: str) -> dict:
+    """Проверяет текст на наличие уникальных брендов/моделей (использует _BRAND_PATTERN)."""
+    seen: set[str] = set()
+    fragments = []
+    for m in _BRAND_PATTERN.finditer(text):
+        phrase = m.group()
+        if phrase not in seen:
+            seen.add(phrase)
+            fragments.append({
+                "phrase": phrase,
+                "reason": "уникальное название бренда/модели — нарушение ст. 33 44-ФЗ",
+            })
+    return {"is_universal": len(fragments) == 0, "risk_fragments": fragments}
+
+
 # ── AI Proxy ──────────────────────────────────────────────────
 @app.post("/api/ai/generate")
 @limiter.limit("20/minute")
@@ -1696,14 +1721,23 @@ def ai_generate(request: Request, req: AIGenerateRequest, user: Optional[User] =
             raise HTTPException(status_code=401, detail="Требуется авторизация")
     else:
         require_active(user, db)
-    result = _call_ai(req.provider, req.model, req.messages, req.temperature or 0.3, req.max_tokens or 4096)
+    # Инъекция brand-avoidance в system-prompt
+    messages = list(req.messages)
+    for i, msg in enumerate(messages):
+        if msg.get("role") == "system":
+            messages[i] = {**msg, "content": msg["content"] + _BRAND_AVOIDANCE_INSTRUCTION}
+            break
+    result = _call_ai(req.provider, req.model, messages, req.temperature or 0.3, req.max_tokens or 4096)
+    # Проверка универсальности ответа
+    ai_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+    universality = _check_universality(ai_text)
     # Count usage (only for non-admin free users with limits)
     if user and user.role != "admin" and user.tz_limit != -1:
         user.tz_count = (user.tz_count or 0) + 1
         if not user.tz_month_start:
             user.tz_month_start = datetime(datetime.now(timezone.utc).year, datetime.now(timezone.utc).month, 1, tzinfo=timezone.utc)
         db.commit()
-    return {"ok": True, "data": result}
+    return {"ok": True, "data": result, "universality": universality}
 
 
 @app.post("/api/ai/generate-stream")
@@ -1716,10 +1750,17 @@ def ai_generate_stream(request: Request, req: AIGenerateRequest, user: Optional[
     else:
         require_active(user, db)
 
+    # Инъекция brand-avoidance в system-prompt для стриминга
+    stream_messages = list(req.messages)
+    for i, msg in enumerate(stream_messages):
+        if msg.get("role") == "system":
+            stream_messages[i] = {**msg, "content": msg["content"] + _BRAND_AVOIDANCE_INSTRUCTION}
+            break
+
     def event_stream():
         full_content = ""
         try:
-            for chunk_str in _call_ai_streaming(req.provider, req.model, req.messages, req.temperature or 0.3, req.max_tokens or 4096):
+            for chunk_str in _call_ai_streaming(req.provider, req.model, stream_messages, req.temperature or 0.3, req.max_tokens or 4096):
                 try:
                     chunk = json.loads(chunk_str)
                 except json.JSONDecodeError:
@@ -1734,8 +1775,8 @@ def ai_generate_stream(request: Request, req: AIGenerateRequest, user: Optional[
                     if content:
                         full_content += content
                         yield f"data: {json.dumps({'token': content})}\n\n"
-            # Final message with full content
-            yield f"data: {json.dumps({'done': True, 'content': full_content})}\n\n"
+            # Финальное сообщение с проверкой универсальности
+            yield f"data: {json.dumps({'done': True, 'content': full_content, 'universality': _check_universality(full_content)})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)[:400]})}\n\n"
 

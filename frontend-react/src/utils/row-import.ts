@@ -420,6 +420,38 @@ function collectDocxTables(node: ParentNode, result: string[][][]): void {
   }
 }
 
+function collectDocxBlocks(
+  node: ParentNode,
+  paragraphs: string[],
+  tables: string[][][],
+  blocks: DocxBlock[],
+): void {
+  for (const child of getChildElements(node)) {
+    const localName = getNodeLocalName(child);
+    if (localName === 'p') {
+      const text = extractDocxParagraphText(child);
+      if (text) {
+        paragraphs.push(text);
+        blocks.push({ kind: 'paragraph', text });
+      }
+    } else if (localName === 'tbl') {
+      const extractedTables: string[][][] = [];
+      extractDocxTablesFromTable(child, extractedTables);
+      for (const rows of extractedTables) {
+        tables.push(rows);
+        blocks.push({ kind: 'table', rows });
+      }
+    } else if (
+      localName === 'sdt' ||
+      localName === 'sdtContent' ||
+      localName === 'txbxContent' ||
+      localName === 'smartTag'
+    ) {
+      collectDocxBlocks(child, paragraphs, tables, blocks);
+    }
+  }
+}
+
 async function parseDocxContent(buffer: ArrayBuffer): Promise<ParsedDocxContent> {
   const zip = await JSZip.loadAsync(buffer);
   const documentFile = zip.file('word/document.xml');
@@ -433,25 +465,7 @@ async function parseDocxContent(buffer: ArrayBuffer): Promise<ParsedDocxContent>
   const paragraphs: string[] = [];
   const tables: string[][][] = [];
   const blocks: DocxBlock[] = [];
-  for (const child of getChildElements(body)) {
-    const localName = getNodeLocalName(child);
-    if (localName === 'p') {
-      const text = extractDocxParagraphText(child);
-      if (text) {
-        paragraphs.push(text);
-        blocks.push({ kind: 'paragraph', text });
-      }
-      continue;
-    }
-    if (localName === 'tbl') {
-      const extractedTables: string[][][] = [];
-      extractDocxTablesFromTable(child, extractedTables);
-      for (const rows of extractedTables) {
-        tables.push(rows);
-        blocks.push({ kind: 'table', rows });
-      }
-    }
-  }
+  collectDocxBlocks(body, paragraphs, tables, blocks);
   return { paragraphs, tables, blocks, documentXmlText };
 }
 
@@ -1437,6 +1451,35 @@ async function parseDocxRows(buffer: ArrayBuffer): Promise<ImportedProcurementRo
   return parseDocxFallbackRows(content);
 }
 
+async function tryServerDocxParse(file: File): Promise<ParsedDocxContent | null> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    const resp = await fetch('/api/parse-docx', {
+      method: 'POST',
+      body: formData,
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data.ok || !data.tables) return null;
+
+    const paragraphs: string[] = (data.paragraphs || []).map((p: string) => normalizeCell(p)).filter(Boolean);
+    const tables: string[][][] = (data.tables || []).map((tbl: { rows: { cells: string[] }[] }) =>
+      tbl.rows.map((row) => row.cells.map((c) => normalizeCell(c))).filter((row: string[]) => row.some(Boolean)),
+    );
+    const blocks: DocxBlock[] = [];
+    for (const p of paragraphs) {
+      blocks.push({ kind: 'paragraph', text: p });
+    }
+    for (const rows of tables) {
+      blocks.push({ kind: 'table', rows });
+    }
+    return { paragraphs, tables, blocks, documentXmlText: '' };
+  } catch {
+    return null;
+  }
+}
+
 export async function parseImportedRows(file: File): Promise<ImportedProcurementRow[]> {
   const lowerName = file.name.toLowerCase();
   if (lowerName.endsWith('.xlsx')) {
@@ -1444,6 +1487,18 @@ export async function parseImportedRows(file: File): Promise<ImportedProcurement
     return dedupeImportedRows(mapRows(rows, 'xlsx'));
   }
   if (lowerName.endsWith('.docx')) {
+    const serverContent = await tryServerDocxParse(file);
+    if (serverContent && serverContent.tables.length > 0) {
+      const appendixRows = parseDocxAppendixRows(serverContent);
+      if (appendixRows.length > 0) return appendixRows;
+      const appendixParagraphRows = parseDocxAppendixParagraphRows(serverContent);
+      if (appendixParagraphRows.length > 0) return appendixParagraphRows;
+      const summaryTableRows = parseDocxSummaryTableRows(serverContent);
+      if (summaryTableRows.length > 0) return summaryTableRows;
+      const tableRows = parseDocxTableRows(serverContent.blocks);
+      if (tableRows.length > 0) return tableRows;
+      return parseDocxFallbackRows(serverContent);
+    }
     return parseDocxRows(await file.arrayBuffer());
   }
   const text = await file.text();

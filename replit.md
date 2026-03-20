@@ -21,6 +21,7 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **Database**: SQLAlchemy + PostgreSQL/SQLite, Alembic migrations
 - **Auth**: PyJWT, Magic Links
 - **Rate Limiting**: Slowapi
+- **DOCX Parser**: python-docx (server-side table extraction via `/api/parse-docx`)
 
 ### Legacy
 - `index.html`: Original monolithic SPA (~2700 lines)
@@ -44,6 +45,9 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **No KTRU/OKPD2 in DOCX**: Codes stripped from final document text and summary tables; still used internally for classification routing
 - **Web-Truth Verification**: `fetch-specs.ts` verifies specs against manufacturer datasheets via AI; conflict detection with legally-safe reformulation
 - **spec-processor.ts**: Postprocessing enforces "не менее/не более" language, removes brands, normalizes Russian units, adds "или эквивалент" for specific technologies
+- **Dual DOCX Parsing**: Server-side via `python-docx` (`/api/parse-docx`) + client-side via JSZip (`row-import.ts`). Server path is preferred, client fallback if unavailable. Both handle `<w:sdt>` wrapped tables.
+- **Spec Table Detection**: Two-tier header aliases (Характеристика/Параметр/Показатель + Значение/Требуемое значение/Спецификация) + headerless heuristic for tables without recognized column names
+- **Number-Preserving LLM Prompt**: AI must preserve exact numeric values from imported specs (e.g. "16 ГБ" → "не менее 16 ГБ", never "не менее 8 ГБ"); only brand names stripped
 
 ## Development Notes
 - Backend API proxied via Vite dev server at `/api` → Railway backend

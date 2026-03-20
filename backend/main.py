@@ -2346,6 +2346,73 @@ def _check_vague_in_text(text: str, field: str, seen: set[str]) -> list[TZRiskIt
     return items
 
 
+# ── DOCX Server-Side Parser ──────────────────────────────────
+from fastapi import UploadFile, File as FastAPIFile
+import io
+import tempfile
+
+class DocxTableRow(BaseModel):
+    cells: list[str]
+
+class DocxTable(BaseModel):
+    rows: list[DocxTableRow]
+
+class DocxParseResponse(BaseModel):
+    ok: bool
+    paragraphs: list[str]
+    tables: list[DocxTable]
+    raw_table_text: str
+    total_paragraphs: int
+    total_tables: int
+
+
+@app.post("/api/parse-docx", response_model=DocxParseResponse)
+async def parse_docx_endpoint(file: UploadFile = FastAPIFile(...)):
+    if not file.filename or not file.filename.lower().endswith('.docx'):
+        raise HTTPException(status_code=400, detail="Только .docx файлы поддерживаются")
+
+    contents = await file.read()
+    if len(contents) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 50 МБ)")
+
+    try:
+        import docx as python_docx
+    except ImportError:
+        raise HTTPException(status_code=500, detail="python-docx не установлен на сервере")
+
+    try:
+        doc = python_docx.Document(io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Не удалось открыть DOCX: {str(e)}")
+
+    paragraphs: list[str] = []
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if text:
+            paragraphs.append(text)
+
+    tables_out: list[DocxTable] = []
+    raw_lines: list[str] = []
+    for table in doc.tables:
+        table_rows: list[DocxTableRow] = []
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            if any(cells):
+                table_rows.append(DocxTableRow(cells=cells))
+                raw_lines.append(" | ".join(c for c in cells if c))
+        if table_rows:
+            tables_out.append(DocxTable(rows=table_rows))
+
+    return DocxParseResponse(
+        ok=True,
+        paragraphs=paragraphs,
+        tables=tables_out,
+        raw_table_text="\n".join(raw_lines),
+        total_paragraphs=len(paragraphs),
+        total_tables=len(tables_out),
+    )
+
+
 @app.post("/api/tz/validate", response_model=TZValidateResponse)
 def validate_tz(req: TZValidateRequest, db: Session = Depends(get_db)):
     """Антиошибочный фильтр: проверяет текст ТЗ перед экспортом DOCX."""

@@ -69,9 +69,9 @@ const DOCX_TRAILING_QTY_RE = new RegExp(
   `(\\d+(?:[.,]\\d+)?)\\s*(?:\\([^)]*\\)\\s*)?${DOCX_QTY_UNITS}(?=\\s*(?:[.;]|$))`,
   'giu',
 );
-const DOCX_IMPORT_STOP_RE = /^(код окпд2(?:\s|$|[.:])|наименование характеристики|значение характеристики|единица измерения характеристики|спецификация(?:\s|$|[.:])|требования к|составил:|согласовано:|утверждаю(?:\s|$|[.:])|техническое задание(?:\s|$|[.:]))/i;
+const DOCX_IMPORT_STOP_RE = /^(код окпд2(?:\s|$|[.:])|код ктру(?:\s|$|[.:])|наименование характеристики|значение характеристики|единица измерения характеристики|спецификация(?:\s|$|[.:])|требования к|составил:|согласовано:|утверждаю(?:\s|$|[.:])|техническое задание(?:\s|$|[.:]))/i;
 const DOCX_SECTION_HEADING_RE = /^(\d+(?:\.\d+)*\.?\s+|приложение(?:\s|$|[.:])|раздел(?:\s|$|[.:])|глава(?:\s|$|[.:])|составил:|согласовано:|утверждаю(?:\s|$|[.:]))/i;
-const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии(?:\s|$|[.:])|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право)/i;
+const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии(?:\s|$|[.:])|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право|юридическое резюме|национальный режим|основание\s*\/\s*исключение|подтверждающие документы|источник классификации|паспорт публикации|сводка готовности|итоговый статус|блокирующие замечания|предупреждения и что проверить|справочная таблица|anti-фас)/i;
 const DOCX_APPENDIX_HEADING_RE = /^приложение(?:\s|$|[.:])/i;
 const DOCX_OKPD2_PREFIX_RE = /^код окпд2(?:\s|$|[.:])/i;
 const DOCX_CLAUSE_PREFIXES = [
@@ -725,8 +725,23 @@ function extractRowDescription(row: string[], map: HeaderMap): string {
   return primary;
 }
 
+const CLAUSE_NUM_RE = /^(\d+\.\d+|[РПРР]\.\d+|РР?\.\d+|ПП?\.\d+)\s*$/;
+
+function isDocxClauseTable(rows: string[][]): boolean {
+  if (rows.length < 3) return false;
+  const firstRow = rows[0];
+  if (firstRow.length === 2) {
+    const h0 = normalizeHeader(firstRow[0]);
+    const h1 = normalizeHeader(firstRow[1]);
+    if ((h0 === 'пункт' || h0 === '№' || h0 === 'п') && (h1 === 'содержание' || h1 === 'описание')) return true;
+  }
+  const dataRows = rows.slice(1, Math.min(rows.length, 8));
+  const clauseCount = dataRows.filter((row) => CLAUSE_NUM_RE.test(normalizeCell(row[0] || ''))).length;
+  return clauseCount >= Math.max(2, Math.floor(dataRows.length * 0.5));
+}
+
 function isLikelyProcurementTable(rawRows: string[][]): boolean {
-  if (rawRows.length < 2 || isSpecTable(rawRows)) return false;
+  if (rawRows.length < 2 || isSpecTable(rawRows) || isDocxClauseTable(rawRows)) return false;
 
   const headerMap = detectHeaderMap(rawRows[0]);
   const hasHeader = Object.keys(headerMap).length > 0;

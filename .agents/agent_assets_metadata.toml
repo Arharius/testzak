@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "KvpOJRQ0th-FjLjOWjvxn"
+uri = "file://attached_assets/TZ_2026-03-20_FIXED.docx"
+type = "word_document"
+title = "ТЗ — исправленная версия (без брендов и служебных блоков)"

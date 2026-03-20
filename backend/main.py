@@ -2456,6 +2456,145 @@ async def parse_docx_endpoint(file: UploadFile = FastAPIFile(...)):
     )
 
 
+class TZReviewRequest(BaseModel):
+    tzText: str
+    lawMode: str = "44"
+
+class TZReviewIssue(BaseModel):
+    id: str
+    level: str
+    title: str
+    originalText: str
+    problemExplanation: str
+    suggestedText: str
+    autoSafe: bool = False
+
+class TZReviewResponse(BaseModel):
+    issues: list[TZReviewIssue]
+    summary: str = ""
+
+@app.post("/api/review-tz", response_model=TZReviewResponse)
+def review_tz(req: TZReviewRequest):
+    """AI-рецензия ТЗ: находит правовые, юридические и технические проблемы и предлагает исправления."""
+    if not req.tzText or len(req.tzText.strip()) < 50:
+        raise HTTPException(status_code=400, detail="Текст ТЗ слишком короткий для рецензии")
+
+    law = "44-ФЗ" if req.lawMode == "44" else "223-ФЗ"
+    tz_excerpt = req.tzText[:12000]
+
+    system_prompt = f"""Ты — старший юрист-эксперт по российским государственным и корпоративным закупкам, специализирующийся на проверке технических заданий (ТЗ) по {law}.
+
+ТВОЯ ЗАДАЧА: провести полную правовую и техническую экспертизу текста ТЗ и выдать список замечаний с готовыми исправлениями.
+
+КАТЕГОРИИ ЗАМЕЧАНИЙ:
+
+1. "blocking" — БЛОКИРУЮЩИЕ (ФАС-риски, жалобы):
+   • Упоминание конкретных брендов/моделей без «или эквивалент»
+   • Скрытые требования «единственного поставщика» (характеристики, которым удовлетворяет только один производитель)
+   • Коды ОКПД2/КТРУ в тексте описания объекта закупки
+   • Оставленные комментарии, черновые пометки
+   • Отсутствие описания объекта закупки
+   • Требования, ограничивающие конкуренцию без обоснования
+
+2. "legal" — ЮРИДИЧЕСКИЕ НЕТОЧНОСТИ:
+   • Требование выписки из реестра Минцифры вместо регистрационного номера
+   • Избыточные требования (лицензия ФСТЭК для оборудования, не требующего сертификации)
+   • Некорректные ссылки на нормативные акты
+   • Требования, не предусмотренные {law}
+   • Неправильное применение национального режима (ПП РФ № 1875)
+
+3. "technical" — ТЕХНИЧЕСКИЕ/ЛОГИЧЕСКИЕ ОШИБКИ:
+   • 60 дней на электронную поставку ПО
+   • Противоречивые требования (DDR4 + частота 5600 МГц)
+   • Нереальные диапазоны (масса ноутбука «не более 0.5 кг»)
+   • Размытые формулировки без конкретных значений
+   • Дублирование характеристик с разными значениями
+
+ПРАВИЛА ОТВЕТА:
+- Для каждого замечания укажи ТОЧНУЮ цитату из исходного текста в originalText
+- В suggestedText дай ГОТОВЫЙ текст для замены — на русском языке, юридически корректный
+- autoSafe = true: замена безопасна, можно применить автоматически
+- autoSafe = false: требуется проверка специалистом перед применением
+- Не ослабляй существующие правовые требования
+- Сохраняй конкретные числовые значения при исправлении
+- Обязательно проверь: бренды, коды, конкуренцию ≥2 производителей, размытые формулировки
+
+ФОРМАТ ОТВЕТА — строго JSON массив (без markdown, без пояснений):
+[
+  {{
+    "id": "issue-1",
+    "level": "blocking",
+    "title": "Краткое название проблемы",
+    "originalText": "Точная цитата из текста ТЗ",
+    "problemExplanation": "Почему это проблема по {law}",
+    "suggestedText": "Исправленная формулировка",
+    "autoSafe": true
+  }}
+]
+
+Если замечаний нет — верни пустой массив []."""
+
+    user_prompt = f"Проведи экспертизу следующего текста ТЗ (закупка по {law}):\n\n{tz_excerpt}"
+
+    try:
+        provider = "deepseek"
+        model = "deepseek-chat"
+        if not _get_api_key(provider):
+            for fallback_p in ["groq", "openrouter"]:
+                if _get_api_key(fallback_p):
+                    provider = fallback_p
+                    model = "llama-3.1-70b-versatile" if fallback_p == "groq" else "deepseek/deepseek-chat"
+                    break
+
+        result = _call_ai(provider, model, [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ], temperature=0.15, max_tokens=4096)
+
+        content = result.get("choices", [{}])[0].get("message", {}).get("content", "[]")
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1] if "\n" in content else content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+            if content.startswith("json"):
+                content = content[4:].strip()
+
+        issues_raw = json.loads(content)
+        if not isinstance(issues_raw, list):
+            issues_raw = []
+
+        issues: list[TZReviewIssue] = []
+        for idx, item in enumerate(issues_raw):
+            if not isinstance(item, dict):
+                continue
+            issues.append(TZReviewIssue(
+                id=item.get("id", f"issue-{idx + 1}"),
+                level=item.get("level", "technical"),
+                title=item.get("title", "Замечание"),
+                originalText=item.get("originalText", ""),
+                problemExplanation=item.get("problemExplanation", ""),
+                suggestedText=item.get("suggestedText", ""),
+                autoSafe=bool(item.get("autoSafe", False)),
+            ))
+
+        blocking_count = sum(1 for i in issues if i.level == "blocking")
+        legal_count = sum(1 for i in issues if i.level == "legal")
+        technical_count = sum(1 for i in issues if i.level == "technical")
+
+        summary = f"Найдено {len(issues)} замечаний: {blocking_count} блокирующих, {legal_count} юридических, {technical_count} технических"
+
+        return TZReviewResponse(issues=issues, summary=summary)
+
+    except json.JSONDecodeError:
+        return TZReviewResponse(issues=[], summary="AI вернул некорректный JSON. Попробуйте ещё раз.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ошибка AI-рецензии: {str(e)[:400]}")
+
+
 @app.post("/api/tz/validate", response_model=TZValidateResponse)
 def validate_tz(req: TZValidateRequest, db: Session = Depends(get_db)):
     """Антиошибочный фильтр: проверяет текст ТЗ перед экспортом DOCX."""

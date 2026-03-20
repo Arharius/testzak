@@ -57,6 +57,16 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **Context-Aware Buttons**: "Нормализовать ТЗ" for DOCX-imported rows vs "Сгенерировать ТЗ" for new rows, with descriptive tooltips.
 - **Admin-only features**: Validation modal, system panels, trial banner hidden from non-admin users.
 
+## AI Review Mode (Проверить и исправить ТЗ)
+- **Backend**: `POST /api/review-tz` — LLM-powered review of TZ text. Accepts `{tzText, lawMode}`, returns `{issues[], summary}`.
+  - Issue levels: `blocking` (FAS risks), `legal` (law inaccuracies), `technical` (logic errors)
+  - Each issue has `originalText`, `suggestedText`, `autoSafe` flag
+  - Fallback providers: deepseek → groq → openrouter
+- **Frontend**: `TZReviewPanel` component — modal overlay with grouped issues, checkbox selection, diff view (old→new), batch apply
+  - API client: `reviewTz()` in `backendApi.ts` (120s timeout)
+  - Button "🔍 Проверить и исправить ТЗ" in workspace toolbar, enabled when `docxReady=true`
+  - Apply fixes: replaces `originalText` with `suggestedText` in row specs, reruns compliance gate
+
 ## Development Notes
 - Backend API proxied via Vite dev server at `/api` → Railway backend
 - `VITE_BACKEND_URL` env var controls backend target (defaults to Railway)

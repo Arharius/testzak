@@ -34,6 +34,8 @@ import {
   type TZValidateResponse,
 } from '../lib/backendApi';
 import { TZValidationModal } from './TZValidationModal';
+import { TZReviewPanel } from './TZReviewPanel';
+import type { TZReviewIssue } from '../lib/backendApi';
 import {
   appendAutomationLog,
   appendImmutableAudit,
@@ -6937,6 +6939,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', typeLocked: false, model: '', licenseType: '', term: '', licenseTypeAuto: false, termAuto: false, qty: 1, status: 'idle' }]);
   const [docxReady, setDocxReady] = useState(false);
   const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
+  const [showReviewPanel, setShowReviewPanel] = useState(false);
   const [deResult, setDeResult] = useState<DoubleEquivResult | null>(null);
   const [deConflicts, setDeConflicts] = useState<SpecConflict[]>([]);
   const [deLoading, setDeLoading] = useState(false);
@@ -7706,9 +7709,48 @@ ${hint || '- Используй детальные, проверяемые эк�
 
   const finishEditing = useCallback(() => {
     setEditingRowId(null);
-    // Rerun compliance after edits
     runComplianceGate(rows);
   }, [rows, runComplianceGate]);
+
+  const buildTzTextForReview = useCallback(() => {
+    return rows
+      .filter((r) => r.status === 'done' && r.specs && r.specs.length > 0)
+      .map((r) => {
+        const header = `[${r.type}] ${r.model || 'Без модели'}`;
+        const specsText = (r.specs ?? [])
+          .map((s) => `  ${s.name}: ${s.value}${s.unit ? ' ' + s.unit : ''}`)
+          .join('\n');
+        return `${header}\n${specsText}`;
+      })
+      .join('\n\n');
+  }, [rows]);
+
+  const handleApplyReviewFixes = useCallback((fixes: TZReviewIssue[]) => {
+    setRows((prev) => {
+      const updated = prev.map((row) => {
+        if (!row.specs || row.specs.length === 0) return row;
+        let changed = false;
+        const newSpecs = row.specs.map((spec) => {
+          const specText = `${spec.name}: ${spec.value}${spec.unit ? ' ' + spec.unit : ''}`;
+          for (const fix of fixes) {
+            if (specText.includes(fix.originalText) || spec.value.includes(fix.originalText)) {
+              changed = true;
+              return { ...spec, value: spec.value.replace(fix.originalText, fix.suggestedText) };
+            }
+            if (spec.name.includes(fix.originalText)) {
+              changed = true;
+              return { ...spec, name: spec.name.replace(fix.originalText, fix.suggestedText) };
+            }
+          }
+          return spec;
+        });
+        return changed ? { ...row, specs: newSpecs } : row;
+      });
+      runComplianceGate(updated);
+      return updated;
+    });
+    setShowReviewPanel(false);
+  }, [runComplianceGate]);
 
   const applyBenchmarkPatch = useCallback((rowId: number, mode: 'missing' | 'changed' | 'all') => {
     const nextRows = rows.map((row) => (
@@ -10510,6 +10552,14 @@ ${hint || '- Используй детальные, проверяемые эк�
           >
             {eisSearching ? '⏳ Ищу в ЕИС...' : paymentRequired ? '🔒 ЕИС-поиск закрыт' : '🏛️ Найти ТЗ в ЕИС'}
           </button>
+          <button
+            type="button"
+            onClick={() => setShowReviewPanel(true)}
+            disabled={!docxReady || paymentRequired || publicationAutopilotRunning}
+            title={!docxReady ? 'Сначала сгенерируйте ТЗ' : paymentRequired ? 'Trial завершён' : 'AI-эксперт проверит ТЗ на ФАС-риски и предложит исправления'}
+          >
+            🔍 Проверить и исправить ТЗ
+          </button>
         </div>
         {splitFeatureVisible && (
           <div className="workspace-split-planner">
@@ -10871,6 +10921,14 @@ ${hint || '- Используй детальные, проверяемые эк�
               setPendingExportFn(null);
             }
           }}
+        />
+      )}
+      {showReviewPanel && (
+        <TZReviewPanel
+          tzText={buildTzTextForReview()}
+          lawMode={lawMode}
+          onApplyFixes={handleApplyReviewFixes}
+          onClose={() => setShowReviewPanel(false)}
         />
       )}
     </section>

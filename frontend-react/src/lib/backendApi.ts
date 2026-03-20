@@ -816,3 +816,25 @@ export async function validateTzBeforeExport(
 ): Promise<TZValidateResponse> {
   return apiPost<TZValidateResponse>('/api/tz/validate', { rows, description: description ?? '' });
 }
+
+export type TZReviewIssue = {
+  id: string;
+  level: 'blocking' | 'legal' | 'technical';
+  title: string;
+  originalText: string;
+  problemExplanation: string;
+  suggestedText: string;
+  autoSafe: boolean;
+};
+
+export type TZReviewResponse = {
+  issues: TZReviewIssue[];
+  summary: string;
+};
+
+export async function reviewTz(
+  tzText: string,
+  lawMode: string,
+): Promise<TZReviewResponse> {
+  return apiPost<TZReviewResponse>('/api/review-tz', { tzText, lawMode }, false, 120000);
+}

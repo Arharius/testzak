@@ -685,9 +685,11 @@ function buildImportedSpecsPromptBlock(row: GoodsRow): string {
   const importedSpecs = getImportedSpecs(row);
   if (!contextText && importedSpecs.length === 0 && !row.importInfo) return '';
 
+  const hasDocxSpecs = importedSpecs.length > 0 && row.importInfo?.sourceFormat === 'docx';
+
   const specsJson = importedSpecs.length > 0
     ? JSON.stringify(
-        importedSpecs.slice(0, 24).map((spec) => ({
+        importedSpecs.slice(0, 48).map((spec) => ({
           group: spec.group || '',
           name: spec.name || '',
           value: spec.value || '',
@@ -701,6 +703,26 @@ function buildImportedSpecsPromptBlock(row: GoodsRow): string {
   const noteBlock = row.importInfo?.notes?.length
     ? row.importInfo.notes.slice(0, 6).map((note) => `- ${note}`).join('\n')
     : '';
+
+  if (hasDocxSpecs) {
+    return [
+      '',
+      '════════════════════════════════════════════════════════',
+      'ХАРАКТЕРИСТИКИ ИЗ ФАЙЛА ЗАКАЗЧИКА (ОБЯЗАТЕЛЬНО К ИСПОЛЬЗОВАНИЮ):',
+      '════════════════════════════════════════════════════════',
+      'У этой позиции уже есть характеристики, загруженные из ТЗ-файла Заказчика.',
+      'ЖЁСТКОЕ ПРАВИЛО: используй их КАК ОСНОВУ таблицы характеристик.',
+      'РАЗРЕШЕНО: нормализовать формулировки (добавить «не менее»/«не более», убрать бренды, привести единицы к ГБ/МГц/мм/Вт).',
+      'ЗАПРЕЩЕНО: удалять строки из этого списка, заменять их шаблонными, игнорировать и генерировать список заново с нуля.',
+      'Если каких-то обязательных по ГОСТ характеристик не хватает — добавь их ПОСЛЕ импортированных, не вместо.',
+      '',
+      `Характеристики из файла (${importedSpecs.length} строк):\n${specsJson}`,
+      noteBlock ? `Примечания импорта:\n${noteBlock}` : '',
+      contextText ? `Дополнительный контекст файла:\n${contextText}` : '',
+      '════════════════════════════════════════════════════════',
+      '',
+    ].filter(Boolean).join('\n');
+  }
 
   return [
     '',

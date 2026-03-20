@@ -24,9 +24,11 @@ const workspace = [
   path.join(componentDir, 'workspace-publication.ts'),
   path.join(utilsDir, 'build-info.ts'),
   path.join(utilsDir, 'organization-memory.ts'),
+  path.join(utilsDir, 'organization-templates.ts'),
   path.join(utilsDir, 'row-trust.ts'),
   path.join(utilsDir, 'row-import.ts'),
   path.join(libDir, 'backendApi.ts'),
+  path.join(libDir, 'storage.ts'),
   path.join(typesDir, 'schemas.ts'),
 ].map((filePath) => fs.readFileSync(filePath, 'utf-8')).join('\n');
 
@@ -210,6 +212,14 @@ const checks = [
       && workspace.includes('defaultWarrantyMonths')
       && workspace.includes('Профиль организации')
       && workspace.includes('organizationProfileLabel'),
+  },
+  {
+    name: 'Workspace now supports organization template packs and saved team templates',
+    ok: workspace.includes('getSuggestedOrganizationTemplatePacks')
+      && workspace.includes('saveWorkspaceTemplate')
+      && workspace.includes('Шаблоны организации')
+      && workspace.includes('Сохранить текущий набор как шаблон')
+      && workspace.includes('Сохранённые шаблоны команды'),
   },
 ];
 

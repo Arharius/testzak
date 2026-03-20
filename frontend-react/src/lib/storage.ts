@@ -19,6 +19,7 @@ const KEYS = {
   automationLog: 'tz_automation_log_v1',
   learnedTypeMap: 'tz_learned_type_map_v1',
   immutableAudit: 'tz_immutable_audit_v1',
+  workspaceTemplates: 'tz_workspace_templates_v1',
 };
 
 export type ImmutableAuditRecord = {
@@ -27,6 +28,23 @@ export type ImmutableAuditRecord = {
   payload: Record<string, unknown>;
   prevHash: string;
   hash: string;
+};
+
+export type WorkspaceTemplateRowStored = {
+  type: string;
+  model: string;
+  licenseType?: string;
+  term?: string;
+  qty: number;
+};
+
+export type WorkspaceTemplateStored = {
+  id: string;
+  name: string;
+  description?: string;
+  industryPreset?: string;
+  updatedAt: string;
+  rows: WorkspaceTemplateRowStored[];
 };
 
 function readJson<T>(key: string, fallback: T): T {
@@ -172,6 +190,37 @@ export function importLearningMap(raw: string): { ok: boolean; count: number } {
   } catch {
     return { ok: false, count: 0 };
   }
+}
+
+export function getWorkspaceTemplates(): WorkspaceTemplateStored[] {
+  const raw = readJson<WorkspaceTemplateStored[]>(KEYS.workspaceTemplates, []);
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((item) =>
+      item
+      && typeof item.id === 'string'
+      && typeof item.name === 'string'
+      && typeof item.updatedAt === 'string'
+      && Array.isArray(item.rows)
+      && item.rows.every((row) =>
+        row
+        && typeof row.type === 'string'
+        && typeof row.model === 'string'
+        && typeof row.qty === 'number'
+      ))
+    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
+export function saveWorkspaceTemplate(template: WorkspaceTemplateStored): WorkspaceTemplateStored {
+  const list = getWorkspaceTemplates().filter((item) => item.id !== template.id);
+  const next = [template, ...list].slice(0, 100);
+  writeJson(KEYS.workspaceTemplates, next);
+  return template;
+}
+
+export function deleteWorkspaceTemplate(templateId: string): void {
+  const next = getWorkspaceTemplates().filter((item) => item.id !== templateId);
+  writeJson(KEYS.workspaceTemplates, next);
 }
 
 function hashString(input: string): string {

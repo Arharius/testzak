@@ -31,7 +31,14 @@ import {
   type SpecFromSearch,
   type TZDocumentSummary,
 } from '../lib/backendApi';
-import { appendAutomationLog, appendImmutableAudit } from '../lib/storage';
+import {
+  appendAutomationLog,
+  appendImmutableAudit,
+  deleteWorkspaceTemplate,
+  getWorkspaceTemplates,
+  saveWorkspaceTemplate,
+  type WorkspaceTemplateStored,
+} from '../lib/storage';
 import type { AutomationSettings, EnterpriseSettings, PlatformIntegrationSettings } from '../types/schemas';
 import { GOODS_CATALOG, detectGoodsType, detectAllGoodsTypes, getNacRegime, type GoodsItem, type HardSpec } from '../data/goods-catalog';
 import { GENERAL_CATALOG, detectGeneralGoodsType, detectGeneralGoodsTypes, getGeneralNacRegime, type GeneralGoodsItem } from '../data/general-catalog';
@@ -41,6 +48,11 @@ import { looksLikeSpecificModelQuery } from '../utils/model-search';
 import { hasSufficientExactModelCoverage } from '../utils/model-quality';
 import { type LawMode } from '../utils/npa-blocks';
 import { buildOrganizationMemoryPromptBlock, getOrganizationPresetMeta } from '../utils/organization-memory';
+import {
+  getSuggestedOrganizationTemplatePacks,
+  suggestTemplateNameForPreset,
+  type OrganizationTemplatePack,
+} from '../utils/organization-templates';
 import { parseImportedRows, type ImportedRowImportInfo } from '../utils/row-import';
 import { APP_BUILD_LABEL } from '../utils/build-info';
 import { WorkspaceRowsTable } from './WorkspaceRowsTable';
@@ -7042,6 +7054,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [activeSplitGroupKey, setActiveSplitGroupKey] = useState<ProcurementPurposeKey | null>(null);
   const [splitSaving, setSplitSaving] = useState(false);
   const [splitPlannerOpen, setSplitPlannerOpen] = useState(false);
+  const [templateLibraryOpen, setTemplateLibraryOpen] = useState(false);
   // Inline spec editing
   const [editingRowId, setEditingRowId] = useState<number | null>(null);
   const [expandedRowMetaId, setExpandedRowMetaId] = useState<number | null>(null);
@@ -7050,6 +7063,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [historyItems, setHistoryItems] = useState<TZDocumentSummary[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [currentDocId, setCurrentDocId] = useState<string | null>(null);
+  const [customTemplates, setCustomTemplates] = useState<WorkspaceTemplateStored[]>(() => getWorkspaceTemplates());
 
   useEffect(() => {
     if (!hasBackendSession) return;
@@ -7078,6 +7092,11 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   // Ref для скролла к превью
   const previewRef = useRef<HTMLDivElement>(null);
   const portalContainerRef = useRef<HTMLDivElement | null>(null);
+  const templatePresetMeta = useMemo(() => getOrganizationPresetMeta(platformSettings.industryPreset), [platformSettings.industryPreset]);
+  const suggestedTemplatePacks = useMemo(
+    () => getSuggestedOrganizationTemplatePacks(platformSettings.industryPreset),
+    [platformSettings.industryPreset]
+  );
   // Lazy-create a dedicated portal container (avoids React reconciliation conflicts with document.body)
   const getPortalContainer = useCallback(() => {
     if (!portalContainerRef.current) {
@@ -7093,6 +7112,10 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const showToast = useCallback((msg: string, ok = true) => {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  const refreshCustomTemplates = useCallback(() => {
+    setCustomTemplates(getWorkspaceTemplates());
   }, []);
 
   const scrollToPreview = useCallback(() => {
@@ -8933,6 +8956,138 @@ ${hint || '- Используй детальные, проверяемые эк�
     setDocxReady(nextRows.some((row) => row.status === 'done' && !!row.specs?.length));
   }, [runComplianceGate]);
 
+  const mapTemplateRowsToDraft = useCallback((templateRows: Array<{
+    type: string;
+    model: string;
+    licenseType?: string;
+    term?: string;
+    qty: number;
+  }>): GoodsRow[] => {
+    const seed = Date.now();
+    return templateRows.map((row, idx) => ({
+      id: seed + idx,
+      type: row.type,
+      typeLocked: false,
+      model: row.model,
+      licenseType: row.licenseType || '',
+      term: row.term || '',
+      licenseTypeAuto: false,
+      termAuto: false,
+      qty: Math.max(1, Number(row.qty || 1)),
+      status: 'idle',
+    }));
+  }, []);
+
+  const applyTemplatePack = useCallback((
+    template: Pick<OrganizationTemplatePack, 'name' | 'rows'> | Pick<WorkspaceTemplateStored, 'name' | 'rows'>,
+    mode: 'replace' | 'append' = 'replace'
+  ) => {
+    if (!template.rows.length) {
+      showToast('⚠️ В шаблоне нет позиций', false);
+      return;
+    }
+    const nextRows = mapTemplateRowsToDraft(template.rows);
+    setCurrentDocId(null);
+    if (mode === 'append') {
+      setRows((prev) => [...prev, ...nextRows]);
+      setDocxReady(false);
+      setComplianceReport(null);
+    } else {
+      setSplitSourceRows(null);
+      setActiveSplitGroupKey(null);
+      setSplitPlannerOpen(false);
+      replaceWorkspaceRows(nextRows);
+      setComplianceReport(null);
+      setDocxReady(false);
+    }
+    showToast(`✅ Шаблон "${template.name}" ${mode === 'append' ? 'добавлен' : 'загружен'}`, true);
+    appendAutomationLog({
+      at: new Date().toISOString(),
+      event: mode === 'append' ? 'workspace.template.append' : 'workspace.template.load',
+      ok: true,
+      note: template.name,
+    });
+    if (enterpriseSettings.immutableAudit) {
+      appendImmutableAudit(mode === 'append' ? 'workspace.template.append' : 'workspace.template.load', {
+        template: template.name,
+        rows: template.rows.length,
+      });
+    }
+  }, [enterpriseSettings.immutableAudit, mapTemplateRowsToDraft, replaceWorkspaceRows, showToast]);
+
+  const saveCurrentDraftAsTemplate = useCallback(() => {
+    const rowsForTemplate = rows
+      .filter((row) => row.model.trim() || row.licenseType.trim() || row.term.trim() || row.qty !== 1 || row.type !== 'pc')
+      .map((row) => {
+        const catalog = lookupCatalog(row.type);
+        return {
+          type: row.type,
+          model: row.model.trim() || catalog.placeholder || catalog.name,
+          licenseType: row.licenseType.trim() || undefined,
+          term: row.term.trim() || undefined,
+          qty: Math.max(1, Number(row.qty || 1)),
+        };
+      });
+    if (rowsForTemplate.length === 0) {
+      showToast('⚠️ Сначала соберите хотя бы одну осмысленную позицию', false);
+      return;
+    }
+    const suggestedName = suggestTemplateNameForPreset(platformSettings.industryPreset, platformSettings.orgName);
+    const name = window.prompt('Название шаблона организации', suggestedName)?.trim();
+    if (!name) return;
+    const template: WorkspaceTemplateStored = {
+      id: `tpl_${Date.now()}`,
+      name,
+      description: `${rowsForTemplate.length} поз. · ${templatePresetMeta.shortLabel}`,
+      industryPreset: platformSettings.industryPreset,
+      updatedAt: new Date().toISOString(),
+      rows: rowsForTemplate,
+    };
+    saveWorkspaceTemplate(template);
+    refreshCustomTemplates();
+    showToast(`✅ Шаблон "${name}" сохранён`, true);
+    appendAutomationLog({
+      at: new Date().toISOString(),
+      event: 'workspace.template.saved',
+      ok: true,
+      note: `${name}; rows=${rowsForTemplate.length}`,
+    });
+    if (enterpriseSettings.immutableAudit) {
+      appendImmutableAudit('workspace.template.saved', {
+        template: name,
+        rows: rowsForTemplate.length,
+        preset: platformSettings.industryPreset,
+      });
+    }
+  }, [
+    enterpriseSettings.immutableAudit,
+    platformSettings.industryPreset,
+    platformSettings.orgName,
+    refreshCustomTemplates,
+    rows,
+    showToast,
+    templatePresetMeta.shortLabel,
+  ]);
+
+  const removeCustomTemplate = useCallback((templateId: string, templateName: string) => {
+    if (!window.confirm(`Удалить шаблон "${templateName}"?`)) return;
+    deleteWorkspaceTemplate(templateId);
+    refreshCustomTemplates();
+    showToast(`✅ Шаблон "${templateName}" удалён`, true);
+    appendAutomationLog({
+      at: new Date().toISOString(),
+      event: 'workspace.template.deleted',
+      ok: true,
+      note: templateName,
+    });
+    if (enterpriseSettings.immutableAudit) {
+      appendImmutableAudit('workspace.template.deleted', {
+        template: templateName,
+        id: templateId,
+      });
+    }
+  }, [enterpriseSettings.immutableAudit, refreshCustomTemplates, showToast]);
+
   const resetWorkspaceDraft = useCallback(() => {
     setSplitSourceRows(null);
     setActiveSplitGroupKey(null);
@@ -10281,6 +10436,86 @@ ${hint || '- Используй детальные, проверяемые эк�
             <button type="button" className="workspace-quick-add" onClick={() => addRowWithType('otherGoods')}>📦 Свой товар</button>
             <button type="button" className="workspace-quick-add" onClick={() => addRowWithType('otherService')}>🛠️ Своя услуга</button>
           </div>
+        </div>
+        <div className="workspace-template-planner">
+          <div className="workspace-side-head workspace-side-head--split">
+            <div>
+              <div className="micro-label">Templates</div>
+              <strong>Шаблоны организации</strong>
+            </div>
+            <span className="workspace-side-meta">{suggestedTemplatePacks.length} типовых · {customTemplates.length} своих</span>
+          </div>
+          <div className="workspace-inline-note">
+            Профиль <strong>{templatePresetMeta.label}</strong> уже учитывается в генерации. Здесь можно быстро загрузить типовой набор позиций и сохранить свой рабочий шаблон команды.
+          </div>
+          <div className="workspace-chip-row workspace-chip-row--dense workspace-chip-row--split-summary">
+            <span className="workspace-mini-chip">Профиль: {templatePresetMeta.shortLabel}</span>
+            <span className="workspace-mini-chip">Свои шаблоны: {customTemplates.length}</span>
+          </div>
+          <div className="workspace-split-toolbar">
+            <button
+              type="button"
+              className="row-detail-toggle"
+              onClick={() => setTemplateLibraryOpen((open) => !open)}
+            >
+              {templateLibraryOpen ? 'Скрыть библиотеку шаблонов' : `Показать библиотеку шаблонов (${suggestedTemplatePacks.length + customTemplates.length})`}
+            </button>
+            <button type="button" onClick={saveCurrentDraftAsTemplate}>
+              💾 Сохранить текущий набор как шаблон
+            </button>
+          </div>
+          {templateLibraryOpen ? (
+            <>
+              <div className="workspace-template-section">
+                <div className="micro-label">Рекомендуемые наборы</div>
+                <div className="workspace-template-grid">
+                  {suggestedTemplatePacks.map((template) => (
+                    <div key={template.id} className="workspace-template-card">
+                      <div className="workspace-template-card-head">
+                        <strong>{template.name}</strong>
+                        <span>{template.rows.length} поз.</span>
+                      </div>
+                      <div className="workspace-template-card-copy">{template.description}</div>
+                      <div className="workspace-template-card-tags">
+                        {template.tags.slice(0, 3).map((tag) => (
+                          <span key={tag} className="workspace-mini-chip">{tag}</span>
+                        ))}
+                      </div>
+                      <div className="workspace-template-actions">
+                        <button type="button" className="row-detail-toggle" onClick={() => applyTemplatePack(template, 'replace')}>Загрузить</button>
+                        <button type="button" className="row-inline-action" onClick={() => applyTemplatePack(template, 'append')}>Добавить</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {customTemplates.length > 0 ? (
+                <div className="workspace-template-section">
+                  <div className="micro-label">Сохранённые шаблоны команды</div>
+                  <div className="workspace-template-grid">
+                    {customTemplates.map((template) => (
+                      <div key={template.id} className="workspace-template-card workspace-template-card--custom">
+                        <div className="workspace-template-card-head">
+                          <strong>{template.name}</strong>
+                          <span>{template.rows.length} поз.</span>
+                        </div>
+                        <div className="workspace-template-card-copy">
+                          {template.description || 'Пользовательский шаблон организации'}
+                          <br />
+                          <span className="muted">Обновлён: {new Date(template.updatedAt).toLocaleDateString('ru-RU')}</span>
+                        </div>
+                        <div className="workspace-template-actions">
+                          <button type="button" className="row-detail-toggle" onClick={() => applyTemplatePack(template, 'replace')}>Загрузить</button>
+                          <button type="button" className="row-inline-action" onClick={() => applyTemplatePack(template, 'append')}>Добавить</button>
+                          <button type="button" className="danger-btn row-delete-inline" onClick={() => removeCustomTemplate(template.id, template.name)}>Удалить</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : null}
         </div>
         <div className="workspace-action-grid workspace-action-grid--toolbar">
           <button type="button" onClick={addRow}>+ Добавить строку</button>

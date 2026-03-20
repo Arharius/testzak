@@ -1461,19 +1461,36 @@ async function tryServerDocxParse(file: File): Promise<ParsedDocxContent | null>
     });
     if (!resp.ok) return null;
     const data = await resp.json();
-    if (!data.ok || !data.tables) return null;
+    if (!data.ok) return null;
 
     const paragraphs: string[] = (data.paragraphs || []).map((p: string) => normalizeCell(p)).filter(Boolean);
     const tables: string[][][] = (data.tables || []).map((tbl: { rows: { cells: string[] }[] }) =>
-      tbl.rows.map((row) => row.cells.map((c) => normalizeCell(c))).filter((row: string[]) => row.some(Boolean)),
+      tbl.rows.map((row: { cells: string[] }) => row.cells.map((c: string) => normalizeCell(c))).filter((row: string[]) => row.some(Boolean)),
     );
+
     const blocks: DocxBlock[] = [];
-    for (const p of paragraphs) {
-      blocks.push({ kind: 'paragraph', text: p });
+    const serverBlocks: { type: string; text?: string; table?: { rows: { cells: string[] }[] } }[] = data.blocks || [];
+    for (const sb of serverBlocks) {
+      if (sb.type === 'paragraph' && sb.text) {
+        const text = normalizeCell(sb.text);
+        if (text) blocks.push({ kind: 'paragraph', text });
+      } else if (sb.type === 'table' && sb.table?.rows) {
+        const rows = sb.table.rows
+          .map((row: { cells: string[] }) => row.cells.map((c: string) => normalizeCell(c)))
+          .filter((row: string[]) => row.some(Boolean));
+        if (rows.length > 0) blocks.push({ kind: 'table', rows });
+      }
     }
-    for (const rows of tables) {
-      blocks.push({ kind: 'table', rows });
+
+    if (blocks.length === 0) {
+      for (const p of paragraphs) {
+        blocks.push({ kind: 'paragraph', text: p });
+      }
+      for (const rows of tables) {
+        blocks.push({ kind: 'table', rows });
+      }
     }
+
     return { paragraphs, tables, blocks, documentXmlText: '' };
   } catch {
     return null;

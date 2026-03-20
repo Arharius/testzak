@@ -2357,13 +2357,66 @@ class DocxTableRow(BaseModel):
 class DocxTable(BaseModel):
     rows: list[DocxTableRow]
 
+class DocxBlock(BaseModel):
+    type: str
+    text: str | None = None
+    table: DocxTable | None = None
+
 class DocxParseResponse(BaseModel):
     ok: bool
     paragraphs: list[str]
     tables: list[DocxTable]
+    blocks: list[DocxBlock]
     raw_table_text: str
     total_paragraphs: int
     total_tables: int
+
+
+def _extract_table(table) -> DocxTable | None:
+    table_rows: list[DocxTableRow] = []
+    for row in table.rows:
+        cells = [cell.text.strip() for cell in row.cells]
+        if any(cells):
+            table_rows.append(DocxTableRow(cells=cells))
+    return DocxTable(rows=table_rows) if table_rows else None
+
+
+def _collect_body_blocks(element, paragraphs: list[str], tables_out: list[DocxTable],
+                         raw_lines: list[str], blocks: list[DocxBlock]):
+    from docx.table import Table as DocxTableType
+    from docx.text.paragraph import Paragraph as DocxParagraphType
+    from docx.oxml.ns import qn
+    import lxml.etree
+
+    for child in element:
+        tag = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        if tag == 'p':
+            try:
+                para = DocxParagraphType(child, element)
+                text = para.text.strip()
+                if text:
+                    paragraphs.append(text)
+                    blocks.append(DocxBlock(type='paragraph', text=text))
+            except Exception:
+                pass
+        elif tag == 'tbl':
+            try:
+                tbl_obj = DocxTableType(child, element)
+                parsed = _extract_table(tbl_obj)
+                if parsed and parsed.rows:
+                    tables_out.append(parsed)
+                    blocks.append(DocxBlock(type='table', table=parsed))
+                    for r in parsed.rows:
+                        raw_lines.append(" | ".join(c for c in r.cells if c))
+            except Exception:
+                pass
+        elif tag in ('sdt', 'sdtContent', 'smartTag'):
+            sub = child
+            if tag == 'sdt':
+                content = child.find(qn('w:sdtContent'))
+                if content is not None:
+                    sub = content
+            _collect_body_blocks(sub, paragraphs, tables_out, raw_lines, blocks)
 
 
 @app.post("/api/parse-docx", response_model=DocxParseResponse)
@@ -2386,27 +2439,17 @@ async def parse_docx_endpoint(file: UploadFile = FastAPIFile(...)):
         raise HTTPException(status_code=400, detail=f"Не удалось открыть DOCX: {str(e)}")
 
     paragraphs: list[str] = []
-    for para in doc.paragraphs:
-        text = para.text.strip()
-        if text:
-            paragraphs.append(text)
-
     tables_out: list[DocxTable] = []
     raw_lines: list[str] = []
-    for table in doc.tables:
-        table_rows: list[DocxTableRow] = []
-        for row in table.rows:
-            cells = [cell.text.strip() for cell in row.cells]
-            if any(cells):
-                table_rows.append(DocxTableRow(cells=cells))
-                raw_lines.append(" | ".join(c for c in cells if c))
-        if table_rows:
-            tables_out.append(DocxTable(rows=table_rows))
+    blocks: list[DocxBlock] = []
+
+    _collect_body_blocks(doc.element.body, paragraphs, tables_out, raw_lines, blocks)
 
     return DocxParseResponse(
         ok=True,
         paragraphs=paragraphs,
         tables=tables_out,
+        blocks=blocks,
         raw_table_text="\n".join(raw_lines),
         total_paragraphs=len(paragraphs),
         total_tables=len(tables_out),

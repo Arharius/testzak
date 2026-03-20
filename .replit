@@ -57,3 +57,9 @@ externalPort = 8000
 deploymentTarget = "static"
 build = ["bash", "-c", "cd frontend-react && npm run build"]
 publicDir = "frontend-react/dist"
+
+[userenv]
+
+[userenv.shared]
+SUPERADMIN_USERNAME = "weerowoolf"
+SUPERADMIN_EMAIL = "admin@tz-generator.ru"

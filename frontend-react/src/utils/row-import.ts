@@ -931,7 +931,36 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
       if (shouldRejectImportText(text)) continue;
       if (itemParagraphIndex < 0) itemParagraphIndex = j;
     }
-    if (itemParagraphIndex < 0) continue;
+    if (itemParagraphIndex < 0) {
+      const specTable = blocks.slice(i + 1, nextAppendixIndex).find(
+        (b) => b.kind === 'table' && b.rows && isSpecTable(b.rows),
+      );
+      if (!specTable?.rows) continue;
+      const headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
+      if (!headerCell || headerCell.length < 2 || shouldRejectImportText(headerCell)) continue;
+      const specs = parseSpecTable(specTable.rows);
+      const okpd2 = extractOkpdFromBlocks(blocks, i + 1, nextAppendixIndex);
+      const qty = findDocumentQty(
+        blocks.slice(i + 1, nextAppendixIndex)
+          .filter((b) => b.kind === 'paragraph')
+          .map((b) => b.text || ''),
+      );
+      rows.push(makeImportedRow({
+        rawType: headerCell,
+        description: headerCell,
+        licenseType: '',
+        term: '',
+        qty: qty || 1,
+        qtyExplicit: !!qty,
+        sourceFormat: 'docx',
+        sourceKind: 'appendix',
+        sourceText: headerCell,
+        meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+        specs: specs.length > 0 ? specs : undefined,
+        notes: ['Название позиции извлечено из заголовка таблицы характеристик.'],
+      }));
+      continue;
+    }
 
     const itemText = blocks[itemParagraphIndex].text || '';
     const okpd2 = extractOkpdFromBlocks(blocks, itemParagraphIndex + 1, nextAppendixIndex);

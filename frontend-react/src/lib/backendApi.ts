@@ -28,7 +28,9 @@ const NON_LATIN1_RE = /[^\x00-\xff]/;
 function shouldUseSameOriginApi(): boolean {
   if (typeof window === 'undefined') return false;
   const host = String(window.location.hostname || '').toLowerCase();
-  return host === 'localhost' || host === '127.0.0.1';
+  if (host === 'localhost' || host === '127.0.0.1') return true;
+  if (host.endsWith('.replit.dev') || host.endsWith('.repl.co') || host.endsWith('.janeway.replit.dev')) return true;
+  return false;
 }
 
 function buildApiUrl(path: string): string {
@@ -52,8 +54,13 @@ export function isBackendApiAvailable(): boolean {
   if (BACKEND_URL) return true;
   if (typeof window === 'undefined') return false;
   const host = String(window.location.hostname || '').toLowerCase();
-  // Local dev with Vite proxy
-  return host === 'localhost' || host === '127.0.0.1';
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.endsWith('.replit.dev') ||
+    host.endsWith('.repl.co') ||
+    host.endsWith('.janeway.replit.dev')
+  );
 }
 
 const AUTH_TOKEN_KEY = 'tz_backend_jwt';

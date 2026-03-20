@@ -171,11 +171,17 @@ CORS_ORIGINS = [s.strip() for s in _cors_raw.split(",") if s.strip()] if _cors_r
     "https://tz-generator-frontend.onrender.com",
     "https://tz-generator-frontend-new.onrender.com",
     "https://arharius.github.io",
+    "http://localhost:5000",
     "http://localhost:5173",
     "http://localhost:5174",
+    "http://127.0.0.1:5000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
 ]
+_cors_origin_regex = os.getenv(
+    "CORS_ALLOW_ORIGIN_REGEX",
+    r"https://.*\.replit\.dev|https://.*\.repl\.co|https://.*\.railway\.app",
+)
 
 # ── Rate limiter ───────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address, default_limits=["200/minute"])
@@ -192,6 +198,7 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=_cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

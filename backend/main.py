@@ -1087,6 +1087,8 @@ def _call_ai(provider: str, model: str, messages: list, temperature: float = 0.3
             raw = resp.read().decode("utf-8", errors="replace")
             return json.loads(raw)
     except HTTPError as e:
+        if e.code == 401:
+            raise HTTPException(status_code=502, detail="API ключ ИИ недействителен или не настроен. Обратитесь к администратору.")
         detail = e.read().decode("utf-8", errors="ignore") if hasattr(e, "read") else str(e)
         raise HTTPException(status_code=502, detail=f"AI error {e.code}: {detail[:400]}")
     except URLError as e:

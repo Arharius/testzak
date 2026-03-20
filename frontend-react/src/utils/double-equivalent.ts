@@ -25,7 +25,7 @@ const API_ENDPOINTS: Record<Provider, string> = {
 
 function buildSpecSummary(specs: SpecItem[]): string {
   return specs
-    .slice(0, 30)
+    .slice(0, 40)
     .map((s) => `${s.group ? s.group + ' / ' : ''}${s.name}: ${s.value}${s.unit && s.unit !== '—' ? ' ' + s.unit : ''}`)
     .join('\n');
 }
@@ -40,77 +40,92 @@ function extractJson(raw: string): unknown {
   return null;
 }
 
+const DE_SYSTEM_PROMPT = `Ты — старший юрист-эксперт по государственным закупкам РФ (44-ФЗ, 223-ФЗ) и эксперт по ИТ-рынку.
+Твоя специализация — проверка соответствия технических заданий принципу "Двойного эквивалента" ФАС РФ.
+
+ЗАДАЧА: Для каждого ТЗ выявить минимум ДВУХ конкурирующих производителей, чьи реально существующие продукты соответствуют заданным характеристикам.
+
+АЛГОРИТМ:
+1. Прочитай характеристики внимательно
+2. Определи класс товара (ноутбук, сервер, коммутатор, МФУ, ПО и т.д.)
+3. Найди ≥2 конкретных модели от разных производителей, которые соответствуют ВСЕМ числовым требованиям
+4. Если нашёл только 1 производителя — укажи, какие параметры слишком специфичны и предложи расширение
+5. Оцени каждого производителя: high (точное соответствие), medium (соответствие с небольшим запасом), low (условное соответствие)
+
+ПРАВИЛО УВЕРЕННОСТИ:
+- high: продукт этого вендора точно соответствует всем параметрам
+- medium: соответствует большинству параметров, небольшие отклонения в пределах ±10%
+- low: соответствует ключевым параметрам, но есть расхождения
+
+Отвечай ТОЛЬКО валидным JSON строго по шаблону.`;
+
 export async function runDoubleEquivalentCheck(
   modelQuery: string,
   specs: SpecItem[],
   provider: Provider,
   apiKey: string,
   aiModel: string,
+  backendGenerator?: (provider: string, model: string, messages: { role: string; content: string }[]) => Promise<string>,
 ): Promise<DoubleEquivResult> {
-  const endpoint = API_ENDPOINTS[provider];
-  if (!apiKey) {
-    return { status: 'warn', vendors: [], widened: [], message: 'API-ключ не задан', score: 0 };
-  }
   if (!specs || specs.length === 0) {
     return { status: 'warn', vendors: [], widened: [], message: 'Нет характеристик для проверки', score: 0 };
   }
 
   const specSummary = buildSpecSummary(specs);
 
-  const systemPrompt = `Ты эксперт по государственным закупкам (44-ФЗ, 223-ФЗ) и ИТ-оборудованию. Твоя задача — обеспечить принцип "Двойного эквивалента": техническое задание должно допускать как минимум ДВУХ разных производителей.
-
-ПРАВИЛА:
-1. Проанализируй характеристики
-2. Найди минимум 2 разных производителя (не одного бренда), чьи продукты удовлетворяют этим характеристикам
-3. Если характеристики слишком специфичны и допускают только 1 производителя — предложи расширить диапазоны
-4. Отвечай ТОЛЬКО валидным JSON без пояснений`;
-
   const userPrompt = `Запрос заказчика: "${modelQuery}"
 
-Технические характеристики:
+Технические характеристики из ТЗ (${specs.length} параметров):
 ${specSummary}
 
-Определи, сколько производителей удовлетворяют этим характеристикам. Найди минимум 2 конкурирующих производителя.
-Если только 1 производитель подходит — укажи, какие параметры нужно расширить (сделать "не менее X" вместо фиксированного значения).
+Проверь по принципу "Двойного эквивалента":
+1. Найди ≥2 конкурирующих производителя с реальными моделями, удовлетворяющими этим характеристикам
+2. Если характеристики допускают только 1 производителя — укажи конкретные параметры для расширения
+3. Рассчитай итоговый статус: "ok" (≥2 производителя, все high/medium), "widened" (нужно расширение), "warn" (критические проблемы)
 
-Верни JSON строго в формате:
+Ответ СТРОГО в JSON (без markdown, без комментариев):
 {
   "vendors": [
-    {"name": "Производитель 1", "model": "Конкретная модель", "confidence": "high|medium|low", "notes": "пояснение"},
-    {"name": "Производитель 2", "model": "Конкретная модель", "confidence": "high|medium|low", "notes": "пояснение"}
+    {"name": "Производитель 1", "model": "Конкретная модель", "confidence": "high", "notes": "краткое пояснение"},
+    {"name": "Производитель 2", "model": "Конкретная модель", "confidence": "medium", "notes": "краткое пояснение"}
   ],
-  "widened": ["Параметр 1: изменить с X на не менее X", "..."],
-  "status": "ok|warn|widened",
-  "message": "Краткое описание результата"
+  "widened": ["Параметр X: заменить 'ровно N' на 'не менее N' — тогда подойдут 3+ производителя"],
+  "status": "ok",
+  "message": "ТЗ соответствует принципу двойного эквивалента. Выявлены: Производитель1 Модель1 и Производитель2 Модель2."
 }`;
 
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-  };
-  if (provider === 'openrouter') {
-    headers['HTTP-Referer'] = 'https://openrouter.ai';
-    headers['X-Title'] = 'TZ Generator React';
-  }
+  const messages = [
+    { role: 'system', content: DE_SYSTEM_PROMPT },
+    { role: 'user', content: userPrompt },
+  ];
 
+  let raw = '';
   try {
-    const resp = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: aiModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.1,
-        max_tokens: 1024,
-      }),
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    const raw = data?.choices?.[0]?.message?.content || '';
+    if (backendGenerator) {
+      raw = await backendGenerator(provider, aiModel, messages);
+    } else if (apiKey) {
+      const endpoint = API_ENDPOINTS[provider];
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      };
+      if (provider === 'openrouter') {
+        headers['HTTP-Referer'] = 'https://openrouter.ai';
+        headers['X-Title'] = 'TZ Generator React';
+      }
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model: aiModel, messages, temperature: 0.1, max_tokens: 1200 }),
+        signal: AbortSignal.timeout(35000),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      raw = data?.choices?.[0]?.message?.content || '';
+    } else {
+      return { status: 'warn', vendors: [], widened: [], message: 'Требуется подключение к backend для проверки эквивалентов', score: 0 };
+    }
+
     const parsed = extractJson(raw) as {
       vendors?: EquivVendor[];
       widened?: string[];
@@ -129,7 +144,11 @@ ${specSummary}
       rawStatus === 'ok' ? 'ok' : rawStatus === 'widened' ? 'widened' : 'warn';
     const message = String(parsed.message || '');
     const highCount = vendors.filter((v) => v.confidence === 'high').length;
-    const score = vendors.length >= 2 ? (highCount >= 2 ? 100 : 75) : vendors.length === 1 ? 40 : 0;
+    const medCount = vendors.filter((v) => v.confidence === 'medium').length;
+    const qualifiedCount = highCount + medCount;
+    const score = vendors.length >= 2
+      ? (qualifiedCount >= 2 ? (highCount >= 2 ? 100 : 85) : 65)
+      : vendors.length === 1 ? 35 : 0;
 
     return { status, vendors, widened, message, score };
   } catch (err) {

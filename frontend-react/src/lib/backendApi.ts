@@ -602,10 +602,11 @@ export type TZDocumentFull = {
 const LOCAL_TZ_DOCS_KEY = 'tz_local_documents_v1';
 const LOCAL_TZ_PREFIX = 'local-';
 
-const _INVALID_SPEC_NAME_RE = /^(#+\s|\[|!\[|https?:\/\/|\/\/|home$|consumers$|utilities$|transportation$|about(\s+us)?$|documents(\s+and\s+rules)?$|news$|events$|help(\s+center)?$|search$|title$|content(\s+viewer)?$|contact$|login$|logout$|register$|faq$|sitemap$|privacy$|terms$|navigation$|menu$|footer$|header$|back$|next$|previous$|skip$)/i;
+const _INVALID_SPEC_NAME_RE = /^(#+\s|\[|!\[|https?:\/\/|\/\/|home$|consumers$|utilities$|transportation$|about(\s+us)?$|documents(\s+and\s+rules)?$|news$|events$|help(\s+center)?$|search$|title$|content(\s+viewer)?$|contact$|login$|logout$|register$|faq$|sitemap$|privacy$|terms$|navigation$|menu$|footer$|header$|back$|next$|previous$|skip$|sort(\s+by)?$|sign(\s+(in|out|up))?$|log(\s+(in|out))?$|community$|announcements?$|feature\s+requests?$)/i;
 const _BARE_DOMAIN_RE = /^[a-z0-9][a-z0-9.-]*\.(gov|com|org|net|ru|рф|edu|io|info|biz)$/i;
 const _URL_PATH_RE = /^\/[a-z0-9/._-]{3,}$/i;
-const _INVALID_SPEC_VALUE_RE = /^(https?:\/\/|\/\/[a-z0-9])/i;
+const _EMBEDDED_URL_RE = /https?:\/\/[a-z0-9]/i;
+const _MARKDOWN_STYLE_RE = /^\*{1,3}[^*]+\*{1,3}$/;
 
 function _isCleanSpec(name: string, value: string): boolean {
   const n = String(name || '').trim();
@@ -613,10 +614,14 @@ function _isCleanSpec(name: string, value: string): boolean {
   if (!n) return false;
   if (_INVALID_SPEC_NAME_RE.test(n)) return false;
   if (_BARE_DOMAIN_RE.test(n)) return false;
+  if (/^title:\s/i.test(n)) return false;
+  if (/:\s+[A-Z]/.test(n) && !/[а-яёА-ЯЁ]/.test(n) && n.length > 20) return false;
   if (!v) return true;
-  if (_INVALID_SPEC_VALUE_RE.test(v)) return false;
+  if (/^(https?:\/\/|\/\/[a-z0-9])/i.test(v)) return false;
   if (_BARE_DOMAIN_RE.test(v)) return false;
   if (_URL_PATH_RE.test(v)) return false;
+  if (_MARKDOWN_STYLE_RE.test(v)) return false;
+  if (_EMBEDDED_URL_RE.test(v)) return false;
   return true;
 }
 

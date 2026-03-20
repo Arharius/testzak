@@ -590,28 +590,39 @@ function makeImportedRow(params: {
   };
 }
 
-const WEB_NAV_TERMS_RE = /^(home|consumers|utilities|transportation|about(\s+us)?|documents(\s+and\s+rules)?|news|events|help(\s+center)?|search|title|content(\s+viewer)?|contact|login|logout|register|signup|faq|sitemap|privacy|terms|navigation|menu|footer|header|breadcrumb|back|next|previous|skip|jump)$/i;
+const WEB_NAV_TERMS_RE = /^(home|consumers|utilities|transportation|about(\s+us)?|documents(\s+and\s+rules)?|news|events|help(\s+center)?|search|title|content(\s+viewer)?|contact|login|logout|register|signup|faq|sitemap|privacy|terms|navigation|menu|footer|header|breadcrumb|back|next|previous|skip|jump|sort(\s+by)?|sign(\s+(in|out|up))?|log(\s+(in|out))?|view\s+all|see\s+all|load\s+more|show\s+more|read\s+more|community|announcements?|feature\s+requests?)$/i;
 const BARE_DOMAIN_RE = /^[a-z0-9][a-z0-9.-]*\.(gov|com|org|net|ru|рф|edu|io|info|biz)$/i;
 const URL_PATH_RE = /^\/[a-z0-9/._-]{3,}$/i;
+// URL embedded anywhere in string
+const EMBEDDED_URL_RE = /https?:\/\/[a-z0-9]/i;
+// Markdown bold/italic
+const MARKDOWN_STYLE_RE = /^\*{1,3}[^*]+\*{1,3}$/;
 
 function isValidSpecName(name: string): boolean {
   if (!name) return false;
-  if (/^#+\s/.test(name)) return false;
-  if (/^\[/.test(name)) return false;
-  if (/^!\[/.test(name)) return false;
-  if (/^https?:\/\//i.test(name)) return false;
-  if (/^\/\//.test(name)) return false;
-  if (BARE_DOMAIN_RE.test(name)) return false;
-  if (WEB_NAV_TERMS_RE.test(name.trim())) return false;
+  if (/^#+\s/.test(name)) return false;        // # Markdown heading
+  if (/^\[/.test(name)) return false;           // [Markdown link
+  if (/^!\[/.test(name)) return false;          // ![Image
+  if (/^https?:\/\//i.test(name)) return false; // full URL
+  if (/^\/\//.test(name)) return false;         // protocol-relative URL
+  if (BARE_DOMAIN_RE.test(name)) return false;  // bare domain
+  if (WEB_NAV_TERMS_RE.test(name.trim())) return false; // nav terms
+  // "Title: Long English text" / "Sort by: something" — web page metadata pattern
+  if (/^title:\s/i.test(name)) return false;
+  // Purely English name that looks like web metadata (no Cyrillic, has colon followed by content)
+  if (/:\s+[A-Z]/.test(name) && !/[а-яёА-ЯЁ]/.test(name) && name.length > 20) return false;
   return true;
 }
 
 function isValidSpecValue(value: string): boolean {
   if (!value) return true;
-  if (/^https?:\/\//i.test(value)) return false;
-  if (/^\/\/[a-z0-9]/i.test(value)) return false;
-  if (BARE_DOMAIN_RE.test(value.trim())) return false;
-  if (URL_PATH_RE.test(value.trim())) return false;
+  if (/^https?:\/\//i.test(value)) return false;    // starts with URL
+  if (/^\/\/[a-z0-9]/i.test(value)) return false;   // protocol-relative URL
+  if (BARE_DOMAIN_RE.test(value.trim())) return false; // bare domain
+  if (URL_PATH_RE.test(value.trim())) return false;  // URL path
+  if (MARKDOWN_STYLE_RE.test(value.trim())) return false; // **bold** / *italic*
+  // URL embedded anywhere in the value (e.g. Spanish ASUS text with https:// link)
+  if (EMBEDDED_URL_RE.test(value)) return false;
   return true;
 }
 

@@ -1206,53 +1206,70 @@ html[data-theme='contrast'] .panel:hover {
 }
 
 .workspace-kpi-chip {
-  min-width: 108px;
-  padding: 12px 14px;
+  min-width: 100px;
+  padding: 11px 14px 10px;
   border-radius: var(--radius-md);
   border: 1px solid var(--panel-border);
-  background: var(--input-bg);
+  background: linear-gradient(145deg, rgba(255,255,255,0.04) 0%, transparent 100%), var(--input-bg);
   display: grid;
-  gap: 2px;
+  gap: 3px;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  position: relative;
+  overflow: hidden;
+}
+.workspace-kpi-chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(59,130,246,0.06) 0%, transparent 60%);
+  pointer-events: none;
 }
 html[data-theme='contrast'] .workspace-kpi-chip {
-  background: rgba(255, 255, 255, 0.92);
-  border-color: rgba(25, 45, 84, 0.08);
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(25, 45, 84, 0.1);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
 }
 
 .workspace-kpi-chip strong {
-  font-size: 17px;
+  font-size: 20px;
   line-height: 1;
   color: var(--text);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
 
 .workspace-kpi-chip span:last-child {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.09em;
   font-family: var(--font-mono);
+  font-weight: 500;
 }
 
 .workspace-kpi-chip--block {
-  border-color: rgba(248, 113, 113, 0.28);
-  background: var(--red-soft);
+  border-color: rgba(248, 113, 113, 0.3);
+  background: linear-gradient(145deg, rgba(248,113,113,0.06) 0%, transparent 100%), var(--red-soft);
 }
+.workspace-kpi-chip--block strong { color: var(--red); }
 
 .workspace-kpi-chip--neutral {
   border-color: rgba(125, 143, 179, 0.22);
-  background: rgba(17, 24, 39, 0.55);
+  background: var(--input-bg);
 }
 
 .workspace-kpi-chip--warn {
-  border-color: rgba(251, 191, 36, 0.28);
-  background: var(--amber-soft);
+  border-color: rgba(251, 191, 36, 0.3);
+  background: linear-gradient(145deg, rgba(251,191,36,0.06) 0%, transparent 100%), var(--amber-soft);
 }
+.workspace-kpi-chip--warn strong { color: var(--amber); }
 
 .workspace-kpi-chip--ready {
-  border-color: rgba(52, 211, 153, 0.28);
-  background: var(--green-soft);
+  border-color: rgba(52, 211, 153, 0.3);
+  background: linear-gradient(145deg, rgba(52,211,153,0.06) 0%, transparent 100%), var(--green-soft);
 }
+.workspace-kpi-chip--ready strong { color: var(--green); }
 
 .workspace-mode-switch {
   display: inline-flex;
@@ -1288,20 +1305,32 @@ html[data-theme='contrast'] .workspace-kpi-chip {
   align-items: center;
   gap: 14px;
   flex-wrap: wrap;
-  padding: 14px 16px;
+  padding: 13px 18px;
   border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
   background:
-    linear-gradient(135deg, rgba(37, 99, 235, 0.07), transparent 56%),
+    linear-gradient(135deg, rgba(37, 99, 235, 0.09) 0%, transparent 50%),
     var(--input-bg);
   box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+.workspace-progress-strip::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px 0 0 2px;
 }
 html[data-theme='contrast'] .workspace-progress-strip {
   background:
-    linear-gradient(90deg, rgba(35, 81, 199, 0.045), transparent 32%),
-    rgba(255, 255, 255, 0.95);
-  border-color: rgba(25, 45, 84, 0.08);
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.04);
+    linear-gradient(90deg, rgba(35, 81, 199, 0.055), transparent 35%),
+    rgba(255, 255, 255, 0.97);
+  border-color: rgba(25, 45, 84, 0.1);
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
 }
 
 .workspace-progress-copy {

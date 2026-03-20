@@ -6221,6 +6221,8 @@ const DOCX_SECTION_LEFT_WIDTH = 1280;
 const DOCX_SECTION_RIGHT_WIDTH = DOCX_TEXT_WIDTH - DOCX_SECTION_LEFT_WIDTH;
 const DOCX_CELL_MARGINS = { top: 60, bottom: 60, left: 80, right: 80 };
 const DOCX_COMPACT_MARGINS = { top: 35, bottom: 35, left: 50, right: 50 };
+// Spec-table column widths in DXA (must sum to DOCX_TEXT_WIDTH = 9768)
+const DOCX_SPEC_COL = { name: 4884, value: 3480, unit: 1404 } as const;
 const DOCX_SUMMARY_WIDTHS = {
   commercial: { idx: 420, name: 4380, license: 1750, term: 1100, qty: 720, appendix: 1398 },
   default: { idx: 420, name: 6700, qty: 1000, appendix: 1648 },
@@ -6398,24 +6400,25 @@ async function buildDocx(
   }
 
   function spec3DataRow(name: string, value: string, unit: string, warning?: string) {
-    const valText = value + (warning ? ' ⚠️ ' + warning : '');
+    const valText = value + (warning ? ' [!] ' + warning : '');
     return new TableRow({
       cantSplit: true,
       children: [
         new TableCell({
           children: [new Paragraph({ children: docxRuns(name, { size: FONT_SIZE }), keepLines: true })],
-          width: { size: 50, type: WidthType.PERCENTAGE },
+          width: { size: DOCX_SPEC_COL.name, type: WidthType.DXA },
           borders: allBorders(),
           margins: DOCX_CELL_MARGINS,
         }),
         new TableCell({
           children: [new Paragraph({ children: docxRuns(valText, { size: FONT_SIZE }), keepLines: true })],
+          width: { size: DOCX_SPEC_COL.value, type: WidthType.DXA },
           borders: allBorders(),
           margins: DOCX_CELL_MARGINS,
         }),
         new TableCell({
           children: [new Paragraph({ children: docxRuns(unit, { size: FONT_SIZE }), keepLines: true })],
-          width: { size: 12, type: WidthType.PERCENTAGE },
+          width: { size: DOCX_SPEC_COL.unit, type: WidthType.DXA },
           borders: allBorders(),
           margins: DOCX_CELL_MARGINS,
         }),
@@ -6622,10 +6625,27 @@ async function buildDocx(
   };
 
   // ── Helper: builds spec table rows with product name header ──
+  // Filter out specs that are physically unmeasurable/unverifiable at delivery acceptance.
+  // Keeps: numeric values, boolean (Да/Нет), standards references, multi-word descriptions.
+  // Removes: single vague adjectives that cannot be physically tested.
+  function isDocxVerifiableSpec(spec: SpecItem): boolean {
+    const value = String(spec.value || '').trim();
+    if (!value) return false;
+    if (/\d/.test(value)) return true;
+    if (/^(да|нет|наличие|есть|имеется|поддерживается|не поддерживается)$/i.test(value)) return true;
+    if (/не менее|не более|или эквивалент|или выше|usb\s*\d|hdmi|displayport|rj-45|ieee\s*802|ddr\d|nvme|sata|pcie|tls|ssl|gost|гост|ips|ва|oled|amoled|фстэк|ldap|smtp/i.test(value)) return true;
+    if (value.split(/\s+/).length >= 4) return true;
+    const VAGUE_SINGLE = /^(высокая?|высокий|хорошая?|хороший|стандартная?|стандартный|большой|большая|быстрый|быстрая|надёжный|надёжная|качественный|качественная|современный|современная|передовой|передовая|эффективный|эффективная|оптимальный|оптимальная|по\s+требованию|определяется|устанавливается|соответствует|произвольный|любой|любая|в\s+соответствии|согласно|допустимый|допустимая)$/i;
+    if (VAGUE_SINGLE.test(value)) return false;
+    return true;
+  }
+
   const buildSpecTableWithHeader = (
     productName: string, specs: SpecItem[]
   ): DocxTableRow[] => {
     const rows: DocxTableRow[] = [];
+    // Filter to only physically verifiable specs in the exported document
+    specs = specs.filter(isDocxVerifiableSpec);
     // Row 0: product name spanning all 3 columns
     rows.push(new TableRow({
       cantSplit: true,
@@ -6641,15 +6661,15 @@ async function buildDocx(
         margins: DOCX_CELL_MARGINS,
       })],
     }));
-    // Row 1: column headers
+    // Row 1: column headers (widths match DOCX_SPEC_COL so FIXED layout renders correctly)
     rows.push(new TableRow({
       tableHeader: true,
       cantSplit: true,
       height: { value: 400, rule: HeightRule.ATLEAST },
       children: [
-        hCell('Наименование характеристики', { w: 4500 }),
-        hCell('Значение характеристики', { w: 3500 }),
-        hCell('Единица измерения', { w: 1400 }),
+        hCell('Наименование характеристики', { w: DOCX_SPEC_COL.name }),
+        hCell('Значение характеристики', { w: DOCX_SPEC_COL.value }),
+        hCell('Единица измерения', { w: DOCX_SPEC_COL.unit }),
       ],
     }));
     // Row 2+: groups and data
@@ -6757,7 +6777,7 @@ async function buildDocx(
         const specTableRows = buildSpecTableWithHeader(productName, specs);
         children.push(new Table({
           layout: TableLayoutType.FIXED,
-          width: { size: 100, type: WidthType.PERCENTAGE },
+          width: { size: DOCX_TEXT_WIDTH, type: WidthType.DXA },
           rows: specTableRows,
         }));
       }

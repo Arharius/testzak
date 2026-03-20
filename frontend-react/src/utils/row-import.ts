@@ -626,13 +626,76 @@ function isValidSpecValue(value: string): boolean {
   return true;
 }
 
+// Tier-1 (specific to spec tables) header aliases
+const SPEC_NAME_COL_EXACT = new Set([
+  'наименование характеристики',
+  'наименование параметра',
+  'наименование показателя',
+  'наименование требования',
+  'характеристика',
+  'параметр',
+  'показатель',
+  'требование',
+]);
+const SPEC_VALUE_COL_EXACT = new Set([
+  'значение характеристики',
+  'требуемое значение',
+  'требуемые характеристики',
+  'технические требования',
+  'минимальные требования',
+  'спецификация',
+]);
+// Tier-2 (looser) — accepted only when paired with a Tier-1 on the other column
+const SPEC_NAME_COL_LOOSE = new Set([
+  ...SPEC_NAME_COL_EXACT,
+  'наименование',
+  'название',
+  'name',
+  'parameter',
+]);
+const SPEC_VALUE_COL_LOOSE = new Set([
+  ...SPEC_VALUE_COL_EXACT,
+  'значение',
+  'требования',
+  'value',
+  'specification',
+  'описание',
+]);
+
+function looksLikeHeaderlessSpecTable(rows: string[][]): boolean {
+  // No recognized headers — try heuristic: 2-3 col table whose first col cells
+  // look like spec names (short, Russian, no URL) and second col looks like values
+  if (rows.length < 4 || rows[0].length < 2 || rows[0].length > 4) return false;
+  const sample = rows.slice(0, Math.min(rows.length, 10));
+  const specLikeCols0 = sample.filter((row) => {
+    const n = normalizeCell(row[0] || '');
+    return n.length > 2 && n.length < 60 && isValidSpecName(n);
+  }).length;
+  const hasValues = sample.filter((row) => {
+    const v = normalizeCell(row[1] || '');
+    return v.length > 0 && isValidSpecValue(v);
+  }).length;
+  return specLikeCols0 / sample.length >= 0.7 && hasValues / sample.length >= 0.5;
+}
+
 function isSpecTable(rows: string[][]): boolean {
   if (rows.length < 2) return false;
   const headerIndex = rows[0].length === 1 && rows.length > 2 ? 1 : 0;
   const headers = rows[headerIndex].map((cell) => normalizeHeader(cell));
-  const hasSpecHeaders = headers.some((cell) => cell === 'наименование характеристики')
-    && headers.some((cell) => cell === 'значение характеристики');
-  if (!hasSpecHeaders) return false;
+
+  const nameExact = headers.some((h) => SPEC_NAME_COL_EXACT.has(h));
+  const valueExact = headers.some((h) => SPEC_VALUE_COL_EXACT.has(h));
+  const nameLoose = headers.some((h) => SPEC_NAME_COL_LOOSE.has(h));
+  const valueLoose = headers.some((h) => SPEC_VALUE_COL_LOOSE.has(h));
+
+  // Accept: both exact, or one exact + one loose (prevents generic "Название|Описание" false positives)
+  const hasSpecHeaders = (nameExact && valueLoose) || (valueExact && nameLoose);
+
+  // Fallback: no recognized headers → try content heuristic
+  if (!hasSpecHeaders) {
+    return looksLikeHeaderlessSpecTable(rows.slice(headerIndex));
+  }
+
   const dataRows = rows.slice(headerIndex + 1).filter((row) => {
     const name = normalizeCell(row[0] || '');
     const value = normalizeCell(row[1] || '');

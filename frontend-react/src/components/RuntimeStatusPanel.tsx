@@ -1,4 +1,5 @@
 import type { BackendHealth, BackendReadiness } from '../lib/backendApi';
+import { APP_BUILD_META } from '../utils/build-info';
 
 type Props = {
   backendAvailable: boolean;
@@ -83,7 +84,8 @@ export function RuntimeStatusPanel({ backendAvailable, health, readiness, isLoad
         <p>{runtimeDescription(backendAvailable, readiness, error)}</p>
         <div className="runtime-summary-line">
           <span className={`runtime-state runtime-state--${tone}`}>{backendAvailable ? (readiness?.status || 'checking') : 'local'}</span>
-          <span>version {health?.version || readiness?.version || 'n/a'}</span>
+          <span>frontend {APP_BUILD_META}</span>
+          <span>backend {health?.version || readiness?.version || 'n/a'}</span>
           <span>{isLoading ? 'refreshing…' : `checked ${readiness?.checked_at || health?.checked_at || 'n/a'}`}</span>
         </div>
       </div>

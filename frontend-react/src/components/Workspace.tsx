@@ -41,6 +41,7 @@ import { looksLikeSpecificModelQuery } from '../utils/model-search';
 import { hasSufficientExactModelCoverage } from '../utils/model-quality';
 import { type LawMode } from '../utils/npa-blocks';
 import { parseImportedRows, type ImportedRowImportInfo } from '../utils/row-import';
+import { APP_BUILD_LABEL } from '../utils/build-info';
 import { WorkspaceRowsTable } from './WorkspaceRowsTable';
 import { createWorkspacePublicationTools } from './workspace-publication';
 import { WorkspaceTypeSuggestions } from './WorkspaceTypeSuggestions';
@@ -2113,7 +2114,7 @@ function buildReadinessSummaryRows(summary: ReadinessGateSummary): SectionTableR
     },
     {
       label: 'Р.3',
-      value: `Benchmark-покрытие: с внешним эталоном — ${summary.benchmark.covered}; OK — ${summary.benchmark.ok}; Warn — ${summary.benchmark.warn}; Block — ${summary.benchmark.block}; без benchmark-источника — ${summary.benchmark.withoutSource}.`,
+      value: `Внешняя сверка: с подтверждающим источником — ${summary.benchmark.covered}; OK — ${summary.benchmark.ok}; Warn — ${summary.benchmark.warn}; Block — ${summary.benchmark.block}; без источника — ${summary.benchmark.withoutSource}.`,
     },
     {
       label: 'Р.4',
@@ -6972,8 +6973,6 @@ type Props = {
     access_tier?: 'admin' | 'pro' | 'trial' | 'payment_required';
   } | null;
 };
-
-const APP_BUILD_LABEL = '2026.03.18.8';
 
 export function Workspace({ automationSettings, platformSettings, enterpriseSettings, backendUser }: Props) {
   // Hosted mode: use backend when explicit BACKEND_URL is configured.

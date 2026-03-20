@@ -71,15 +71,15 @@ export function WorkspaceEvidencePanels({
         <details className="workspace-disclosure">
           <summary className="workspace-disclosure-summary">
             <div>
-              <strong>Benchmark</strong>
-              <span>ЕИС, КТРУ, площадки и интернет-источники</span>
+              <strong>Внешняя сверка</strong>
+              <span>ЕИС, КТРУ, площадки и документация</span>
             </div>
             <span className="workspace-side-meta">{benchmarkRows.length} поз.</span>
           </summary>
           <div className="workspace-disclosure-body">
             <div className="workspace-review-stack">
               <WorkspaceReviewActionCard
-                title="Pre-publish gate по benchmark"
+                title="Контроль внешней сверки"
                 subtitle={benchmarkSummary.block > 0
                   ? 'Есть блокирующие расхождения'
                   : benchmarkSummary.warn > 0
@@ -100,7 +100,7 @@ export function WorkspaceEvidencePanels({
                     <div className="workspace-review-card-head">
                       <div>
                         <strong>#{item.index}. {item.goodsName}{item.model ? ` (${item.model})` : ''}</strong>
-                        <span>Эталон: {item.label}</span>
+                        <span>Источник: {item.label}</span>
                       </div>
                     </div>
                     <div className="workspace-chip-row">
@@ -128,7 +128,7 @@ export function WorkspaceEvidencePanels({
                           onClick={() => onApplyBenchmarkPatch(item.id, 'changed')}
                           className="workspace-action-button is-benchmark-apply"
                         >
-                          ⇄ Принять эталон ({item.comparison.changed.length})
+                          ⇄ Принять данные источника ({item.comparison.changed.length})
                         </button>
                       )}
                       {(item.comparison.onlySource.length > 0 || item.comparison.changed.length > 0) && (

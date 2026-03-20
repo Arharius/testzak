@@ -661,7 +661,7 @@ export function createWorkspacePublicationTools({
     rowsCount: number,
     serviceRowsCount: number,
   ): string {
-    return `Паспорт публикации: статус — ${getReadinessStatusLabel(summary.status)}; готово — ${summary.readyItems}; требуют проверки — ${summary.reviewItems}; блокируют публикацию — ${summary.blockedItems}. Доверенная классификация — ${summary.trustedClassification}/${rowsCount}; benchmark без критичных расхождений — ${summary.benchmarkReady}/${rowsCount}; полностью готовых сервисных позиций — ${summary.serviceReady}/${serviceRowsCount || 0}.`;
+    return `Паспорт публикации: статус — ${getReadinessStatusLabel(summary.status)}; готово — ${summary.readyItems}; требуют проверки — ${summary.reviewItems}; блокируют публикацию — ${summary.blockedItems}. Доверенная классификация — ${summary.trustedClassification}/${rowsCount}; внешняя сверка без критичных расхождений — ${summary.benchmarkReady}/${rowsCount}; полностью готовых сервисных позиций — ${summary.serviceReady}/${serviceRowsCount || 0}.`;
   }
 
   function buildPublicationDossierRow(
@@ -723,7 +723,7 @@ export function createWorkspacePublicationTools({
       if (row.benchmark && row.specs?.length) {
         const comparison = buildDraftSourceComparison(row.benchmark.sourceSpecs, row.specs, row.type);
         const risk = getBenchmarkRiskLevel(comparison);
-        qualityParts.push(`Benchmark: ${risk.toUpperCase()} · совпало ${comparison.matched.length}, изменено ${comparison.changed.length}, пропущено ${comparison.onlySource.length}`);
+        qualityParts.push(`Внешняя сверка: ${risk.toUpperCase()} · совпало ${comparison.matched.length}, изменено ${comparison.changed.length}, пропущено ${comparison.onlySource.length}`);
         if (risk === 'block') {
           escalate('block');
           actions.push('синхронизировать позицию с эталоном источника');

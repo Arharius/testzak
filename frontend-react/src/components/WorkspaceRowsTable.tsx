@@ -19,6 +19,8 @@ type GoodsRowLike = {
   meta?: Record<string, string>;
   benchmark?: {
     sourceSpecs: SpecItem[];
+    sourceCompareLabel: string;
+    sourceContextText?: string;
   };
   importInfo?: ImportedRowImportInfo;
 };

@@ -19,6 +19,8 @@ const workspace = [
   path.join(componentDir, 'WorkspaceTypeSuggestions.tsx'),
   path.join(componentDir, 'workspace-panels.types.ts'),
   path.join(componentDir, 'workspace-publication.ts'),
+  path.join(utilsDir, 'build-info.ts'),
+  path.join(utilsDir, 'row-trust.ts'),
   path.join(utilsDir, 'row-import.ts'),
   path.join(libDir, 'backendApi.ts'),
 ].map((filePath) => fs.readFileSync(filePath, 'utf-8')).join('\n');
@@ -181,6 +183,19 @@ const checks = [
     ok: workspace.includes('телефонный тестер с генератором')
       && workspace.includes('генерация тона при применимости')
       && workspace.includes('индуктивного щупа'),
+  },
+  {
+    name: 'Row detail shows a trust passport with explainable publication signals',
+    ok: workspace.includes('Паспорт доверия строки')
+      && workspace.includes('buildRowTrustPassport')
+      && workspace.includes('Строка пока не готова к публикации')
+      && workspace.includes('Внешняя сверка'),
+  },
+  {
+    name: 'Frontend build label is centralized instead of hardcoded in the workspace component',
+    ok: workspace.includes('FALLBACK_BUILD_LABEL')
+      && workspace.includes('APP_BUILD_META')
+      && workspace.includes("import { APP_BUILD_LABEL } from '../utils/build-info';"),
   },
 ];
 

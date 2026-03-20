@@ -75,14 +75,17 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
-      host: devHost,
-      port: 5174,
+      host: '0.0.0.0',
+      port: 5000,
       strictPort: true,
+      allowedHosts: true,
       proxy: apiProxy,
     },
     preview: {
-      host: devHost,
+      host: '0.0.0.0',
+      port: 5000,
       strictPort: true,
+      allowedHosts: true,
       proxy: apiProxy,
     },
   };

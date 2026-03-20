@@ -9810,54 +9810,26 @@ ${hint || '- Используй детальные, проверяемые эк�
       console.log('[DOCX] Blob built, size:', blob.size);
       const date = new Date().toISOString().slice(0, 10);
       const filename = `TZ_${date}.docx`;
-      try {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.style.display = 'none';
-        document.body.appendChild(a);
-        a.click();
-        console.log('[DOCX] Download triggered via <a>.click()');
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 200);
-      } catch (dlErr) {
-        console.warn('[DOCX] <a>.click() failed, falling back to saveAs:', dlErr);
-        saveAs(blob, filename);
-      }
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+      console.log('[DOCX] Download triggered');
       showToast('DOCX файл скачивается...', true);
       appendAutomationLog({ at: new Date().toISOString(), event: 'react.export_docx', ok: true });
     };
 
     try {
-      if (isAdmin) {
-        try {
-          const tzRows = rows.map((r) => ({
-            name: r.model ?? '',
-            field: r.type ?? '',
-            description: '',
-            specs: Array.isArray((r as { specs?: unknown[] }).specs)
-              ? ((r as { specs?: Array<{ name?: string; value?: string; group?: string }> }).specs ?? []).map((s) => ({
-                  name: String(s?.name ?? ''),
-                  value: String(s?.value ?? ''),
-                  group: String(s?.group ?? ''),
-                }))
-              : [],
-          }));
-          const validation = await validateTzBeforeExport(tzRows);
-          if (!validation.can_export || validation.moderate.length > 0) {
-            setPendingExportFn(() => doExport);
-            setValidationResult(validation);
-            return;
-          }
-        } catch {
-          console.warn('TZ validate endpoint unavailable, skipping pre-export check');
-        }
-      }
       await doExport();
     } catch (e) {
+      console.error('[DOCX] Export failed:', e);
       alert(e instanceof Error ? e.message : 'Ошибка экспорта DOCX');
     }
   };

@@ -1699,10 +1699,10 @@ _BRAND_AVOIDANCE_INSTRUCTION = (
 
 
 def _check_universality(text: str) -> dict:
-    """Проверяет текст на наличие уникальных брендов/моделей (использует _BRAND_PATTERN)."""
+    """Проверяет текст на наличие уникальных брендов/моделей."""
     seen: set[str] = set()
     fragments = []
-    for m in _BRAND_PATTERN.finditer(text):
+    for m in _BRAND_MODEL_PATTERN.finditer(text):
         phrase = m.group()
         if phrase not in seen:
             seen.add(phrase)

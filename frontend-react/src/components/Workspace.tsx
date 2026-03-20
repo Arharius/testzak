@@ -6888,7 +6888,7 @@ type Props = {
 export function Workspace({ automationSettings, platformSettings, enterpriseSettings, backendUser }: Props) {
   // Hosted mode: use backend when explicit BACKEND_URL is configured.
   // Local mode keeps previous behavior (requires signed-in user).
-  const useBackend = !!(BACKEND_URL || (backendUser && isBackendApiAvailable()));
+  const useBackend = !!(BACKEND_URL || isBackendApiAvailable());
   const hasBackendSession = !!backendUser || isLoggedIn();
   const [lawMode, setLawMode] = useState<LawMode>('44');
   const [catalogMode, setCatalogMode] = useState<CatalogMode>('it');

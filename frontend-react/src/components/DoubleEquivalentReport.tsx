@@ -10,23 +10,52 @@ interface DoubleEquivalentReportProps {
   modelName?: string;
 }
 
-function VendorCard({ vendor }: { vendor: EquivVendor }) {
+function ConfDot({ level }: { level: 'high' | 'medium' | 'low' }) {
+  return (
+    <span
+      className={`de-conf-dot de-conf-dot--${level}`}
+      aria-hidden="true"
+    />
+  );
+}
+
+function VendorCard({ vendor, index }: { vendor: EquivVendor; index: number }) {
   const conf = vendor.confidence;
-  const confLabel = conf === 'high' ? 'Высокая' : conf === 'medium' ? 'Средняя' : 'Низкая';
+  const confLabel = conf === 'high' ? 'Высокая точность' : conf === 'medium' ? 'Средняя точность' : 'Низкая точность';
   const confClass = conf === 'high' ? 'de-conf-high' : conf === 'medium' ? 'de-conf-medium' : 'de-conf-low';
   return (
     <div className="de-vendor-card">
       <div className="de-vendor-header">
-        <span className="de-vendor-icon" aria-hidden="true">🏭</span>
+        <span className="de-vendor-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
         <div className="de-vendor-main">
           <div className="de-vendor-name">{vendor.name}</div>
           <div className="de-vendor-model">{vendor.model}</div>
         </div>
-        <span className={`de-conf-badge ${confClass}`}>{confLabel}</span>
+        <span className={`de-conf-badge ${confClass}`}>
+          <ConfDot level={conf} />
+          {confLabel}
+        </span>
       </div>
       {vendor.notes && <div className="de-vendor-notes">{vendor.notes}</div>}
     </div>
   );
+}
+
+function ScoreBar({ score }: { score: number }) {
+  const capped = Math.min(100, Math.max(0, score));
+  const barClass = capped >= 80 ? 'de-score-fill--ok' : capped >= 50 ? 'de-score-fill--warn' : 'de-score-fill--bad';
+  return (
+    <div className="de-score-bar-wrap" role="meter" aria-valuenow={capped} aria-valuemin={0} aria-valuemax={100}>
+      <div className="de-score-bar-track">
+        <div className={`de-score-bar-fill ${barClass}`} style={{ width: `${capped}%` }} />
+      </div>
+      <span className="de-score-bar-label">{capped}%</span>
+    </div>
+  );
+}
+
+function StatusDot({ status }: { status: 'ok' | 'widened' | 'fail' | 'idle' }) {
+  return <span className={`de-status-dot de-status-dot--${status}`} aria-hidden="true" />;
 }
 
 export function DoubleEquivalentReport({
@@ -39,13 +68,15 @@ export function DoubleEquivalentReport({
 }: DoubleEquivalentReportProps) {
   const hasConflicts = conflicts && conflicts.length > 0;
   const hasVendors = result && result.vendors.length >= 2;
-  const statusIcon = !result
-    ? '⚪'
+
+  const dotStatus: 'ok' | 'widened' | 'fail' | 'idle' = !result
+    ? 'idle'
     : result.status === 'ok'
-      ? '✅'
+      ? 'ok'
       : result.status === 'widened'
-        ? '🔧'
-        : '⚠️';
+        ? 'widened'
+        : 'fail';
+
   const statusLabel = !result
     ? 'Не проверено'
     : result.status === 'ok'
@@ -53,6 +84,7 @@ export function DoubleEquivalentReport({
       : result.status === 'widened'
         ? 'Диапазоны расширены — двойной эквивалент достигнут'
         : 'Требуется доработка — проверьте параметры';
+
   const statusClass = !result
     ? 'de-status-idle'
     : result.status === 'ok'
@@ -63,9 +95,10 @@ export function DoubleEquivalentReport({
 
   return (
     <div className="de-report">
+
       <div className="de-report-header">
         <div className="de-report-title">
-          <span className="de-report-icon" aria-hidden="true">⚖️</span>
+          <span className="de-report-badge" aria-hidden="true">ДЭ</span>
           <div>
             <div className="de-report-heading">Алгоритм двойного эквивалента</div>
             <div className="de-report-subheading">
@@ -83,7 +116,7 @@ export function DoubleEquivalentReport({
             {loading ? (
               <span className="de-spinner" aria-hidden="true" />
             ) : (
-              <span aria-hidden="true">🔍</span>
+              <span className="de-check-icon" aria-hidden="true" />
             )}
             {loading ? 'Проверяю…' : 'Проверить эквиваленты'}
           </button>
@@ -92,13 +125,9 @@ export function DoubleEquivalentReport({
 
       {result && (
         <div className={`de-status-bar ${statusClass}`}>
-          <span className="de-status-icon">{statusIcon}</span>
+          <StatusDot status={dotStatus} />
           <span className="de-status-text">{statusLabel}</span>
-          {result.score > 0 && (
-            <span className="de-score-pill">
-              Совместимость: {result.score}%
-            </span>
-          )}
+          {result.score > 0 && <ScoreBar score={result.score} />}
         </div>
       )}
 
@@ -109,16 +138,19 @@ export function DoubleEquivalentReport({
       {result && result.vendors.length > 0 && (
         <div className="de-section">
           <div className="de-section-label">
-            <span aria-hidden="true">🏭</span> Идентифицированные производители ({result.vendors.length})
+            <span className="de-section-tag">MFR</span>
+            Идентифицированные производители ({result.vendors.length})
           </div>
           <div className="de-vendors-grid">
             {result.vendors.map((v, i) => (
-              <VendorCard key={i} vendor={v} />
+              <VendorCard key={i} vendor={v} index={i} />
             ))}
           </div>
           {hasVendors && (
             <div className="de-compliance-verdict">
-              ✅ Данное ТЗ соответствует требованиям ФАС. Выявлены совместимые предложения: <strong>{result.vendors.map((v) => `${v.name} ${v.model}`).join(', ')}</strong>.
+              <span className="de-verdict-ok-tag">PASS</span>
+              Данное ТЗ соответствует требованиям ФАС. Выявлены совместимые предложения:{' '}
+              <strong>{result.vendors.map((v) => `${v.name} ${v.model}`).join(', ')}</strong>.
             </div>
           )}
         </div>
@@ -127,12 +159,13 @@ export function DoubleEquivalentReport({
       {result && result.widened.length > 0 && (
         <div className="de-section">
           <div className="de-section-label">
-            <span aria-hidden="true">🔧</span> Рекомендации по расширению параметров
+            <span className="de-section-tag de-section-tag--blue">ADJ</span>
+            Рекомендации по расширению параметров
           </div>
           <div className="de-widened-list">
             {result.widened.map((w, i) => (
               <div key={i} className="de-widened-item">
-                <span className="de-widened-bullet" aria-hidden="true">→</span>
+                <span className="de-widened-arrow" aria-hidden="true" />
                 {w}
               </div>
             ))}
@@ -148,7 +181,8 @@ export function DoubleEquivalentReport({
       {hasConflicts && (
         <div className="de-section">
           <div className="de-section-label">
-            <span aria-hidden="true">⚡</span> Конфликты с официальными данными производителя ({conflicts!.length})
+            <span className="de-section-tag de-section-tag--red">CONF</span>
+            Конфликты с официальными данными производителя ({conflicts!.length})
           </div>
           <div className="de-conflicts-table-wrap">
             <table className="de-conflicts-table">
@@ -177,7 +211,7 @@ export function DoubleEquivalentReport({
 
       {!result && !loading && (
         <div className="de-empty">
-          <span className="de-empty-icon" aria-hidden="true">⚖️</span>
+          <span className="de-empty-icon de-empty-icon--scale" aria-hidden="true" />
           <div className="de-empty-text">
             Нажмите «Проверить эквиваленты» после генерации характеристик, чтобы убедиться, что ТЗ допускает как минимум двух производителей.
           </div>

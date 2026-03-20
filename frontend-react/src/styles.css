@@ -3951,9 +3951,300 @@ html[data-theme='contrast'] .workspace-template-card {
   opacity: 0.5;
 }
 
+.de-empty-icon--scale {
+  display: block;
+  width: 36px;
+  height: 36px;
+  opacity: 0.35;
+  background: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'%3E%3Cpath d='M12 3L2 8l10 5 10-5-10-5zM2 16l10 5 10-5M2 12l10 5 10-5'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5'%3E%3Cpath d='M12 3L2 8l10 5 10-5-10-5zM2 16l10 5 10-5M2 12l10 5 10-5'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  color: var(--text-muted);
+}
+
 .de-empty-text {
   font-size: 13px;
   color: var(--text-muted);
   line-height: 1.55;
   max-width: 400px;
+}
+
+/* =================================================================
+   DOUBLE-EQUIVALENT — Enterprise Visual Tokens
+   ================================================================= */
+
+/* Status dot — replaces emoji status indicator */
+.de-status-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.de-status-dot--ok      { background: var(--green); box-shadow: 0 0 0 3px rgba(16,185,129,0.18); }
+.de-status-dot--widened { background: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,0.18); }
+.de-status-dot--fail    { background: var(--amber); box-shadow: 0 0 0 3px rgba(251,191,36,0.18); }
+.de-status-dot--idle    { background: var(--text-muted); opacity: 0.5; }
+
+/* Report badge — replaces ⚖️ icon */
+.de-report-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(59,130,246,0.22), rgba(99,102,241,0.18));
+  border: 1px solid rgba(99,102,241,0.28);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+
+/* Vendor index number badge — replaces 🏭 emoji */
+.de-vendor-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(59,130,246,0.1);
+  border: 1px solid rgba(59,130,246,0.2);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+
+/* Confidence dot inside badge */
+.de-conf-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.de-conf-dot--high   { background: var(--green); }
+.de-conf-dot--medium { background: var(--amber); }
+.de-conf-dot--low    { background: var(--red); }
+
+/* Section tags — replaces emoji section labels */
+.de-section-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  background: rgba(107,122,141,0.14);
+  color: var(--text-muted);
+  border: 1px solid rgba(107,122,141,0.2);
+}
+.de-section-tag--blue {
+  background: rgba(59,130,246,0.12);
+  color: var(--accent);
+  border-color: rgba(59,130,246,0.22);
+}
+.de-section-tag--red {
+  background: rgba(248,113,113,0.1);
+  color: var(--red);
+  border-color: rgba(248,113,113,0.22);
+}
+
+/* Compliance score bar */
+.de-score-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.de-score-bar-track {
+  width: 120px;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255,255,255,0.1);
+  overflow: hidden;
+}
+.de-score-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  transition: width 0.5s cubic-bezier(0.4,0,0.2,1);
+}
+.de-score-bar-fill--ok   { background: linear-gradient(90deg, #10b981, #34d399); }
+.de-score-bar-fill--warn { background: linear-gradient(90deg, #d97706, #fbbf24); }
+.de-score-bar-fill--bad  { background: linear-gradient(90deg, #dc2626, #f87171); }
+.de-score-bar-label {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: inherit;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* Verdict PASS tag */
+.de-verdict-ok-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  background: rgba(16,185,129,0.15);
+  color: var(--green);
+  border: 1px solid rgba(16,185,129,0.25);
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+/* Widened arrow — replaces → text */
+.de-widened-arrow {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  background: var(--accent);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='currentColor' d='M8 2L14 8L8 14M2 8h12' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='currentColor' d='M8 2L14 8L8 14M2 8h12' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  opacity: 0.7;
+}
+
+/* Check button scan icon — replaces 🔍 emoji */
+.de-check-icon {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+/* Vendor card upgrade */
+.de-vendor-card {
+  padding: 14px 16px;
+  background: var(--bg-2);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  transition: border-color 0.2s;
+}
+.de-vendor-card:hover {
+  border-color: var(--panel-border-strong);
+}
+.de-vendor-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 0;
+}
+.de-conf-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* DE report section wrapper */
+.de-report-section {
+  padding-bottom: 12px;
+}
+
+/* DE report left border accent (enterprise panel look) */
+.de-report {
+  border-left: 3px solid rgba(99,102,241,0.45);
+}
+
+/* =================================================================
+   SPEC EDITOR — Enterprise Data Grid Upgrade
+   ================================================================= */
+.spec-editor {
+  margin: 0;
+  padding: 14px 18px;
+  border: 1px solid color-mix(in srgb, var(--surface-strong-3) 72%, var(--panel-border));
+  border-radius: 0;
+  background: var(--surface-strong);
+  border-left: 3px solid rgba(59,130,246,0.3);
+}
+
+.spec-editor__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.spec-editor__head-cell,
+.spec-editor__cell {
+  border: 1px solid color-mix(in srgb, var(--surface-strong-3) 72%, var(--panel-border));
+}
+
+.spec-editor__head-cell {
+  padding: 6px 10px;
+  color: var(--surface-subtle-text);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.spec-editor__cell {
+  padding: 3px 8px;
+}
+
+.spec-editor__cell--index {
+  padding: 3px 6px;
+  color: var(--surface-subtle-text);
+  font-size: 11px;
+  text-align: center;
+}
+
+.spec-editor__input {
+  width: 100%;
+  padding: 4px 5px;
+  border: none;
+  background: transparent;
+  color: var(--surface-strong-text);
+  font-size: 13px;
+  outline: none;
+}
+
+.spec-editor__button {
+  min-height: auto;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.spec-editor__head-row {
+  background: var(--surface-strong-2);
+  border-bottom: 2px solid color-mix(in srgb, var(--surface-strong-3) 80%, var(--panel-border));
 }

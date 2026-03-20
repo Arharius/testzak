@@ -590,6 +590,10 @@ function makeImportedRow(params: {
   };
 }
 
+const WEB_NAV_TERMS_RE = /^(home|consumers|utilities|transportation|about(\s+us)?|documents(\s+and\s+rules)?|news|events|help(\s+center)?|search|title|content(\s+viewer)?|contact|login|logout|register|signup|faq|sitemap|privacy|terms|navigation|menu|footer|header|breadcrumb|back|next|previous|skip|jump)$/i;
+const BARE_DOMAIN_RE = /^[a-z0-9][a-z0-9.-]*\.(gov|com|org|net|ru|рф|edu|io|info|biz)$/i;
+const URL_PATH_RE = /^\/[a-z0-9/._-]{3,}$/i;
+
 function isValidSpecName(name: string): boolean {
   if (!name) return false;
   if (/^#+\s/.test(name)) return false;
@@ -597,6 +601,8 @@ function isValidSpecName(name: string): boolean {
   if (/^!\[/.test(name)) return false;
   if (/^https?:\/\//i.test(name)) return false;
   if (/^\/\//.test(name)) return false;
+  if (BARE_DOMAIN_RE.test(name)) return false;
+  if (WEB_NAV_TERMS_RE.test(name.trim())) return false;
   return true;
 }
 
@@ -604,6 +610,8 @@ function isValidSpecValue(value: string): boolean {
   if (!value) return true;
   if (/^https?:\/\//i.test(value)) return false;
   if (/^\/\/[a-z0-9]/i.test(value)) return false;
+  if (BARE_DOMAIN_RE.test(value.trim())) return false;
+  if (URL_PATH_RE.test(value.trim())) return false;
   return true;
 }
 

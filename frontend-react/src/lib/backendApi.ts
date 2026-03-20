@@ -602,13 +602,46 @@ export type TZDocumentFull = {
 const LOCAL_TZ_DOCS_KEY = 'tz_local_documents_v1';
 const LOCAL_TZ_PREFIX = 'local-';
 
+const _INVALID_SPEC_NAME_RE = /^(#+\s|\[|!\[|https?:\/\/|\/\/|home$|consumers$|utilities$|transportation$|about(\s+us)?$|documents(\s+and\s+rules)?$|news$|events$|help(\s+center)?$|search$|title$|content(\s+viewer)?$|contact$|login$|logout$|register$|faq$|sitemap$|privacy$|terms$|navigation$|menu$|footer$|header$|back$|next$|previous$|skip$)/i;
+const _BARE_DOMAIN_RE = /^[a-z0-9][a-z0-9.-]*\.(gov|com|org|net|ru|рф|edu|io|info|biz)$/i;
+const _URL_PATH_RE = /^\/[a-z0-9/._-]{3,}$/i;
+const _INVALID_SPEC_VALUE_RE = /^(https?:\/\/|\/\/[a-z0-9])/i;
+
+function _isCleanSpec(name: string, value: string): boolean {
+  const n = String(name || '').trim();
+  const v = String(value || '').trim();
+  if (!n) return false;
+  if (_INVALID_SPEC_NAME_RE.test(n)) return false;
+  if (_BARE_DOMAIN_RE.test(n)) return false;
+  if (!v) return true;
+  if (_INVALID_SPEC_VALUE_RE.test(v)) return false;
+  if (_BARE_DOMAIN_RE.test(v)) return false;
+  if (_URL_PATH_RE.test(v)) return false;
+  return true;
+}
+
+function _sanitizeDocSpecs(doc: TZDocumentFull): TZDocumentFull {
+  if (!doc.rows || !Array.isArray(doc.rows)) return doc;
+  const cleanedRows = doc.rows.map((row) => {
+    if (!Array.isArray(row.specs)) return row;
+    return {
+      ...row,
+      specs: (row.specs as Array<{ name?: string; value?: string }>).filter(
+        (s) => _isCleanSpec(String(s?.name || ''), String(s?.value || '')),
+      ),
+    };
+  });
+  return { ...doc, rows: cleanedRows };
+}
+
 function readLocalTZDocs(): TZDocumentFull[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = window.localStorage.getItem(LOCAL_TZ_DOCS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed as TZDocumentFull[] : [];
+    if (!Array.isArray(parsed)) return [];
+    return (parsed as TZDocumentFull[]).map(_sanitizeDocSpecs);
   } catch {
     return [];
   }

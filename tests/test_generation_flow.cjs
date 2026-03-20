@@ -55,9 +55,10 @@ const checks = [
       && workspace.includes('указано исключение по ПП1875 без подтвержденного основания'),
   },
   {
-    name: 'Non-exception legal basis that stays weak is downgraded to warning',
+    name: 'Non-exception legal basis without confirmation blocks final publication',
     ok: workspace.includes("else if (row.status === 'done' && status !== 'none' && basisWeak)")
-      && workspace.includes('мера ПП1875 определена, но основание пока не подтверждено юридически'),
+      && workspace.includes('мера ПП1875 определена, но основание не подтверждено юридически')
+      && workspace.includes("actionKind: 'legal_safe_fix'"),
   },
   {
     name: 'Service readiness gate checks result, SLA and acceptance completeness',
@@ -105,6 +106,14 @@ const checks = [
       && workspace.includes('Паспорт публикации')
       && workspace.includes('publication_dossier: publicationDossier')
       && workspace.includes('publicationDossier,'),
+  },
+  {
+    name: 'Final DOCX/PDF export no longer embeds internal readiness and publication dossier tables',
+    ok: workspace.includes("children.push(sectionHead('1. Наименование, Заказчик, Исполнитель, сроки выполнения', 0));")
+      && !workspace.includes("children.push(centerPara('Сводка готовности к публикации'")
+      && !workspace.includes("addParagraph('Сводка готовности к публикации'")
+      && !workspace.includes("children.push(centerPara('Паспорт публикации'")
+      && !workspace.includes("addParagraph('Паспорт публикации'"),
   },
   {
     name: 'Import supports DOCX tables, appendices and enumerated license lists',

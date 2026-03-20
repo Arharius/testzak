@@ -57,6 +57,12 @@ const TECH_STANDARD_WHITELIST = /\b(RJ-?45|RJ-?11|RJ-?12|USB|HDMI|VGA|DVI|DP|Dis
 
 // Whitelist для ARTICLE_CODE_RE: разрешённые паттерны типа "RJ-45", "Cat-6", "USB-C"
 const ARTICLE_CODE_WHITELIST = /^(RJ-?\d+|Cat-?\d+[eaEA]?|USB-?[A-C]|SFP-?\d*|DP-?\d*|Type-?[A-C])$/i;
+const SERVICE_TYPE_KEYS = new Set(['otherService']);
+const PRODUCT_ONLY_SPEC_NAME_RE = /^(состояние товара|комплект поставки|документация на русском языке|маркировка и идентификация|гарантия производителя|упаковка)$/i;
+const EXPORT_NOISE_SPEC_NAME_RE = /^(удал[её]нное администрирование(?:\s*\/\s*мониторинг состояния)?|поддержка модернизации и замены компонентов|торп|состояние товара|комплект поставки|документация на русском языке|маркировка и идентификация|гарантия производителя|упаковка)$/i;
+const INTERNAL_WORKFLOW_RE = /(основание сформировано автоматически|требуется юридическая проверка|требуется ручная верификация|перед публикацией закупки|anti-?фас|benchmark|паспорт публикации|сводка готовности)/i;
+const URL_RE = /https?:\/\/|www\./i;
+const FOREIGN_MARKETING_RE = /(learn more about|windows 11 home is available only|recomienda windows|certificaci[oó]n|tecnolog[ií]a|pantalla|teclado|c[aá]mara|lector de tarjeta|todos los derechos reservados|all rights reserved|array microphone|smart amp|compatible con stylus)/i;
 
 function addIssue(
   issues: ComplianceIssue[],
@@ -135,6 +141,165 @@ function normalizeExistingUnit(name: string, value: string, unit: string): strin
     return 'наличие';
   }
   return '—';
+}
+
+function hasExcessiveLatinVendorCopy(value: string): boolean {
+  const latinWords = String(value || '').match(/[A-Za-zÀ-ÿ]{4,}/g) || [];
+  return latinWords.length >= 6 && String(value || '').length >= 70;
+}
+
+function normalizeVendorFieldValue(name: string, rawValue: string): string {
+  const normalizedName = normalizeSpecKey(name);
+  let value = String(rawValue || '')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!value) return '';
+
+  if (/операционн/.test(normalizedName) && /windows\s*11/i.test(value)) {
+    return 'совместимость с операционной системой семейства Windows 11 или эквивалентной, при необходимости поставки с предустановленной ОС';
+  }
+
+  if (/процессор/.test(normalizedName)) {
+    const cores = value.match(/(\d+)\s*cores?/i)?.[1];
+    const threads = value.match(/(\d+)\s*threads?/i)?.[1];
+    const baseGHz = value.match(/(?:processor\s*)?(\d+(?:[.,]\d+)?)\s*ghz/i)?.[1];
+    const boostGHz = value.match(/up to\s*(\d+(?:[.,]\d+)?)\s*ghz/i)?.[1];
+    const tops = value.match(/(\d+)\s*tops/i)?.[1];
+    const parts = [
+      cores ? `не менее ${cores} ядер` : '',
+      threads ? `не менее ${threads} потоков` : '',
+      baseGHz ? `базовая частота не менее ${baseGHz.replace(',', '.')} ГГц` : '',
+      boostGHz ? `максимальная частота не менее ${boostGHz.replace(',', '.')} ГГц` : '',
+      tops ? `наличие NPU производительностью не менее ${tops} TOPS` : '',
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(', ');
+  }
+
+  if (/оперативн.*памят|объем оперативной памяти|объем озу|тип оперативной памяти/.test(normalizedName)) {
+    const capacity = value.match(/(\d+)\s*(tb|gb|mb|тб|гб|мб)\b/i);
+    const memoryType = value.match(/\b(lpddr5x|lpddr5|lpddr4x|lpddr4|ddr5(?:-\d+)?|ddr4(?:-\d+)?|ddr3)\b/i)?.[1];
+    const parts = [
+      capacity ? `не менее ${capacity[1]} ${capacity[2].toUpperCase().replace('GB', 'ГБ').replace('TB', 'ТБ').replace('MB', 'МБ')}` : '',
+      memoryType ? memoryType.toUpperCase() : '',
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(' ');
+  }
+
+  if (/накопител|ssd|hdd/.test(normalizedName)) {
+    const capacity = value.match(/(\d+)\s*(tb|gb|mb|тб|гб|мб)\b/i);
+    const driveType = value.match(/\b(SSD|HDD)\b/i)?.[1]?.toUpperCase();
+    const iface = value.match(/\b(NVMe|M\.2|PCIe\s*\d(?:\.\d)?|SATA|SAS)\b/ig) || [];
+    const ifaceText = [...new Set(iface.map((item) => item.replace(/\s+/g, ' ').trim()))].join(' ');
+    const parts = [
+      driveType || (/nvme|m\.2|pcie/i.test(value) ? 'SSD' : ''),
+      ifaceText,
+      capacity ? `не менее ${capacity[1]} ${capacity[2].toUpperCase().replace('GB', 'ГБ').replace('TB', 'ТБ').replace('MB', 'МБ')}` : '',
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(' ');
+  }
+
+  if (/диспле|экран|матриц/.test(normalizedName)) {
+    const diag = value.match(/(\d+(?:[.,]\d+)?)\s*["”]/)?.[1];
+    const resolution = value.match(/(\d{3,4}\s*[xх×]\s*\d{3,4})/i)?.[1]?.replace(/\s*/g, '');
+    const refresh = value.match(/(\d+)\s*hz/i)?.[1];
+    const brightness = value.match(/(\d+)\s*nits?/i)?.[1];
+    const panel = value.match(/\b(OLED|AMOLED|IPS|VA|TN|LCD|LED)\b/i)?.[1]?.toUpperCase();
+    const parts = [
+      diag ? `диагональ не менее ${diag.replace(',', '.')} дюйма` : '',
+      resolution ? `разрешение не менее ${resolution}` : '',
+      panel ? `тип матрицы ${panel} или эквивалент` : '',
+      refresh ? `частота обновления не менее ${refresh} Гц` : '',
+      brightness ? `яркость не менее ${brightness} кд/м²` : '',
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(', ');
+  }
+
+  if (/сетев.*интерфейс|беспроводн|wi-?fi|bluetooth/.test(normalizedName)) {
+    const wifi = value.match(/wi-?fi\s*([0-9a-z.+-]+)/i)?.[1];
+    const bt = value.match(/bluetooth[®\s]*([0-9.]+)/i)?.[1];
+    const hasRj45 = /rj-?45|ethernet/i.test(value);
+    const parts = [
+      wifi ? `Wi‑Fi ${wifi}` : '',
+      bt ? `Bluetooth не ниже ${bt}` : '',
+      hasRj45 ? 'Ethernet RJ‑45 не ниже 1 Гбит/с' : '',
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(', ');
+  }
+
+  if (/порт|интерфейс подключени|видеовыход/.test(normalizedName)) {
+    const parts: string[] = [];
+    const usbC = value.match(/(\d+)x?\s*usb\s*(?:4(?:\.0)?|type-c|c)/i)?.[1];
+    const usbA = value.match(/(\d+)x?\s*usb\s*(?:3\.\d|3|2\.\d|2)\s*(?:gen\s*\d+)?\s*(?:type-a|tipo a|a)?/i)?.[1];
+    const hdmi = value.match(/(\d+)x?\s*hdmi/i)?.[1];
+    if (usbC) parts.push(`не менее ${usbC} портов USB Type‑C`);
+    if (usbA) parts.push(`не менее ${usbA} портов USB Type‑A`);
+    if (hdmi) parts.push(`не менее ${hdmi} порта HDMI`);
+    if (/3\.5mm|audio/i.test(value)) parts.push('комбинированный аудиоразъём 3,5 мм');
+    if (/micro\s*sd/i.test(value)) parts.push('слот для карт microSD');
+    if (parts.length > 0) return parts.join(', ');
+  }
+
+  if (/аккумулятор|батаре/.test(normalizedName)) {
+    const wh = value.match(/(\d+(?:[.,]\d+)?)\s*wh/i)?.[1];
+    const liIon = /li-?ion/i.test(value);
+    const parts = [
+      wh ? `не менее ${wh.replace(',', '.')} Вт·ч` : '',
+      liIon ? 'литий-ионный' : '',
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(', ');
+  }
+
+  if (/масса|вес/.test(normalizedName)) {
+    const kg = value.match(/(\d+(?:[.,]\d+)?)\s*kg/i)?.[1] || value.match(/(\d+(?:[.,]\d+)?)\s*кг/i)?.[1];
+    if (kg) return `не более ${kg.replace(',', '.')} кг`;
+  }
+
+  if (/габарит|размер/.test(normalizedName)) {
+    const dims = value.match(/(\d+(?:[.,]\d+)?\s*x\s*\d+(?:[.,]\d+)?(?:\s*x\s*\d+(?:[.,]\d+)?)?)/i)?.[1];
+    if (dims) {
+      const unit = /cm|см/i.test(value) ? 'см' : 'мм';
+      return `не более ${dims.replace(/\s+/g, ' ')} ${unit}`;
+    }
+  }
+
+  if (/камера/.test(normalizedName)) {
+    const isFhd = /\bfhd\b|full hd/i.test(value);
+    const hasIr = /\bir\b|windows hello/i.test(value);
+    const parts = [
+      isFhd ? 'веб-камера не ниже Full HD' : '',
+      hasIr ? 'поддержка ИК-камеры / биометрической аутентификации' : '',
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(', ');
+  }
+
+  if (/аудио/.test(normalizedName)) {
+    if (/speaker|microphone|mic/i.test(value)) {
+      return 'встроенные динамики и микрофон(ы)';
+    }
+  }
+
+  if (/средства безопасности/.test(normalizedName)) {
+    const parts = [
+      /tpm/i.test(value) ? 'наличие TPM' : '',
+      /windows hello/i.test(value) ? 'поддержка биометрической аутентификации' : '',
+      /password/i.test(value) ? 'наличие защиты доступа к BIOS/загрузке' : '',
+    ].filter(Boolean);
+    if (parts.length > 0) return parts.join(', ');
+  }
+
+  value = value
+    .replace(/[«»"]/g, '')
+    .replace(/\b(Processor|Graphics|Wireless Card|Built-in|Support)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (URL_RE.test(value) || FOREIGN_MARKETING_RE.test(value) || hasExcessiveLatinVendorCopy(value)) {
+    return '';
+  }
+
+  return value;
 }
 
 function lowerFirst(text: string): string {
@@ -285,11 +450,18 @@ export function sanitizeProcurementSpecs(row: Pick<RowForCompliance, 'type' | 'm
   const orderedKeys: string[] = [];
   for (const original of specs) {
     const name = String(original.name || '').replace(/\s+/g, ' ').trim();
-    const value = expandGenericValue(name, String(original.value || '').replace(/\s+/g, ' ').trim());
+    let value = expandGenericValue(name, String(original.value || '').replace(/\s+/g, ' ').trim());
     const unit = String(original.unit || '').replace(/\s+/g, ' ').trim();
     const group = String(original.group || 'Общие сведения').replace(/\s+/g, ' ').trim() || 'Общие сведения';
     if (!name || !value) continue;
     if (IDENTITY_SPEC_NAME_RE.test(name)) continue;
+    if (SERVICE_TYPE_KEYS.has(row.type) && PRODUCT_ONLY_SPEC_NAME_RE.test(name)) continue;
+    if (EXPORT_NOISE_SPEC_NAME_RE.test(name)) continue;
+    if (INTERNAL_WORKFLOW_RE.test(name) || INTERNAL_WORKFLOW_RE.test(value)) continue;
+    if (URL_RE.test(value) || FOREIGN_MARKETING_RE.test(value) || hasExcessiveLatinVendorCopy(value) || BRAND_RE.test(value) || ARTICLE_CODE_RE.test(value)) {
+      value = normalizeVendorFieldValue(name, value);
+      if (!value) continue;
+    }
     if (GENERIC_NAME_RE.test(name) && isWeakStrictValue(value)) continue;
     const prepared: SpecItem = {
       ...original,

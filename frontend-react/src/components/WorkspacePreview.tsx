@@ -15,32 +15,6 @@ type SectionTableRowLike = {
   value: string;
 };
 
-type LegalSummaryRowLike = {
-  index: string;
-  item: string;
-  classifier: string;
-  measure: string;
-  action: string;
-};
-
-type PublicationDossierRowLike = {
-  index: string;
-  item: string;
-  status: 'ready' | 'review' | 'block';
-  classifier: string;
-  quality: string;
-  action: string;
-};
-
-type PublicationDossierSummaryLike = {
-  readyItems: number;
-  reviewItems: number;
-  blockedItems: number;
-  trustedClassification: number;
-  benchmarkReady: number;
-  serviceReady: number;
-};
-
 type DocumentSectionBundleLike = {
   currentYear: number;
   multi: boolean;
@@ -49,9 +23,6 @@ type DocumentSectionBundleLike = {
   serviceOnly: boolean;
   section1Rows: SectionTableRowLike[];
   readinessSummaryRows: SectionTableRowLike[];
-  legalSummaryRows: LegalSummaryRowLike[];
-  publicationDossierRows: PublicationDossierRowLike[];
-  publicationDossierSummary: PublicationDossierSummaryLike;
   section2Rows: SectionTableRowLike[];
   section3Rows: SectionTableRowLike[];
   section4Rows: SectionTableRowLike[];
@@ -76,16 +47,11 @@ type CommercialContextLike = {
 type WorkspacePreviewProps = {
   doneRows: PreviewRow[];
   docSections: DocumentSectionBundleLike;
-  publicationSummaryText: string;
   lookupCatalog: (type: string) => CatalogLike;
   getResolvedCommercialContext: (row: PreviewRow) => CommercialContextLike;
   getCommercialValue: (value?: string) => string;
   getRowQtyUnitShort: (row: PreviewRow) => string;
   getResolvedOkpd2Code: (row: PreviewRow) => string;
-  getUnifiedNacRegime: (type: string) => string;
-  getPublicationDossierRowStatusLabel: (status: PublicationDossierRowLike['status']) => string;
-  buildAppendixPassportRows: (row: PreviewRow) => SectionTableRowLike[];
-  buildBenchmarkAppendixRows: (row: PreviewRow) => SectionTableRowLike[];
   onUpdateSpec: (rowId: number, specIdx: number, field: 'name' | 'value' | 'unit' | 'group', newVal: string) => void;
   onDeleteSpec: (rowId: number, specIdx: number) => void;
   onAddSpec: (rowId: number) => void;
@@ -94,16 +60,11 @@ type WorkspacePreviewProps = {
 export function WorkspacePreview({
   doneRows,
   docSections,
-  publicationSummaryText,
   lookupCatalog,
   getResolvedCommercialContext,
   getCommercialValue,
   getRowQtyUnitShort,
   getResolvedOkpd2Code,
-  getUnifiedNacRegime,
-  getPublicationDossierRowStatusLabel,
-  buildAppendixPassportRows,
-  buildBenchmarkAppendixRows,
   onUpdateSpec,
   onDeleteSpec,
   onAddSpec,
@@ -137,7 +98,7 @@ export function WorkspacePreview({
     outline: 'none',
   };
 
-  const renderSpecsTable = (row: PreviewRow, specs: SpecItem[], isSW: boolean, nacRegime: string) => {
+  const renderSpecsTable = (row: PreviewRow, specs: SpecItem[]) => {
     const flatRows: Array<{ type: 'group' | 'spec'; idx: number; spec?: SpecItem; groupLabel?: string }> = [];
     let prevGroup = '';
     for (let si = 0; si < specs.length; si++) {
@@ -196,9 +157,6 @@ export function WorkspacePreview({
               </tr>
             ),
           )}
-          {!isSW && (nacRegime === 'pp878' || nacRegime === 'pp616') && (
-            <tr key="torp"><td style={tdC}>ТОРП</td><td style={tdC}>Да</td><td style={tdC}></td><td style={tdC}></td></tr>
-          )}
         </tbody>
         <tfoot>
           <tr>
@@ -238,63 +196,6 @@ export function WorkspacePreview({
           <tr key={`${headers[0]}-${row.label}`}>
             <td style={{ ...tdC, textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{row.label}</td>
             <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.value}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-
-  const renderLegalSummaryTable = (rowsData: LegalSummaryRowLike[]) => (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
-      <thead>
-        <tr style={{ background: 'var(--doc-table-head-bg)', color: 'var(--doc-table-head-text)' }}>
-          <th style={{ border: bdr, padding: '4px 8px', width: 30 }}>№</th>
-          <th style={{ border: bdr, padding: '4px 8px' }}>Позиция</th>
-          <th style={{ border: bdr, padding: '4px 8px' }}>ОКПД2 / КТРУ</th>
-          <th style={{ border: bdr, padding: '4px 8px' }}>ПП1875</th>
-          <th style={{ border: bdr, padding: '4px 8px' }}>Что приложить / проверить</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rowsData.map((row) => (
-          <tr key={`${row.index}-${row.item}`}>
-            <td style={{ ...tdC, textAlign: 'center' }}>{row.index}</td>
-            <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.item}</td>
-            <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.classifier}</td>
-            <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.measure}</td>
-            <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.action}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-
-  const renderPublicationDossierTable = (rowsData: PublicationDossierRowLike[]) => (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
-      <thead>
-        <tr style={{ background: 'var(--doc-table-head-bg)', color: 'var(--doc-table-head-text)' }}>
-          <th style={{ border: bdr, padding: '4px 8px', width: 30 }}>№</th>
-          <th style={{ border: bdr, padding: '4px 8px' }}>Позиция</th>
-          <th style={{ border: bdr, padding: '4px 8px', width: 96 }}>Статус</th>
-          <th style={{ border: bdr, padding: '4px 8px' }}>Классификация</th>
-          <th style={{ border: bdr, padding: '4px 8px' }}>Качество / доказательная база</th>
-          <th style={{ border: bdr, padding: '4px 8px' }}>Что делать</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rowsData.map((row) => (
-          <tr key={`${row.index}-${row.item}-publication`}>
-            <td style={{ ...tdC, textAlign: 'center' }}>{row.index}</td>
-            <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.item}</td>
-            <td style={{
-              ...tdC,
-              textAlign: 'center',
-              whiteSpace: 'pre-wrap',
-              color: row.status === 'block' ? 'var(--red)' : row.status === 'review' ? 'var(--amber)' : 'var(--green)',
-            }}>{getPublicationDossierRowStatusLabel(row.status)}</td>
-            <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.classifier}</td>
-            <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.quality}</td>
-            <td style={{ ...tdC, whiteSpace: 'pre-wrap' }}>{row.action}</td>
           </tr>
         ))}
       </tbody>
@@ -361,18 +262,6 @@ export function WorkspacePreview({
         </table>
       ) : null}
 
-      <div style={{ ...boldStyle, fontSize: 13 }}>Сводка готовности к публикации</div>
-      {renderSectionTable(docSections.readinessSummaryRows)}
-
-      <div style={{ ...boldStyle, fontSize: 13 }}>Справочная таблица по нацрежиму и подтверждающим документам</div>
-      {renderLegalSummaryTable(docSections.legalSummaryRows)}
-
-      <div style={{ ...boldStyle, fontSize: 13 }}>Паспорт публикации</div>
-      <div style={{ ...pStyle, color: 'var(--doc-text-soft)', whiteSpace: 'pre-wrap' }}>
-        {publicationSummaryText}
-      </div>
-      {renderPublicationDossierTable(docSections.publicationDossierRows)}
-
       <div style={{ ...boldStyle, fontSize: 13 }}>2. Требования к предмету закупки</div>
       {renderSectionTable(docSections.section2Rows)}
 
@@ -391,7 +280,6 @@ export function WorkspacePreview({
       {doneRows.map((row, idx) => {
         const goods = lookupCatalog(row.type);
         const isSoftware = !!goods.isSoftware;
-        const nacRegime = row.meta?.nac_regime || getUnifiedNacRegime(row.type);
         const specs = row.specs ?? [];
         const commercial = getResolvedCommercialContext(row);
         return (
@@ -411,9 +299,7 @@ export function WorkspacePreview({
                   ? 'Требования к техническим характеристикам программного обеспечения:'
                   : 'Требования к техническим характеристикам поставляемого товара:')}
             </p>
-            {renderSectionTable(buildAppendixPassportRows(row))}
-            {buildBenchmarkAppendixRows(row).length > 0 && renderSectionTable(buildBenchmarkAppendixRows(row))}
-            {renderSpecsTable(row, specs, isSoftware, nacRegime)}
+            {renderSpecsTable(row, specs)}
           </div>
         );
       })}

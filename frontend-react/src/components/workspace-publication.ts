@@ -482,13 +482,13 @@ export function createWorkspacePublicationTools({
           actionLabel: 'Снять исключение',
         });
       } else if (row.status === 'done' && status !== 'none' && basisWeak) {
-        warnings.push({
+        blockers.push({
           key: `basis-review-${row.id}`,
-          level: 'warn',
+          level: 'block',
           rowId: row.id,
-          text: `${rowLabel}: мера ПП1875 определена, но основание пока не подтверждено юридически.`,
+          text: `${rowLabel}: мера ПП1875 определена, но основание не подтверждено юридически.`,
           action: 'уточнить формулировку основания, источник права и подтверждающий документ до публикации',
-          actionKind: 'focus',
+          actionKind: 'legal_safe_fix',
           actionLabel: 'Уточнить основание',
         });
       }

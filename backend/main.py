@@ -2176,3 +2176,85 @@ def delete_tz_document(
     db.delete(doc)
     db.commit()
     return {"ok": True, "deleted": doc_id}
+
+
+# ── Антиошибочный фильтр перед экспортом DOCX ────────────────────────────────
+import re as _re
+
+_BRAND_PATTERN = _re.compile(
+    r'\b[A-ZА-Я][a-zа-яёЁ]{1,15}\s+[A-Z0-9][A-Z0-9a-z\-\+]{2,}\b'
+)
+_VAGUE_WORDS = [
+    'качественный', 'качественная', 'качественное', 'качественные',
+    'современный', 'современная', 'современное', 'современные',
+    'передовой', 'передовая', 'передовое', 'передовые',
+    'надёжный', 'надёжная', 'надёжное', 'надёжные',
+    'удобный', 'удобная', 'удобное', 'удобные',
+    'высококачественный', 'высококачественная', 'высококачественные',
+    'инновационный', 'инновационная', 'инновационное', 'инновационные',
+]
+
+
+class TZValidateRequest(BaseModel):
+    rows: list[dict] = []
+    description: str = ""
+
+
+class TZRiskItem(BaseModel):
+    type: str
+    phrase: str
+    field: str
+    message: str
+
+
+class TZValidateResponse(BaseModel):
+    can_export: bool
+    critical: list[TZRiskItem]
+    moderate: list[TZRiskItem]
+
+
+@app.post("/api/tz/validate", response_model=TZValidateResponse)
+def validate_tz(req: TZValidateRequest):
+    """Антиошибочный фильтр: проверяет текст ТЗ перед экспортом DOCX."""
+    critical: list[TZRiskItem] = []
+    moderate: list[TZRiskItem] = []
+
+    all_texts: list[tuple[str, str]] = []
+    for row in req.rows:
+        name = str(row.get("name") or "")
+        field = str(row.get("field") or "Характеристика")
+        if name:
+            all_texts.append((name, field))
+    if req.description:
+        all_texts.append((req.description, "Описание товара"))
+
+    seen_brands: set[str] = set()
+    seen_vague: set[str] = set()
+
+    for text, field in all_texts:
+        for m in _BRAND_PATTERN.finditer(text):
+            phrase = m.group()
+            if phrase not in seen_brands:
+                seen_brands.add(phrase)
+                critical.append(TZRiskItem(
+                    type="single_brand",
+                    phrase=phrase,
+                    field=field,
+                    message="Похоже на уникальное название модели/бренда — нарушение ст. 33 44-ФЗ",
+                ))
+        lower = text.lower()
+        for w in _VAGUE_WORDS:
+            if w in lower and w not in seen_vague:
+                seen_vague.add(w)
+                moderate.append(TZRiskItem(
+                    type="vague_phrase",
+                    phrase=w,
+                    field=field,
+                    message="Неизмеримая характеристика — уточните конкретный параметр",
+                ))
+
+    return TZValidateResponse(
+        can_export=len(critical) == 0,
+        critical=critical,
+        moderate=moderate,
+    )

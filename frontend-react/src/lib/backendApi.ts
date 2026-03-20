@@ -743,3 +743,23 @@ export async function getTZDocument(docId: string): Promise<{ ok: boolean; doc: 
 export async function deleteTZDocument(docId: string): Promise<{ ok: boolean; deleted: string }> {
   return apiDelete(`/api/tz/${docId}`);
 }
+
+export interface TZRiskItem {
+  type: string;
+  phrase: string;
+  field: string;
+  message: string;
+}
+
+export interface TZValidateResponse {
+  can_export: boolean;
+  critical: TZRiskItem[];
+  moderate: TZRiskItem[];
+}
+
+export async function validateTzBeforeExport(
+  rows: Array<{ name?: string; field?: string }>,
+  description?: string,
+): Promise<TZValidateResponse> {
+  return apiPost<TZValidateResponse>('/api/tz/validate', { rows, description: description ?? '' });
+}

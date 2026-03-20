@@ -28,6 +28,7 @@ import {
   deleteLocalTZDocument,
   isLocalTZDocumentId,
   isLoggedIn,
+  validateTzBeforeExport,
   type SpecFromSearch,
   type TZDocumentSummary,
 } from '../lib/backendApi';
@@ -9776,6 +9777,17 @@ ${hint || '- Используй детальные, проверяемые эк�
       showToast(`⚠️ Перед публикацией проверьте: ${buildReadinessIssuePreview(readinessGate.warnings)}`, false);
     }
     try {
+      const tzRows = rows.map((r) => ({ name: r.model ?? '', field: r.type ?? '' }));
+      const validation = await validateTzBeforeExport(tzRows);
+      if (!validation.can_export) {
+        const phrases = validation.critical.map((i) => `"${i.phrase}" (${i.field})`).join(', ');
+        showToast(`❌ Экспорт заблокирован. Уникальные бренды/модели: ${phrases}`, false);
+        return;
+      }
+      if (validation.moderate.length > 0) {
+        const phrases = validation.moderate.map((i) => `"${i.phrase}"`).join(', ');
+        showToast(`⚠️ Предупреждение: неизмеримые формулировки: ${phrases}. Экспорт разрешён.`, false);
+      }
       const blob = await buildDocx(rows, lawMode, readinessGate, enterpriseSettings.benchmarking);
       const date = new Date().toISOString().slice(0, 10);
       saveAs(blob, `TZ_${date}.docx`);

@@ -71,7 +71,7 @@ const DOCX_TRAILING_QTY_RE = new RegExp(
 );
 const DOCX_IMPORT_STOP_RE = /^(код окпд2(?:\s|$|[.:])|код ктру(?:\s|$|[.:])|наименование характеристики|значение характеристики|единица измерения характеристики|спецификация(?:\s|$|[.:])|требования к|составил:|согласовано:|утверждаю(?:\s|$|[.:])|техническое задание(?:\s|$|[.:]))/i;
 const DOCX_SECTION_HEADING_RE = /^(\d+(?:\.\d+)*\.?\s+|приложение(?:\s|$|[.:])|раздел(?:\s|$|[.:])|глава(?:\s|$|[.:])|составил:|согласовано:|утверждаю(?:\s|$|[.:]))/i;
-const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии(?:\s|$|[.:])|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право|юридическое резюме|национальный режим|основание\s*\/\s*исключение|подтверждающие документы|источник классификации|паспорт публикации|сводка готовности|итоговый статус|блокирующие замечания|предупреждения и что проверить|справочная таблица|anti-фас)/i;
+const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии(?:\s|$|[.:])|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право|юридическое резюме|национальный режим|основание\s*\/\s*исключение|подтверждающие документы|источник классификации|паспорт публикации|сводка готовности|итоговый статус|блокирующие замечания|предупреждения и что проверить|справочная таблица|anti-фас|специалист|«[_\s]*»|_{3,})/i;
 const DOCX_APPENDIX_HEADING_RE = /^приложение(?:\s|$|[.:])/i;
 const DOCX_OKPD2_PREFIX_RE = /^код окпд2(?:\s|$|[.:])/i;
 const DOCX_CLAUSE_PREFIXES = [
@@ -978,7 +978,39 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
       sourceContextText: requirementContext.text,
       ignoredBlocks: requirementContext.count,
     });
-    if (imported) rows.push(imported);
+    if (imported) {
+      rows.push(imported);
+    } else {
+      const specTable = blocks.slice(i + 1, nextAppendixIndex).find(
+        (b) => b.kind === 'table' && b.rows && isSpecTable(b.rows),
+      );
+      if (specTable?.rows) {
+        const headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
+        if (headerCell && headerCell.length >= 2 && !shouldRejectImportText(headerCell)) {
+          const fallbackSpecs = parseSpecTable(specTable.rows);
+          const fallbackOkpd2 = okpd2 || extractOkpdFromBlocks(blocks, i + 1, nextAppendixIndex);
+          const fallbackQty = findDocumentQty(
+            blocks.slice(i + 1, nextAppendixIndex)
+              .filter((b) => b.kind === 'paragraph')
+              .map((b) => b.text || ''),
+          );
+          rows.push(makeImportedRow({
+            rawType: headerCell,
+            description: headerCell,
+            licenseType: '',
+            term: '',
+            qty: fallbackQty || 1,
+            qtyExplicit: !!fallbackQty,
+            sourceFormat: 'docx',
+            sourceKind: 'appendix',
+            sourceText: headerCell,
+            meta: fallbackOkpd2 ? { okpd2_code: fallbackOkpd2 } : undefined,
+            specs: fallbackSpecs.length > 0 ? fallbackSpecs : undefined,
+            notes: ['Название позиции извлечено из заголовка таблицы характеристик.'],
+          }));
+        }
+      }
+    }
   }
   return dedupeImportedRows(rows);
 }

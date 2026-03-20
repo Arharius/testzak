@@ -50,6 +50,7 @@ try:
         IntegrationAuditLog,
         IntegrationIdempotencyKey,
         ImmutableAuditChain,
+        TZValidateLog,
     )
     from .auth import (  # type: ignore
         send_magic_link,
@@ -82,6 +83,7 @@ except ImportError:
         IntegrationAuditLog,
         IntegrationIdempotencyKey,
         ImmutableAuditChain,
+        TZValidateLog,
     )
     from auth import (
         send_magic_link,
@@ -2214,7 +2216,7 @@ class TZValidateResponse(BaseModel):
 
 
 @app.post("/api/tz/validate", response_model=TZValidateResponse)
-def validate_tz(req: TZValidateRequest):
+def validate_tz(req: TZValidateRequest, db: Session = Depends(get_db)):
     """Антиошибочный фильтр: проверяет текст ТЗ перед экспортом DOCX."""
     critical: list[TZRiskItem] = []
     moderate: list[TZRiskItem] = []
@@ -2253,8 +2255,26 @@ def validate_tz(req: TZValidateRequest):
                     message="Неизмеримая характеристика — уточните конкретный параметр",
                 ))
 
+    can_export = len(critical) == 0
+
+    # Логируем, если найден хотя бы один риск
+    if critical or moderate:
+        first_category = str(req.rows[0].get("field") or "") if req.rows else None
+        try:
+            db.add(TZValidateLog(
+                can_export=can_export,
+                critical_count=len(critical),
+                moderate_count=len(moderate),
+                critical_json=json.dumps([{"phrase": i.phrase, "field": i.field} for i in critical], ensure_ascii=False),
+                moderate_json=json.dumps([{"phrase": i.phrase, "field": i.field} for i in moderate], ensure_ascii=False),
+                category=first_category or None,
+            ))
+            db.commit()
+        except Exception:
+            db.rollback()
+
     return TZValidateResponse(
-        can_export=len(critical) == 0,
+        can_export=can_export,
         critical=critical,
         moderate=moderate,
     )

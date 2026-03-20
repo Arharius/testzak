@@ -90,6 +90,18 @@ class ImmutableAuditChain(Base):
     prev_hash = Column(String, nullable=False)
     hash = Column(String, nullable=False)
 
+class TZValidateLog(Base):
+    __tablename__ = "tz_validate_log"
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp      = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    can_export     = Column(Boolean)
+    critical_count = Column(Integer, default=0)
+    moderate_count = Column(Integer, default=0)
+    critical_json  = Column(Text, nullable=True)  # JSON list of {phrase, field}
+    moderate_json  = Column(Text, nullable=True)  # JSON list of {phrase, field}
+    category       = Column(String, nullable=True) # первый row.field из запроса
+
+
 def get_db():
     db = SessionLocal()
     try:

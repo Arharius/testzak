@@ -146,3 +146,101 @@ ${existingSummary || '(характеристики не загружены)'}
     };
   }
 }
+
+/**
+ * Backend-powered spec verification using real web search (Serper.dev) + AI conflict analysis.
+ * This is the production path when useBackendAi=true — no client API key needed.
+ */
+export async function fetchSpecsViaBackend(
+  modelName: string,
+  existingSpecs: SpecItem[],
+  goodsType: string,
+  backendGenerator: (provider: string, model: string, messages: { role: string; content: string }[]) => Promise<string>,
+  aiProvider: string,
+  aiModel: string,
+  searchInternetFn: (product: string, goodsType: string) => Promise<Array<{ name: string; value: string; unit: string }>>,
+): Promise<FetchedSpecs> {
+  if (!modelName.trim()) {
+    return { source: 'none', specs: existingSpecs, conflicts: [], verified: false, note: 'Модель не указана' };
+  }
+
+  try {
+    const webSpecs = await searchInternetFn(modelName, goodsType);
+
+    if (webSpecs.length === 0) {
+      return {
+        source: 'none',
+        specs: existingSpecs,
+        conflicts: [],
+        verified: false,
+        note: 'Интернет-поиск не вернул данных по модели',
+      };
+    }
+
+    const existingSummary = existingSpecs.slice(0, 30)
+      .map((s) => `- ${s.name}: ${s.value}${s.unit && s.unit !== '—' ? ' ' + s.unit : ''}`)
+      .join('\n');
+
+    const webSummary = webSpecs.slice(0, 30)
+      .map((s) => `- ${s.name}: ${s.value}${s.unit && s.unit !== '—' ? ' ' + s.unit : ''}`)
+      .join('\n');
+
+    const conflictPrompt = `Продукт: "${modelName}"
+
+Характеристики из документа заказчика:
+${existingSummary || '(не загружены)'}
+
+Официальные характеристики (из интернет-источников):
+${webSummary}
+
+Задача:
+1. Сравни два набора характеристик
+2. Найди все расхождения (значение отличается более чем на 5%)
+3. Для каждого расхождения предложи юридически безопасную формулировку (44-ФЗ: «не менее X», «не более X», «или эквивалент»)
+4. Если расхождений нет — вернуть пустой conflicts
+
+Ответ ТОЛЬКО в JSON (без markdown):
+{
+  "conflicts": [
+    {
+      "name": "Название параметра",
+      "uploaded": "Значение из документа",
+      "verified": "Официальное значение (из интернета)",
+      "recommendation": "Юридически безопасная формулировка для 44-ФЗ"
+    }
+  ]
+}`;
+
+    const raw = await backendGenerator(
+      aiProvider,
+      aiModel,
+      [{ role: 'user', content: conflictPrompt }],
+    );
+
+    const { conflicts } = extractJsonSpecs(raw);
+
+    const mergedSpecs: SpecItem[] = webSpecs.map((s) => ({
+      group: '',
+      name: s.name,
+      value: s.value,
+      unit: s.unit,
+    }));
+
+    return {
+      source: 'web',
+      specs: mergedSpecs.length > 0 ? mergedSpecs : existingSpecs,
+      conflicts,
+      verified: true,
+      note: `Найдено ${webSpecs.length} характеристик из интернета, выявлено ${conflicts.length} расхождений`,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      source: 'none',
+      specs: existingSpecs,
+      conflicts: [],
+      verified: false,
+      note: `Ошибка верификации через бэкенд: ${msg}`,
+    };
+  }
+}

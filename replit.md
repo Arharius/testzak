@@ -57,6 +57,17 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **Context-Aware Buttons**: "Нормализовать ТЗ" for DOCX-imported rows vs "Сгенерировать ТЗ" for new rows, with descriptive tooltips.
 - **Admin-only features**: Validation modal, system panels, trial banner hidden from non-admin users.
 
+## UX Redesign for Procurement Specialists
+- **ProcessStepper** (`ProcessStepper.tsx`): Visual 4-step process indicator — Исходные данные → Характеристики → ТЗ → Проверка. Steps auto-update based on workspace state (done/active).
+- **EntryChoice** (`EntryChoice.tsx`): Entry screen with 3 clear paths:
+  1. "У меня есть файл ТЗ" — triggers DOCX/XLSX upload
+  2. "Только тип товара / модель" — manual type+model entry
+  3. "Готовый шаблон закупки" — template packs
+  - Includes law mode switch (44-ФЗ / 223-ФЗ)
+  - Auto-dismissed once user has data; "◀ Выбор способа" button returns to it
+- **Procurement-friendly copy**: Russian labels use закупочная vocabulary, not developer terms. Model field explained as "only an example, won't appear in TZ".
+- **Simplified toolbar**: "Добавить позицию", "Загрузить файл", "Подготовить характеристики", "Проверить ТЗ на ФАС-риски"
+
 ## AI Review Mode (Проверить и исправить ТЗ)
 - **Backend**: `POST /api/review-tz` — LLM-powered review of TZ text. Accepts `{tzText, lawMode}`, returns `{issues[], summary}`.
   - Issue levels: `blocking` (FAS risks), `legal` (law inaccuracies), `technical` (logic errors)

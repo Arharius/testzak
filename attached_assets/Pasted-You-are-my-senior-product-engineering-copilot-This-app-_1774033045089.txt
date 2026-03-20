@@ -1,0 +1,116 @@
+You are my senior product+engineering copilot.
+This app generates Technical Assignments (TZ) for Russian tenders under 44‑FZ and 223‑FZ. Users can either upload DOCX with specs or just enter “type + (optional) model” of the product.
+
+Goal: step‑by‑step turn this into the best TZ generator in Russia in 2026, with world‑class UX and design for procurement specialists (not only tech users).
+
+Context and hard rules (do NOT weaken them):
+
+AI role is “legal procurement specialist and technical expert” for 44‑FZ and 223‑FZ.
+
+TZ must allow at least two manufacturers, avoid “single‑vendor” specs, and follow FAS‑safe practice.
+
+No brands or specific models in the object description, no OKPD2/KTRU codes in the description text.
+
+Two input modes:
+
+DOCX mode: specs imported into GoodsRow.specs, with row.importInfo.sourceFormat === 'docx'.
+
+Type+model mode: user enters product type and, optionally, an example model (only as a hint, not for inclusion in TZ).
+
+Rules for AI behavior:
+
+If row.specs.length > 0 and sourceFormat === 'docx':
+
+JSON imported specs are the ONLY basis for the characteristics table.
+
+AI may only normalize (add “not less/more than”, remove brands, normalize units, slightly widen ranges to ensure 2+ manufacturers) without changing the meaning or inventing a different list.
+
+If there are no imported specs (type+model only):
+
+AI may generate a list of characteristics from scratch based on product type and the example model, but:
+
+must remove brand/model from the description,
+
+must widen characteristics so that at least two manufacturers fit,
+
+must still follow 44‑FZ/223‑FZ rules above.
+
+Your tasks in this codebase (focus strongly on UX and design):
+
+Flows: design for procurement users
+
+Make two clear, simple entry flows:
+a) “У меня есть файл ТЗ” → upload DOCX → show parsed specs → generate TZ.
+b) “У меня только тип/пример модели” → ask for product type + optional model + lawMode (44‑FZ/223‑FZ) → generate specs and TZ.
+
+In the UI, make these two options visually obvious and friendly for non‑technical users.
+
+UX of spec review and TZ generation
+
+For DOCX mode:
+
+Create a clean, table‑based view of imported specs (group, characteristic, value, unit) with clear labels.
+
+Clearly indicate which fields came from the customer’s file and what AI will do with them (normalize only, not replace).
+
+For type+model mode:
+
+Simple, focused form with 2–4 fields; explain in UI that the model is used only as an example to infer ranges, not to mention it in TZ.
+
+Make the “Generate TZ” action feel safe and predictable: show a short summary of what will happen before running AI.
+
+AI TZ‑reviewer with inline fixes
+
+Add a “Проверить и исправить ТЗ” step that:
+
+sends the current TZ text to the backend,
+
+gets back a structured list of issues (blocking / legal / technical) with suggested replacement texts,
+
+shows them in a clear UI: original text → suggested text → short explanation, with checkboxes “Apply”.
+
+Focus on a calm, trustworthy visual design: good spacing, clear color‑coding by severity, readable typography, no clutter.
+
+Visual design and interaction polish
+
+Use a consistent design system (spacing, typography, buttons, status colors).
+
+Make every screen answer 3 questions for a procurement user:
+
+Where am I in the process? (e.g. 1) Исходные данные → 2) Характеристики → 3) ТЗ → 4) Проверка).
+
+Что система уже сделала за меня?
+
+Что мне нужно решить/проверить руками?
+
+Reduce cognitive load: fewer fields per screen, clear labels in Russian that use procurement vocabulary, not developer terms.
+
+Implementation approach
+
+First: scan the repo and list key files for:
+
+AI prompt building,
+
+DOCX parsing and GoodsRow.specs,
+
+type+model input handling,
+
+main React UI for the workspace.
+
+Then: propose a concise 3–5 step roadmap focusing on:
+
+tightening AI behavior (DOCX vs type+model),
+
+simplifying flows for users,
+
+redesigning critical screens (upload, specs review, TZ editor, review/fix panel).
+
+After I confirm the roadmap, implement changes in small, safe steps, with attention to UX details (copy, layout, states) and run tests/lint/type‑check.
+
+Start now by:
+
+Mapping the current user flows on the frontend (which screens, components, and routes exist).
+
+Listing pain points and UX/design issues specifically for procurement specialists.
+
+Proposing the 3–5 step roadmap to move this app towards the best‑in‑Russia experience for TZ creation and review.

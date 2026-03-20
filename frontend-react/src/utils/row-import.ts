@@ -936,15 +936,25 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
         (b) => b.kind === 'table' && b.rows && isSpecTable(b.rows),
       );
       if (!specTable?.rows) continue;
-      const headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
+      let headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
+      const notes: string[] = ['Название позиции извлечено из заголовка таблицы характеристик.'];
+      if (!headerCell || shouldRejectImportText(headerCell)) {
+        const allLines = extractAllDocumentLines(content);
+        headerCell = findParagraphValue(allLines, /наименование объекта поставки/i)
+          .replace(/\s*\(далее[^)]*\)/gi, '')
+          .replace(/[.;,]+$/, '')
+          .trim();
+        if (headerCell) notes.push('Название позиции взято из раздела «Наименование объекта поставки».');
+      }
       if (!headerCell || headerCell.length < 2 || shouldRejectImportText(headerCell)) continue;
       const specs = parseSpecTable(specTable.rows);
       const okpd2 = extractOkpdFromBlocks(blocks, i + 1, nextAppendixIndex);
+      const allLines = extractAllDocumentLines(content);
       const qty = findDocumentQty(
         blocks.slice(i + 1, nextAppendixIndex)
           .filter((b) => b.kind === 'paragraph')
           .map((b) => b.text || ''),
-      );
+      ) || findDocumentQty(allLines);
       rows.push(makeImportedRow({
         rawType: headerCell,
         description: headerCell,
@@ -957,7 +967,7 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
         sourceText: headerCell,
         meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
         specs: specs.length > 0 ? specs : undefined,
-        notes: ['Название позиции извлечено из заголовка таблицы характеристик.'],
+        notes,
       }));
       continue;
     }
@@ -985,15 +995,25 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
         (b) => b.kind === 'table' && b.rows && isSpecTable(b.rows),
       );
       if (specTable?.rows) {
-        const headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
+        let headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
+        const fallbackNotes: string[] = ['Название позиции извлечено из заголовка таблицы характеристик.'];
+        if (!headerCell || shouldRejectImportText(headerCell)) {
+          const allLines = extractAllDocumentLines(content);
+          headerCell = findParagraphValue(allLines, /наименование объекта поставки/i)
+            .replace(/\s*\(далее[^)]*\)/gi, '')
+            .replace(/[.;,]+$/, '')
+            .trim();
+          if (headerCell) fallbackNotes.push('Название позиции взято из раздела «Наименование объекта поставки».');
+        }
         if (headerCell && headerCell.length >= 2 && !shouldRejectImportText(headerCell)) {
           const fallbackSpecs = parseSpecTable(specTable.rows);
           const fallbackOkpd2 = okpd2 || extractOkpdFromBlocks(blocks, i + 1, nextAppendixIndex);
+          const allLines = extractAllDocumentLines(content);
           const fallbackQty = findDocumentQty(
             blocks.slice(i + 1, nextAppendixIndex)
               .filter((b) => b.kind === 'paragraph')
               .map((b) => b.text || ''),
-          );
+          ) || findDocumentQty(allLines);
           rows.push(makeImportedRow({
             rawType: headerCell,
             description: headerCell,
@@ -1006,7 +1026,7 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
             sourceText: headerCell,
             meta: fallbackOkpd2 ? { okpd2_code: fallbackOkpd2 } : undefined,
             specs: fallbackSpecs.length > 0 ? fallbackSpecs : undefined,
-            notes: ['Название позиции извлечено из заголовка таблицы характеристик.'],
+            notes: fallbackNotes,
           }));
         }
       }
@@ -1188,6 +1208,19 @@ function findDocumentQty(paragraphs: string[]): number | null {
   return null;
 }
 
+function extractAllDocumentLines(content: ParsedDocxContent): string[] {
+  const lines: string[] = [...content.paragraphs];
+  for (const table of content.tables) {
+    for (const row of table) {
+      for (const cell of row) {
+        const text = normalizeCell(cell || '');
+        if (text) lines.push(text);
+      }
+    }
+  }
+  return lines;
+}
+
 function buildServiceSpecsFromParagraphs(paragraphs: string[]): SpecItem[] {
   const sections: Array<{ label: RegExp; group: string; name: string }> = [
     { label: /наименование оказываемых услуг/i, group: 'Общие требования', name: 'Наименование услуги' },
@@ -1214,14 +1247,15 @@ function buildServiceSpecsFromParagraphs(paragraphs: string[]): SpecItem[] {
 
 function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementRow[] {
   const { paragraphs, blocks } = content;
+  const allLines = extractAllDocumentLines(content);
   const serviceName =
-    findParagraphValue(paragraphs, /наименование оказываемых услуг/i) ||
-    paragraphs.find((paragraph) => /^на оказание услуг\b/i.test(normalizeCell(paragraph))) ||
+    findParagraphValue(allLines, /наименование оказываемых услуг/i) ||
+    allLines.find((line) => /^на оказание услуг\b/i.test(normalizeCell(line))) ||
     '';
   const requirementContext = collectRequirementContext(
-    paragraphs.filter((paragraph) => looksLikeRequirementText(paragraph) || looksLikeNormativeText(paragraph)),
+    allLines.filter((line) => looksLikeRequirementText(line) || looksLikeNormativeText(line)),
   );
-  const okpd2 = paragraphs.map((paragraph) => extractOkpd2Code(paragraph)).find(Boolean) || '';
+  const okpd2 = allLines.map((line) => extractOkpd2Code(line)).find(Boolean) || '';
   const firstSpecTable = extractFirstSpecTable(blocks, 0, blocks.length);
 
   if (serviceName) {
@@ -1232,7 +1266,7 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
         ...parseCommercialMeta(serviceName),
         rawType: description,
         description,
-        qty: findDocumentQty(paragraphs) || 1,
+        qty: findDocumentQty(allLines) || 1,
         sourceFormat: 'docx',
         sourceKind: 'fallback',
         sourceText: serviceName,
@@ -1245,10 +1279,14 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
     ]);
   }
 
-  const objectName =
-    findParagraphValue(paragraphs, /наименование объекта поставки/i) ||
-    paragraphs.find((paragraph) => /^на (?:поставку|закупку)\b/i.test(normalizeCell(paragraph))) ||
+  const rawObjectName =
+    findParagraphValue(allLines, /наименование объекта поставки/i) ||
+    allLines.find((line) => /^на (?:поставку|закупку)\b/i.test(normalizeCell(line))) ||
     '';
+  const objectName = normalizeCell(rawObjectName)
+    .replace(/\s*\(далее[^)]*\)/gi, '')
+    .replace(/[.;,]+$/, '')
+    .trim();
   const row = buildImportedRowFromText(objectName, 'fallback', {
     allowWithoutQty: true,
     meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
@@ -1258,7 +1296,7 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
     ignoredBlocks: requirementContext.count,
   });
   if (row) {
-    return dedupeImportedRows([{ ...row, qty: findDocumentQty(paragraphs) || row.qty || 1 }]);
+    return dedupeImportedRows([{ ...row, qty: findDocumentQty(allLines) || row.qty || 1 }]);
   }
   return [];
 }

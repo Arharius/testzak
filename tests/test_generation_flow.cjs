@@ -208,6 +208,13 @@ const checks = [
       && workspace.includes('Внешняя сверка'),
   },
   {
+    name: 'Software defaults avoid branded ecosystem compatibility and remote-admin boilerplate',
+    ok: !workspace.includes("ALD Pro, Брест, Termidesk, RuPost, RuBackup или эквивалентные решения")
+      && !workspace.includes("{ name: 'Удалённое администрирование', value: 'SSH' }")
+      && workspace.includes('совместимость со службами каталогов, виртуализации, VDI, корпоративной почтой и резервным копированием по стандартным интерфейсам и API')
+      && workspace.includes('совместимость с браузерами, поддерживающими современные веб-стандарты'),
+  },
+  {
     name: 'Frontend build label is centralized instead of hardcoded in the workspace component',
     ok: workspace.includes('FALLBACK_BUILD_LABEL')
       && workspace.includes('APP_BUILD_META')

@@ -94,4 +94,41 @@ if (goodsBoilerplateSanitized.length !== 1 || goodsBoilerplateSanitized[0].name 
   process.exit(1);
 }
 
+const softwareSanitized = sanitizeProcurementSpecs(
+  { type: 'os', model: 'Astra Linux Special Edition' },
+  [
+    { group: 'Совместимость', name: 'Совместимость с экосистемой Astra', value: 'ALD Pro, Брест, Termidesk, RuPost, RuBackup или эквивалентные решения', unit: 'совместимость' },
+    { group: 'Совместимость', name: 'Поддержка веб-браузеров', value: 'совместимость с Яндекс.Браузером, Chromium или эквивалентными браузерами', unit: 'совместимость' },
+    { group: 'Администрирование', name: 'Удалённое администрирование', value: 'SSH', unit: 'протокол' },
+    { group: 'Сетевые возможности', name: 'Доменная аутентификация', value: 'поддержка LDAP, Kerberos и интеграции со службой каталогов ALD Pro или эквивалентной', unit: 'наличие' },
+  ]
+);
+
+if (softwareSanitized.some((spec) => spec.name === 'Удалённое администрирование')) {
+  console.error('FAIL compliance sanitizer should drop remote administration boilerplate from final software specs');
+  console.error(JSON.stringify(softwareSanitized, null, 2));
+  process.exit(1);
+}
+
+const ecosystemSpec = softwareSanitized.find((spec) => spec.name === 'Совместимость с экосистемой Astra');
+if (!ecosystemSpec || /ALD Pro|Брест|Termidesk|RuPost|RuBackup/i.test(ecosystemSpec.value)) {
+  console.error('FAIL compliance sanitizer should neutralize branded software ecosystem compatibility');
+  console.error(JSON.stringify(softwareSanitized, null, 2));
+  process.exit(1);
+}
+
+const browserSpec = softwareSanitized.find((spec) => spec.name === 'Поддержка веб-браузеров');
+if (!browserSpec || /Яндекс|Chromium/i.test(browserSpec.value)) {
+  console.error('FAIL compliance sanitizer should neutralize branded browser compatibility');
+  console.error(JSON.stringify(softwareSanitized, null, 2));
+  process.exit(1);
+}
+
+const authSpec = softwareSanitized.find((spec) => spec.name === 'Доменная аутентификация');
+if (!authSpec || /ALD Pro/i.test(authSpec.value)) {
+  console.error('FAIL compliance sanitizer should neutralize branded directory-service compatibility');
+  console.error(JSON.stringify(softwareSanitized, null, 2));
+  process.exit(1);
+}
+
 console.log('PASS compliance sanitizer drops identity, vendor-copy and service-noise fields');

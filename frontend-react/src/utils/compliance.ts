@@ -40,7 +40,7 @@ const MODEL_WORD_RE = /\b(модель|model|mkt\s*name|mkt\s*spec|serial(?:\s*n
 const ARTICLE_CODE_RE = /\b[A-ZА-Я]{1,6}-\d{2,8}[A-ZА-Я0-9-]*\b/;
 const IDENTITY_SPEC_NAME_RE = /^(модель|model|mkt\s*name|mkt\s*spec|артикул|арт\.?|part\s*(?:number|no\.?)|p\/?n|pn|sku|s\/?n|sn|serial(?:\s*number)?|серийн(?:ый|ого)\s+номер|product\s*code|код\s+товара|бренд|brand|производитель|manufacturer|торговая\s+марка)$/i;
 const OPERATOR_RE = /(>=|<=|>|<)/;
-const STRICT_WEAK_VALUE_RE = /(по типу( товара| программного обеспечения)?|по назначению|в соответствии с технической документацией производителя( и требованиями заказчика)?|по условиям поставки и требованиям заказчика|актуальная поддерживаемая версия по документации производителя|в соответствии с требованиями заказчика|при необходимости|по описанию|по согласованию с заказчиком|типовая конфигурация|конкретное значение|согласно документации|согласно требованиям|или иное по требованию|или иное — по требованию|уточнить при необходимости)/i;
+const STRICT_WEAK_VALUE_RE = /(по типу( товара| программного обеспечения)?|по назначению|в соответствии с технической документацией производителя( и требованиями заказчика)?|по условиям поставки и требованиям заказчика|актуальная поддерживаемая версия по документации производителя|в соответствии с требованиями заказчика|в соответствии с требованиями производителя|в соответствии с документацией производителя|по типу устройства|по типу изделия|в зависимости от класса устройства|при необходимости|по описанию|по согласованию с заказчиком|типовая конфигурация|конкретное значение|согласно документации|согласно требованиям|или иное по требованию|или иное — по требованию|уточнить при необходимости)/i;
 const GENERIC_NAME_RE = /^(функциональные возможности|технические характеристики|характеристики|параметры|описание|назначение|тип товара)$/i;
 const MEASURABLE_NAME_RE = /(колич|объем|объ[её]м|емкост|[её]мкост|размер|ширин|высот|глубин|толщин|мощност|скорост|пропускн|частот|диагонал|разрешен|памят|ядер|поток|срок|верси|уров|класс|ресурс|масса|вес|длин|время реакции|время решения|порт|сокет|tbw|mtbf|iops)/i;
 const BOOLEAN_ALLOWED_NAME_RE = /(наличие|поддержка|совместим|интеграц|журналир|аудит|веб-интерфейс|api|экспорт|импорт|консоль|кластеризац|резервн|ролевая модель|двухфактор|авторизац|аутентификац|шлюз|мониторинг|оповещени|доставка|доступ|управление|миграц|политик|сервис|средств|защит|шифрован|контроль|блокиров|регистрац|монтаж|развертыван|разв[её]ртыван|интерфейс|подключение|протокол|клиент|агент|диспетчер|маркировк|очистк|запуск|инструмент|графическ(ое|ие) средст)/i;
@@ -63,6 +63,7 @@ const EXPORT_NOISE_SPEC_NAME_RE = /^(удал[её]нное администри
 const INTERNAL_WORKFLOW_RE = /(основание сформировано автоматически|требуется юридическая проверка|требуется ручная верификация|перед публикацией закупки|anti-?фас|benchmark|паспорт публикации|сводка готовности)/i;
 const URL_RE = /https?:\/\/|www\./i;
 const FOREIGN_MARKETING_RE = /(learn more about|windows 11 home is available only|recomienda windows|certificaci[oó]n|tecnolog[ií]a|pantalla|teclado|c[aá]mara|lector de tarjeta|todos los derechos reservados|all rights reserved|array microphone|smart amp|compatible con stylus)/i;
+const LOW_SIGNAL_EXPORT_VALUE_RE = /(в соответствии с требованиями производителя|в соответствии с документацией производителя|по требованиям заказчика|по типу устройства|по типу изделия|в зависимости от класса устройства|достаточн(?:ых|ого) для штатной эксплуатации)/i;
 
 function addIssue(
   issues: ComplianceIssue[],
@@ -146,6 +147,51 @@ function normalizeExistingUnit(name: string, value: string, unit: string): strin
 function hasExcessiveLatinVendorCopy(value: string): boolean {
   const latinWords = String(value || '').match(/[A-Za-zÀ-ÿ]{4,}/g) || [];
   return latinWords.length >= 6 && String(value || '').length >= 70;
+}
+
+function normalizeWeakBoilerplateValue(name: string, rawValue: string): string {
+  const normalizedName = normalizeSpecKey(name);
+  let value = String(rawValue || '').replace(/\s+/g, ' ').trim();
+
+  if (!value) return '';
+
+  if (/тип матрицы/.test(normalizedName)) {
+    value = value.replace(/\s+или эквивалент$/i, '').trim();
+  }
+
+  if (/интерфейс подключени/.test(normalizedName) && /^usb 2\.0\/3\.0 или эквивалент$/i.test(value)) {
+    return 'USB 2.0 и/или USB 3.0';
+  }
+
+  if (/фокусировк/.test(normalizedName) && /по требованиям заказчика/i.test(value)) {
+    return 'автоматическая и/или фиксированная';
+  }
+
+  if (/совместимость с экосистемой/.test(normalizedName)) {
+    return 'совместимость с отечественными службами каталогов, виртуализации, VDI, почтовыми сервисами и средствами резервного копирования';
+  }
+
+  if (/поддержка веб-браузеров|веб-браузеры и репозитории российского по/.test(normalizedName)) {
+    return 'совместимость с браузерами, поддерживающими современные веб-стандарты';
+  }
+
+  if (/доменная аутентификац/.test(normalizedName) && /ald pro/i.test(value)) {
+    return 'поддержка LDAP, Kerberos и интеграции со службой каталогов или эквивалентным решением';
+  }
+
+  if (/совместимость с отечественными скзи|интеграция с скзи/.test(normalizedName) && /криптопро/i.test(value)) {
+    return 'поддержка отечественных средств электронной подписи и криптографической защиты или эквивалентных решений';
+  }
+
+  if (/совместимость с отечественными ос/.test(normalizedName) && /при поддержке производителем/i.test(value)) {
+    return value.replace(/\s+при поддержке производителем/i, '').trim();
+  }
+
+  if (LOW_SIGNAL_EXPORT_VALUE_RE.test(value) && !/\d|ldap|kerberos|ssh|https|tls|api|гост|фстэк/i.test(normalizeSpecKey(value))) {
+    return '';
+  }
+
+  return value;
 }
 
 function normalizeVendorFieldValue(name: string, rawValue: string): string {
@@ -453,6 +499,7 @@ export function sanitizeProcurementSpecs(row: Pick<RowForCompliance, 'type' | 'm
     let value = expandGenericValue(name, String(original.value || '').replace(/\s+/g, ' ').trim());
     const unit = String(original.unit || '').replace(/\s+/g, ' ').trim();
     const group = String(original.group || 'Общие сведения').replace(/\s+/g, ' ').trim() || 'Общие сведения';
+    value = normalizeWeakBoilerplateValue(name, value);
     if (!name || !value) continue;
     if (IDENTITY_SPEC_NAME_RE.test(name)) continue;
     if (SERVICE_TYPE_KEYS.has(row.type) && PRODUCT_ONLY_SPEC_NAME_RE.test(name)) continue;
@@ -460,6 +507,7 @@ export function sanitizeProcurementSpecs(row: Pick<RowForCompliance, 'type' | 'm
     if (INTERNAL_WORKFLOW_RE.test(name) || INTERNAL_WORKFLOW_RE.test(value)) continue;
     if (URL_RE.test(value) || FOREIGN_MARKETING_RE.test(value) || hasExcessiveLatinVendorCopy(value) || BRAND_RE.test(value) || ARTICLE_CODE_RE.test(value)) {
       value = normalizeVendorFieldValue(name, value);
+      value = normalizeWeakBoilerplateValue(name, value);
       if (!value) continue;
     }
     if (GENERIC_NAME_RE.test(name) && isWeakStrictValue(value)) continue;

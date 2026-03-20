@@ -10646,6 +10646,52 @@ ${hint || '- Используй детальные, проверяемые эк�
         </div>
       </div>
 
+      {hasPublicationBaseline && (
+        <div className="compliance-summary-bar" role="region" aria-label="Правовые проверки ТЗ">
+          <div className="compliance-summary-title">
+            Правовые проверки по {lawMode === '44' ? '44-ФЗ' : '223-ФЗ'}
+          </div>
+          <div className="compliance-checks-row">
+            {(() => {
+              const brandIssues = complianceReport?.issues.filter(i => i.reason.toLowerCase().includes('бренд') || i.reason.toLowerCase().includes('торгов')) || [];
+              const okpdIssues = complianceReport?.issues.filter(i => i.reason.toLowerCase().includes('окпд') || i.reason.toLowerCase().includes('ктру')) || [];
+              const competitionOk = !complianceReport?.issues.some(i => i.reason.toLowerCase().includes('конкуренц') || i.reason.toLowerCase().includes('один производитель'));
+              const importedCount = rows.filter(r => r.importInfo && r.importInfo.sourceFormat === 'docx').length;
+              const aiGeneratedCount = rows.filter(r => r.status === 'done' && !r.importInfo).length;
+              const importedWithSpecsCount = rows.filter(r => r.importInfo?.sourceFormat === 'docx' && (r.specs?.length ?? 0) > 0).length;
+              return (
+                <>
+                  <span className={`compliance-check ${brandIssues.length === 0 ? 'compliance-check--ok' : 'compliance-check--fail'}`}>
+                    {brandIssues.length === 0 ? '✓' : '✗'} Бренды
+                    {brandIssues.length > 0 && <span className="compliance-check-count">{brandIssues.length}</span>}
+                  </span>
+                  <span className={`compliance-check ${okpdIssues.length === 0 ? 'compliance-check--ok' : 'compliance-check--fail'}`}>
+                    {okpdIssues.length === 0 ? '✓' : '✗'} ОКПД2/КТРУ
+                    {okpdIssues.length > 0 && <span className="compliance-check-count">{okpdIssues.length}</span>}
+                  </span>
+                  <span className={`compliance-check ${competitionOk ? 'compliance-check--ok' : 'compliance-check--fail'}`}>
+                    {competitionOk ? '✓' : '✗'} Конкуренция ≥2
+                  </span>
+                  <span className={`compliance-check ${(complianceReport?.score ?? 100) >= (complianceReport?.minScore ?? 70) ? 'compliance-check--ok' : 'compliance-check--warn'}`}>
+                    Антикоррупция: {complianceReport?.score ?? '—'}%
+                  </span>
+                  {importedCount > 0 && (
+                    <span className="compliance-check compliance-check--info">
+                      Из DOCX: {importedWithSpecsCount}/{importedCount}
+                    </span>
+                  )}
+                  {aiGeneratedCount > 0 && (
+                    <span className="compliance-check compliance-check--info">
+                      AI: {aiGeneratedCount}
+                    </span>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Таблица позиций */}
       <WorkspaceRowsTable
         rows={rows}

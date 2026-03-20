@@ -237,8 +237,18 @@ export function WorkspaceRowsTable({
                     <span className="row-primary-pill">
                       ПП1875: {getLaw175MeasureLabel(row.meta?.law175_status || '', row.meta?.nac_regime || getUnifiedNacRegime(row.type))}
                     </span>
+                    {row.importInfo?.sourceFormat === 'docx' && (
+                      <span className="row-source-tag row-source-tag--docx">
+                        DOCX {row.specs?.length ? `· ${row.specs.length} хар-к` : ''}
+                      </span>
+                    )}
+                    {row.status === 'done' && !row.importInfo && (
+                      <span className="row-source-tag row-source-tag--ai">
+                        AI
+                      </span>
+                    )}
                     {row.importInfo && (
-                      <span className={`row-primary-pill ${row.importInfo.confidenceLabel === 'low' ? 'row-primary-pill--warn' : row.importInfo.confidenceLabel === 'medium' ? 'row-primary-pill--accent' : ''}`}>
+                      <span className={`row-primary-pill ${row.importInfo.confidenceLabel === 'low' ? 'row-primary-pill--warn' : row.importInfo.confidenceLabel === 'medium' ? 'row-primary-pill--accent' : 'row-primary-pill--import'}`}>
                         Импорт: {Math.round((row.importInfo.confidence || 0) * 100)}%
                       </span>
                     )}
@@ -297,9 +307,9 @@ export function WorkspaceRowsTable({
                 <td className="row-status-column">
                   <div className="row-status-cell">
                     <span className={`row-status-label ${row.status === 'done' ? 'ok' : row.status === 'error' ? 'warn' : 'muted'}`}>
-                      {row.status === 'idle' && (lookupCatalog(row.type)?.hardTemplate ? '📋 Шаблон готов' : 'Ожидание')}
-                      {row.status === 'loading' && '⏳ Генерация...'}
-                      {row.status === 'done' && `✅ Готово (${row.specs?.length ?? 0} хар-к)`}
+                      {row.status === 'idle' && (lookupCatalog(row.type)?.hardTemplate ? '📋 Шаблон готов' : row.importInfo?.sourceFormat === 'docx' && row.specs?.length ? `📄 Импортировано ${row.specs.length} хар-к` : 'Ожидание генерации')}
+                      {row.status === 'loading' && '⏳ AI формирует ТЗ...'}
+                      {row.status === 'done' && `✅ Готово · ${row.specs?.length ?? 0} характеристик`}
                       {row.status === 'error' && `❌ ${row.error ?? 'Ошибка'}`}
                     </span>
                     <div className="row-status-actions">
@@ -309,9 +319,13 @@ export function WorkspaceRowsTable({
                           className="row-inline-action"
                           onClick={() => onGenerateRow(row.id)}
                           disabled={!canStartGeneration || generationPending}
-                          title={canStartGeneration ? 'Запустить генерацию для этой строки' : 'Сначала заполните строки и проверьте доступ к AI'}
+                          title={canStartGeneration
+                            ? (row.importInfo?.sourceFormat === 'docx' && row.specs?.length
+                              ? 'Нормализовать импортированные характеристики: убрать бренды, добавить «не менее / не более», проверить конкуренцию'
+                              : 'Сформировать техническое задание с нулевым ФАС-риском')
+                            : 'Сначала заполните строки и проверьте доступ к AI'}
                         >
-                          {generationPending ? '⏳ Генерация...' : '🚀 Сгенерировать'}
+                          {generationPending ? '⏳ Генерация...' : row.importInfo?.sourceFormat === 'docx' && row.specs?.length ? '⚙ Нормализовать ТЗ' : '🚀 Сгенерировать ТЗ'}
                         </button>
                       )}
                       {needsQuickClassificationAction && (

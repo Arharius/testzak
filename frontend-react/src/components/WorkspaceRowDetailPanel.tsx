@@ -249,22 +249,38 @@ export function WorkspaceRowDetailPanel({
         </div>
         {row.importInfo && (
           <div>
-            <div className="row-detail-title">Импорт из исходного файла</div>
-            <div className="row-detail-copy">
-              <strong>Источник:</strong> {row.importInfo.sourceFormat.toUpperCase()} · {row.importInfo.sourceKind}
+            <div className="row-detail-title">
+              <span className="row-source-tag row-source-tag--docx" style={{ marginRight: 8 }}>
+                {row.importInfo.sourceFormat.toUpperCase()}
+              </span>
+              Импорт из файла заказчика
             </div>
             <div className="row-detail-copy">
-              <strong>Уверенность импорта:</strong> {Math.round((row.importInfo.confidence || 0) * 100)}% ({row.importInfo.confidenceLabel})
+              <strong>Формат:</strong> {row.importInfo.sourceFormat.toUpperCase()} · {row.importInfo.sourceKind}
             </div>
             <div className="row-detail-copy">
-              <strong>Требует проверки:</strong> {row.importInfo.needsReview ? 'да' : 'нет'}
+              <strong>Уверенность импорта:</strong>{' '}
+              <span className={row.importInfo.confidenceLabel === 'low' ? 'compliance-check--fail' : row.importInfo.confidenceLabel === 'medium' ? 'compliance-check--warn' : 'compliance-check--ok'} style={{ padding: '1px 6px', borderRadius: 4, fontSize: 12 }}>
+                {Math.round((row.importInfo.confidence || 0) * 100)}% ({row.importInfo.confidenceLabel === 'high' ? 'высокая' : row.importInfo.confidenceLabel === 'medium' ? 'средняя' : 'низкая'})
+              </span>
             </div>
+            {row.importInfo.needsReview && (
+              <div className="row-detail-copy" style={{ color: '#fbbf24' }}>
+                ⚠ Требует ручной проверки перед генерацией
+              </div>
+            )}
             <div className="row-detail-copy">
               <strong>Игнорировано блоков:</strong> {row.importInfo.ignoredBlocks || 0}
             </div>
             {!!row.specs?.length && (
               <div className="row-detail-copy">
                 <strong>Импортировано характеристик:</strong> {row.specs.length}
+                {row.status === 'done' && ' → обработаны AI (бренды убраны, единицы нормализованы)'}
+              </div>
+            )}
+            {row.status === 'done' && row.importInfo.sourceFormat === 'docx' && (
+              <div className="row-detail-copy" style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                AI выполнил: удаление брендов и торговых марок, добавление «не менее / не более», нормализация единиц, проверка конкуренции ≥2 производителей
               </div>
             )}
             {row.importInfo.sourcePreview && (

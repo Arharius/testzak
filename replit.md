@@ -49,6 +49,14 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **Spec Table Detection**: Two-tier header aliases (Характеристика/Параметр/Показатель + Значение/Требуемое значение/Спецификация) + headerless heuristic for tables without recognized column names
 - **Number-Preserving LLM Prompt**: AI must preserve exact numeric values from imported specs (e.g. "16 ГБ" → "не менее 16 ГБ", never "не менее 8 ГБ"); only brand names stripped
 
+## Compliance & UX Improvements (Latest)
+- **Enhanced AI Prompts**: `buildPrompt` and `buildImportedSpecsPromptBlock` now enforce strict rules per lawMode (44-FZ strict, 223-FZ flexible). 5 numbered rules for DOCX-imported specs, explicit OKPD2/KTRU prohibition in spec text.
+- **Compliance Summary Bar**: Visual panel above rows table showing legal checks (brands, OKPD2/KTRU, competition ≥2 manufacturers, anti-corruption score, import/AI source counts).
+- **Source Tags**: Each row shows DOCX/AI/Catalog source tag with color-coded badges (green=DOCX import, blue=AI generated, purple=catalog).
+- **Import Detail Panel**: Enhanced with confidence badges (high/medium/low), AI processing summary, review warnings.
+- **Context-Aware Buttons**: "Нормализовать ТЗ" for DOCX-imported rows vs "Сгенерировать ТЗ" for new rows, with descriptive tooltips.
+- **Admin-only features**: Validation modal, system panels, trial banner hidden from non-admin users.
+
 ## Development Notes
 - Backend API proxied via Vite dev server at `/api` → Railway backend
 - `VITE_BACKEND_URL` env var controls backend target (defaults to Railway)

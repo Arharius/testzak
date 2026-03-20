@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => {
     }
     return normalized;
   };
-  const backendTarget = normalizeBackendTarget(env.VITE_BACKEND_URL || 'https://backend-production-f736.up.railway.app');
+  const backendTarget = normalizeBackendTarget(env.VITE_BACKEND_URL || 'http://localhost:8000');
   const devHost = env.VITE_DEV_HOST || '127.0.0.1';
   const apiProxy = {
     '/api': {

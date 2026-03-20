@@ -7346,7 +7346,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     () => allRowsHaveTemplate || allRowsSeededFromImport,
     [allRowsHaveTemplate, allRowsSeededFromImport],
   );
-  const paymentRequired = !!backendUser?.payment_required;
+  const isAdmin = backendUser?.role === 'admin';
+  const paymentRequired = isAdmin ? false : !!backendUser?.payment_required;
   const canGenerate = useMemo(
     () => (useBackend || allRowsHaveTemplate || allRowsSeededFromImport) && rows.every((r) => r.model.trim().length > 0 || !!lookupCatalog(r.type)?.hardTemplate),
     [useBackend, allRowsHaveTemplate, allRowsSeededFromImport, rows]
@@ -9831,27 +9832,29 @@ ${hint || '- Используй детальные, проверяемые эк�
     };
 
     try {
-      try {
-        const tzRows = rows.map((r) => ({
-          name: r.model ?? '',
-          field: r.type ?? '',
-          description: '',
-          specs: Array.isArray((r as { specs?: unknown[] }).specs)
-            ? ((r as { specs?: Array<{ name?: string; value?: string; group?: string }> }).specs ?? []).map((s) => ({
-                name: String(s?.name ?? ''),
-                value: String(s?.value ?? ''),
-                group: String(s?.group ?? ''),
-              }))
-            : [],
-        }));
-        const validation = await validateTzBeforeExport(tzRows);
-        if (!validation.can_export || validation.moderate.length > 0) {
-          setPendingExportFn(() => doExport);
-          setValidationResult(validation);
-          return;
+      if (isAdmin) {
+        try {
+          const tzRows = rows.map((r) => ({
+            name: r.model ?? '',
+            field: r.type ?? '',
+            description: '',
+            specs: Array.isArray((r as { specs?: unknown[] }).specs)
+              ? ((r as { specs?: Array<{ name?: string; value?: string; group?: string }> }).specs ?? []).map((s) => ({
+                  name: String(s?.name ?? ''),
+                  value: String(s?.value ?? ''),
+                  group: String(s?.group ?? ''),
+                }))
+              : [],
+          }));
+          const validation = await validateTzBeforeExport(tzRows);
+          if (!validation.can_export || validation.moderate.length > 0) {
+            setPendingExportFn(() => doExport);
+            setValidationResult(validation);
+            return;
+          }
+        } catch {
+          console.warn('TZ validate endpoint unavailable, skipping pre-export check');
         }
-      } catch {
-        console.warn('TZ validate endpoint unavailable, skipping pre-export check');
       }
       await doExport();
     } catch (e) {

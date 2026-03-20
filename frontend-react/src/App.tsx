@@ -429,8 +429,8 @@ export function App() {
         </div>
       )}
 
-      {/* Trial banner */}
-      {backendUser && backendUser.trial_active && backendUser.trial_days_left != null && (
+      {/* Trial banner — hide for admin */}
+      {backendUser && backendUser.role !== 'admin' && backendUser.trial_active && backendUser.trial_days_left != null && (
         <div className="trial-banner">
           <span className="trial-banner-icon">⚡</span>
           <span className="trial-banner-text">
@@ -822,6 +822,7 @@ export function App() {
         </div>
       </section>
 
+      {backendUser?.role === 'admin' && (
       <details className="app-disclosure section-fade section-delay-3" open>
         <summary className="app-disclosure-summary">
           <div>
@@ -844,6 +845,7 @@ export function App() {
           }
         />
       </details>
+      )}
 
       <div className="section-fade section-delay-3">
         <Workspace
@@ -854,6 +856,7 @@ export function App() {
         />
       </div>
 
+      {backendUser?.role === 'admin' && (
       <details className="app-disclosure section-fade section-delay-4">
         <summary className="app-disclosure-summary">
           <div>
@@ -938,7 +941,9 @@ export function App() {
           </div>
         </section>
       </details>
+      )}
 
+      {backendUser?.role === 'admin' && (
       <details className="app-disclosure section-fade section-delay-4">
         <summary className="app-disclosure-summary">
           <div>
@@ -957,6 +962,7 @@ export function App() {
           />
         </section>
       </details>
+      )}
     </main>
   );
 }

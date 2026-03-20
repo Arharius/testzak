@@ -781,7 +781,9 @@ export interface TZRiskItem {
   type: string;
   phrase: string;
   field: string;
+  context: string;
   message: string;
+  recommendation: string;
 }
 
 export interface TZValidateResponse {
@@ -790,8 +792,21 @@ export interface TZValidateResponse {
   moderate: TZRiskItem[];
 }
 
+export interface TZValidateSpec {
+  name: string;
+  value: string;
+  group: string;
+}
+
+export interface TZValidateRowInput {
+  name: string;
+  field: string;
+  description?: string;
+  specs?: TZValidateSpec[];
+}
+
 export async function validateTzBeforeExport(
-  rows: Array<{ name?: string; field?: string }>,
+  rows: TZValidateRowInput[],
   description?: string,
 ): Promise<TZValidateResponse> {
   return apiPost<TZValidateResponse>('/api/tz/validate', { rows, description: description ?? '' });

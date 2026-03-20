@@ -2226,22 +2226,57 @@ def delete_tz_document(
 # ── Антиошибочный фильтр перед экспортом DOCX ────────────────────────────────
 import re as _re
 
-_BRAND_PATTERN = _re.compile(
-    r'\b[A-ZА-Я][a-zа-яёЁ]{1,15}\s+[A-Z0-9][A-Z0-9a-z\-\+]{2,}\b'
+# Паттерн: «Бренд Модель» — Слово с заглавной + артикул/версия с цифрами или заглавными
+_BRAND_MODEL_PATTERN = _re.compile(
+    r'\b(?:Intel|AMD|NVIDIA|Samsung|Apple|Lenovo|HP|Dell|ASUS|Acer|MSI|LG|Sony|'
+    r'Seagate|Western\s+Digital|WD|Toshiba|Corsair|Kingston|Micron|Crucial|'
+    r'Logitech|Canon|Epson|Brother|Xerox|Kyocera|Huawei|Xiaomi|Realtek|Broadcom|'
+    r'Qualcomm|MediaTek)\b[\s\-]+'
+    r'[A-Za-z0-9][A-Za-z0-9\-\+\.]{2,}',
+    _re.IGNORECASE,
 )
-_VAGUE_WORDS = [
-    'качественный', 'качественная', 'качественное', 'качественные',
-    'современный', 'современная', 'современное', 'современные',
-    'передовой', 'передовая', 'передовое', 'передовые',
-    'надёжный', 'надёжная', 'надёжное', 'надёжные',
-    'удобный', 'удобная', 'удобное', 'удобные',
-    'высококачественный', 'высококачественная', 'высококачественные',
-    'инновационный', 'инновационная', 'инновационное', 'инновационные',
+# Паттерн для произвольных «Бренд ModelCode» (кириллица+латиница, с цифрами)
+_GENERIC_MODEL_PATTERN = _re.compile(
+    r'\b[A-ZА-Я][A-Za-zА-Яа-яёЁ]{1,18}\s+'
+    r'(?:[A-Z]{1,4}[\-]?)?[0-9]{2,}[A-Za-z0-9\-\+]*\b'
+)
+# Маркер «или эквивалент» — снимает критический риск
+_EQUIVALENT_MARKER = _re.compile(
+    r'(или\s+эквивалент|эквивалент|аналог[а-я]*|функциональн[а-я]+\s+эквивалент)',
+    _re.IGNORECASE,
+)
+
+_VAGUE_WORDS: list[tuple[str, str]] = [
+    ('качественн', 'Замените на измеримый критерий: класс защиты, материал, MTBF'),
+    ('современн', 'Укажите год выхода архитектуры или стандарт: например "не ранее 2022 г."'),
+    ('передов', 'Опишите конкретный технический параметр без оценочных прилагательных'),
+    ('надёжн', 'Замените на MTBF, срок гарантии, класс надёжности по ГОСТ'),
+    ('удобн', 'Укажите конкретные эргономические параметры или стандарт'),
+    ('высококачественн', 'Укажите ГОСТ, стандарт качества или измеримый параметр'),
+    ('инновационн', 'Опишите конкретную технологию или функцию'),
+    ('лучш', 'Сравнительные степени запрещены — используйте абсолютные значения'),
+    ('отличн', 'Оценочное прилагательное — замените на измеримый показатель'),
+    ('хорош', 'Оценочное прилагательное — замените на измеримый показатель'),
+    ('эффективн', 'Укажите конкретный КПД, производительность или норматив'),
+    ('прост', 'Укажите конкретные характеристики интерфейса или документацию'),
 ]
 
 
+class TZValidateSpec(BaseModel):
+    name: str = ""
+    value: str = ""
+    group: str = ""
+
+
+class TZValidateRow(BaseModel):
+    name: str = ""
+    field: str = ""
+    specs: list[TZValidateSpec] = []
+    description: str = ""
+
+
 class TZValidateRequest(BaseModel):
-    rows: list[dict] = []
+    rows: list[TZValidateRow] = []
     description: str = ""
 
 
@@ -2249,7 +2284,9 @@ class TZRiskItem(BaseModel):
     type: str
     phrase: str
     field: str
+    context: str = ""
     message: str
+    recommendation: str = ""
 
 
 class TZValidateResponse(BaseModel):
@@ -2258,58 +2295,101 @@ class TZValidateResponse(BaseModel):
     moderate: list[TZRiskItem]
 
 
+def _check_brand_in_text(text: str, field: str, seen: set[str]) -> list[TZRiskItem]:
+    """Ищет бренд/модель в тексте. Пропускает если рядом есть 'или эквивалент'."""
+    items: list[TZRiskItem] = []
+    for pat in (_BRAND_MODEL_PATTERN, _GENERIC_MODEL_PATTERN):
+        for m in pat.finditer(text):
+            phrase = m.group().strip()
+            if phrase in seen:
+                continue
+            # Окно ±60 символов вокруг совпадения
+            start = max(0, m.start() - 60)
+            end = min(len(text), m.end() + 60)
+            window = text[start:end]
+            if _EQUIVALENT_MARKER.search(window):
+                continue  # есть «или эквивалент» — не критично
+            seen.add(phrase)
+            items.append(TZRiskItem(
+                type="single_manufacturer",
+                phrase=phrase,
+                field=field,
+                context=window.strip(),
+                message=f'Характеристика указывает на единственного производителя — нарушение ст. 33 44-ФЗ',
+                recommendation=(
+                    f'Замените «{phrase}» на функциональные параметры (частота, количество ядер, '
+                    f'объём памяти и т.п.) или добавьте «или эквивалент» по ГОСТ Р 51814.4'
+                ),
+            ))
+    return items
+
+
+def _check_vague_in_text(text: str, field: str, seen: set[str]) -> list[TZRiskItem]:
+    """Ищет неизмеримые фразы."""
+    items: list[TZRiskItem] = []
+    lower = text.lower()
+    for root, recommendation in _VAGUE_WORDS:
+        if root in lower and root not in seen:
+            seen.add(root)
+            # Найдём точное слово для контекста
+            idx = lower.find(root)
+            start = max(0, idx - 40)
+            end = min(len(text), idx + 60)
+            items.append(TZRiskItem(
+                type="vague_phrase",
+                phrase=root + '…',
+                field=field,
+                context=text[start:end].strip(),
+                message='Неизмеримая формулировка — нарушение принципа объективности требований',
+                recommendation=recommendation,
+            ))
+    return items
+
+
 @app.post("/api/tz/validate", response_model=TZValidateResponse)
 def validate_tz(req: TZValidateRequest, db: Session = Depends(get_db)):
     """Антиошибочный фильтр: проверяет текст ТЗ перед экспортом DOCX."""
     critical: list[TZRiskItem] = []
     moderate: list[TZRiskItem] = []
-
-    all_texts: list[tuple[str, str]] = []
-    for row in req.rows:
-        name = str(row.get("name") or "")
-        field = str(row.get("field") or "Характеристика")
-        if name:
-            all_texts.append((name, field))
-    if req.description:
-        all_texts.append((req.description, "Описание товара"))
-
     seen_brands: set[str] = set()
     seen_vague: set[str] = set()
 
-    for text, field in all_texts:
-        for m in _BRAND_PATTERN.finditer(text):
-            phrase = m.group()
-            if phrase not in seen_brands:
-                seen_brands.add(phrase)
-                critical.append(TZRiskItem(
-                    type="single_brand",
-                    phrase=phrase,
-                    field=field,
-                    message="Похоже на уникальное название модели/бренда — нарушение ст. 33 44-ФЗ",
-                ))
-        lower = text.lower()
-        for w in _VAGUE_WORDS:
-            if w in lower and w not in seen_vague:
-                seen_vague.add(w)
-                moderate.append(TZRiskItem(
-                    type="vague_phrase",
-                    phrase=w,
-                    field=field,
-                    message="Неизмеримая характеристика — уточните конкретный параметр",
-                ))
+    def _process(text: str, field: str) -> None:
+        if not text or not text.strip():
+            return
+        critical.extend(_check_brand_in_text(text, field, seen_brands))
+        moderate.extend(_check_vague_in_text(text, field, seen_vague))
+
+    # Проверяем каждую строку ТЗ: название + все спецификации
+    for row in req.rows:
+        _process(row.name, row.field or "Наименование товара")
+        _process(row.description, row.field or "Описание")
+        for spec in row.specs:
+            spec_field = f"{row.field} → {spec.group or 'Характеристики'}: {spec.name}"
+            _process(spec.value, spec_field)
+            _process(spec.name, spec_field)
+
+    # Общее описание ТЗ
+    if req.description:
+        _process(req.description, "Описание товара")
 
     can_export = len(critical) == 0
 
-    # Логируем, если найден хотя бы один риск
     if critical or moderate:
-        first_category = str(req.rows[0].get("field") or "") if req.rows else None
+        first_category = req.rows[0].field if req.rows else None
         try:
             db.add(TZValidateLog(
                 can_export=can_export,
                 critical_count=len(critical),
                 moderate_count=len(moderate),
-                critical_json=json.dumps([{"phrase": i.phrase, "field": i.field} for i in critical], ensure_ascii=False),
-                moderate_json=json.dumps([{"phrase": i.phrase, "field": i.field} for i in moderate], ensure_ascii=False),
+                critical_json=json.dumps(
+                    [{"phrase": i.phrase, "field": i.field} for i in critical],
+                    ensure_ascii=False,
+                ),
+                moderate_json=json.dumps(
+                    [{"phrase": i.phrase, "field": i.field} for i in moderate],
+                    ensure_ascii=False,
+                ),
                 category=first_category or None,
             ))
             db.commit()

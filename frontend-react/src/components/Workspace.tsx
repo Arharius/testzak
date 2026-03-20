@@ -58,6 +58,9 @@ import { APP_BUILD_LABEL } from '../utils/build-info';
 import { WorkspaceRowsTable } from './WorkspaceRowsTable';
 import { createWorkspacePublicationTools } from './workspace-publication';
 import { WorkspaceTypeSuggestions } from './WorkspaceTypeSuggestions';
+import { DoubleEquivalentReport } from './DoubleEquivalentReport';
+import { runDoubleEquivalentCheck, type DoubleEquivResult } from '../utils/double-equivalent';
+import type { SpecConflict } from '../utils/fetch-specs';
 
 const WorkspaceSidePanels = lazy(async () => {
   const mod = await import('./WorkspacePanels');
@@ -2267,9 +2270,6 @@ function buildDocumentSectionBundle(
     const row0 = doneRows[0];
     const goods0 = lookupCatalog(row0.type);
     const commercial0 = getResolvedCommercialContext(row0);
-    const resolvedOkpd2 = getResolvedOkpd2Code(row0) || '—';
-    const resolvedOkpd2Name = getResolvedOkpd2Name(row0);
-    const resolvedKtru = getResolvedKtruCode(row0);
     const resolvedRegime = row0.meta?.nac_regime || getUnifiedNacRegime(row0.type);
     const law175Label = getLaw175MeasureLabel(row0.meta?.law175_status || '', resolvedRegime);
     pushSection1(
@@ -2277,10 +2277,6 @@ function buildDocumentSectionBundle(
         ? `Требования к объему оказываемых Услуг: ${row0.qty} (${numText(row0.qty)}) ${row0.qty === 1 ? 'условная единица' : 'условные единицы'}.`
         : `Требования к количеству поставляемого Товара: ${row0.qty} (${numText(row0.qty)}) ${goods0.isSoftware ? 'лицензий' : 'штук'}.`
     );
-    pushSection1(`Код ОКПД2: ${resolvedOkpd2}${resolvedOkpd2Name ? ` — ${resolvedOkpd2Name}` : ''}.`);
-    if (resolvedKtru) {
-      pushSection1(`Код КТРУ: ${resolvedKtru}.`);
-    }
     pushSection1(`Национальный режим (ПП РФ № 1875): ${law175Label}.`);
     const basisDisplay = getResolvedLaw175Meta(row0.type, row0.meta).basisDisplay;
     if (basisDisplay) {
@@ -6183,8 +6179,8 @@ const DOCX_SECTION_RIGHT_WIDTH = DOCX_TEXT_WIDTH - DOCX_SECTION_LEFT_WIDTH;
 const DOCX_CELL_MARGINS = { top: 60, bottom: 60, left: 80, right: 80 };
 const DOCX_COMPACT_MARGINS = { top: 35, bottom: 35, left: 50, right: 50 };
 const DOCX_SUMMARY_WIDTHS = {
-  commercial: { idx: 420, name: 3180, license: 1750, term: 1100, qty: 720, okpd2: 1400, appendix: 1198 },
-  default: { idx: 420, name: 5250, qty: 900, okpd2: 1550, appendix: 1648 },
+  commercial: { idx: 420, name: 4380, license: 1750, term: 1100, qty: 720, appendix: 1398 },
+  default: { idx: 420, name: 6700, qty: 1000, appendix: 1648 },
 };
 
 
@@ -6490,7 +6486,6 @@ async function buildDocx(
           hCell('Тип лицензии', { w: widths.license, size: 16, margins: DOCX_COMPACT_MARGINS }),
           hCell('Срок\nдействия', { w: widths.term, size: 16, margins: DOCX_COMPACT_MARGINS }),
           hCell('Кол-\nво', { w: widths.qty, size: 16, margins: DOCX_COMPACT_MARGINS }),
-          hCell('ОКПД2', { w: widths.okpd2, size: 16, margins: DOCX_COMPACT_MARGINS }),
           hCell('Прил.\n№', { w: widths.appendix, size: 16, margins: DOCX_COMPACT_MARGINS }),
         ],
       }));
@@ -6525,12 +6520,6 @@ async function buildDocx(
               size: 16,
               margins: DOCX_COMPACT_MARGINS,
             }),
-            dCell(getResolvedOkpd2Code(row) || '—', {
-              w: widths.okpd2,
-              align: AlignmentType.CENTER,
-              size: 16,
-              margins: DOCX_COMPACT_MARGINS,
-            }),
             dCell(`Прил. ${idx + 1}`, {
               w: widths.appendix,
               align: AlignmentType.CENTER,
@@ -6550,7 +6539,6 @@ async function buildDocx(
           hCell('№', { w: widths.idx, size: 16, margins: DOCX_COMPACT_MARGINS }),
           hCell('Наименование', { w: widths.name, size: 16, margins: DOCX_COMPACT_MARGINS }),
           hCell('Кол-\nво', { w: widths.qty, size: 16, margins: DOCX_COMPACT_MARGINS }),
-          hCell('ОКПД2', { w: widths.okpd2, size: 16, margins: DOCX_COMPACT_MARGINS }),
           hCell('Прил.\n№', { w: widths.appendix, size: 16, margins: DOCX_COMPACT_MARGINS }),
         ],
       }));
@@ -6568,12 +6556,6 @@ async function buildDocx(
             }),
             dCell(`${row.qty} ${getRowQtyUnitShort(row)}`, {
               w: widths.qty,
-              align: AlignmentType.CENTER,
-              size: 16,
-              margins: DOCX_COMPACT_MARGINS,
-            }),
-            dCell(getResolvedOkpd2Code(row) || '—', {
-              w: widths.okpd2,
               align: AlignmentType.CENTER,
               size: 16,
               margins: DOCX_COMPACT_MARGINS,
@@ -6829,6 +6811,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', typeLocked: false, model: '', licenseType: '', term: '', licenseTypeAuto: false, termAuto: false, qty: 1, status: 'idle' }]);
   const [docxReady, setDocxReady] = useState(false);
   const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
+  const [deResult, setDeResult] = useState<DoubleEquivResult | null>(null);
+  const [deConflicts, setDeConflicts] = useState<SpecConflict[]>([]);
+  const [deLoading, setDeLoading] = useState(false);
 
   // Общий статус поиска по ЕИС
   const [eisSearching, setEisSearching] = useState(false);
@@ -8962,6 +8947,33 @@ ${hint || '- Используй детальные, проверяемые эк�
     }
   }, [ensurePaidFeatureAccess, lawMode, loadHistory, rows, showToast, splitSourceRows]);
 
+  // ── Двойной эквивалент: проверить ≥2 производителей ────────────────────────
+  const runDeCheck = useCallback(async () => {
+    const doneRows = rows.filter((r) => r.status === 'done' && r.specs && r.specs.length > 0);
+    if (doneRows.length === 0) {
+      showToast('Сначала сгенерируйте характеристики позиций', false);
+      return;
+    }
+    setDeLoading(true);
+    setDeResult(null);
+    setDeConflicts([]);
+    try {
+      const row = doneRows[0];
+      const result = await runDoubleEquivalentCheck(
+        row.model || lookupCatalog(row.type).name,
+        row.specs ?? [],
+        provider,
+        apiKey,
+        model,
+      );
+      setDeResult(result);
+    } catch (e) {
+      showToast(`Ошибка проверки двойного эквивалента: ${e instanceof Error ? e.message : String(e)}`, false);
+    } finally {
+      setDeLoading(false);
+    }
+  }, [apiKey, model, provider, rows, showToast]);
+
   // ── Подтянуть реальные характеристики товара ────────────────────────────────
   const enrichFromInternet = useCallback(async () => {
     if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для поиска характеристик в интернете.')) {
@@ -10485,6 +10497,18 @@ ${hint || '- Используй детальные, проверяемые эк�
         onMoveSpec={moveSpec}
         onFinishEditing={finishEditing}
       />
+
+      {docxReady && (
+        <div style={{ padding: '0 0 8px' }}>
+          <DoubleEquivalentReport
+            result={deResult}
+            loading={deLoading}
+            conflicts={deConflicts}
+            onRunCheck={() => { void runDeCheck(); }}
+            modelName={rows.find((r) => r.status === 'done')?.model || undefined}
+          />
+        </div>
+      )}
       </div>
 
       <aside className="workspace-sidecar">

@@ -472,9 +472,9 @@ export function createWorkspacePublicationTools({
 
       if (status === 'exception' && basisWeak) {
         legal.missingBasis += 1;
-        blockers.push({
+        warnings.push({
           key: `basis-${row.id}`,
-          level: 'block',
+          level: 'warn',
           rowId: row.id,
           text: `${rowLabel}: указано исключение по ПП1875 без подтвержденного основания.`,
           action: 'снять неподтвержденное исключение до базовой меры по режиму или заменить его документально подтвержденным основанием',
@@ -482,9 +482,9 @@ export function createWorkspacePublicationTools({
           actionLabel: 'Снять исключение',
         });
       } else if (row.status === 'done' && status !== 'none' && basisWeak) {
-        blockers.push({
+        warnings.push({
           key: `basis-review-${row.id}`,
-          level: 'block',
+          level: 'warn',
           rowId: row.id,
           text: `${rowLabel}: мера ПП1875 определена, но основание не подтверждено юридически.`,
           action: 'уточнить формулировку основания, источник права и подтверждающий документ до публикации',

@@ -64,6 +64,8 @@ try:
         is_payment_required,
         payment_required_message,
         trial_days_left,
+        is_admin_email,
+        hash_password,
         JWT_SECRET,
         SMTP_USER,
         SMTP_PASS,
@@ -94,6 +96,8 @@ except ImportError:
         is_payment_required,
         payment_required_message,
         trial_days_left,
+        is_admin_email,
+        hash_password,
         JWT_SECRET,
         SMTP_USER,
         SMTP_PASS,
@@ -269,6 +273,11 @@ class LoginRequest(BaseModel):
 
 class VerifyTokenRequest(BaseModel):
     token: str
+
+class SetAdminCredentialsRequest(BaseModel):
+    token: str
+    username: str
+    password: str
 
 class AIGenerateRequest(BaseModel):
     provider: str = "deepseek"
@@ -1643,6 +1652,31 @@ def verify_token_post(req: VerifyTokenRequest, db: Session = Depends(get_db)):
         "token": jwt_token,
         "user": _user_response(user),
     }
+
+@app.post("/api/auth/set-admin-credentials")
+@limiter.limit("5/minute")
+def set_admin_credentials(request: Request, req: SetAdminCredentialsRequest, db: Session = Depends(get_db)):
+    """
+    One-time endpoint: set username/password for the superadmin.
+    Requires a valid magic-link token for an admin email to authorize.
+    """
+    email = verify_magic_token(req.token, db)
+    if not email:
+        raise HTTPException(status_code=400, detail="Ссылка недействительна или истекла")
+    if not is_admin_email(email):
+        raise HTTPException(status_code=403, detail="Доступ запрещён")
+    username = req.username.strip()
+    password = req.password.strip()
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Логин и пароль не могут быть пустыми")
+    user = get_or_create_user(email, db)
+    user.username = username
+    user.password_hash = hash_password(password)
+    user.role = "admin"
+    user.tz_limit = -1
+    db.commit()
+    logger.info(f"Admin credentials set for {email}, username={username}")
+    return {"ok": True, "message": f"Учётные данные установлены для {email}"}
 
 @app.get("/api/auth/me")
 def get_me(user: User = Depends(get_current_user)):

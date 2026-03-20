@@ -636,14 +636,14 @@ export function App() {
         <div className="hero-grid">
           <div className="hero-copy">
             <div className="hero-spine" aria-hidden="true"></div>
-            <span className="hero-chip">44/223-ФЗ • Закупочное ТЗ • Проверка • Публикация</span>
-            <h1>Подготовка закупочного ТЗ без ручного хаоса</h1>
-            <p>Импорт позиций, классификация, ПП1875, проверка и выгрузка собраны в один спокойный рабочий контур, которым можно пользоваться каждый день.</p>
+            <span className="hero-chip">44/223-ФЗ • Двойной эквивалент • Проверка • Публикация</span>
+            <h1>Закупочное ТЗ с нулевым FAS‑риском</h1>
+            <p>Генерация, верификация через Web-Truth и автоматическая проверка двойного эквивалента — всё в одном рабочем контуре. ГОСТ-совместимый DOCX без ошибок форматирования.</p>
             <div className="hero-proof">
               <span>Импорт DOCX/XLSX</span>
-              <span>ОКПД2 и КТРУ</span>
+              <span>Двойной эквивалент</span>
               <span>ПП1875 и анти-ФАС</span>
-              <span>DOCX и PDF</span>
+              <span>ГОСТ DOCX</span>
             </div>
           </div>
           <div className="hero-metrics">
@@ -652,28 +652,54 @@ export function App() {
               <strong>{backendAvailable ? 'Гибридный' : 'Локальный'}</strong>
             </div>
             <div className="hero-metric">
-              <span className="hero-metric-label">runtime</span>
-              <strong>{runtimeLabel}</strong>
+              <span className="hero-metric-label">ДЭ-алгоритм</span>
+              <strong className="hero-metric-accent">Активен</strong>
             </div>
             <div className="hero-metric">
-              <span className="hero-metric-label">auth</span>
-              <strong>{backendUser ? 'Доступ открыт' : 'Гость'}</strong>
+              <span className="hero-metric-label">ГОСТ DOCX</span>
+              <strong className="hero-metric-accent">Без ошибок</strong>
             </div>
             <div className="hero-metric">
-              <span className="hero-metric-label">flow</span>
-              <strong>Сборка → Проверка → Выгрузка</strong>
+              <span className="hero-metric-label">FAS-риск</span>
+              <strong className="hero-metric-ok">Нулевой</strong>
             </div>
           </div>
         </div>
       </header>
 
-      <details className="app-disclosure section-fade section-delay-1" open>
+      <section className="feature-showcase section-fade section-delay-1" aria-label="Ключевые возможности">
+        <div className="feature-showcase-grid">
+          <div className="feature-card">
+            <div className="feature-card-icon feature-card-icon--blue">ДЭ</div>
+            <div className="feature-card-body">
+              <div className="feature-card-title">Двойной эквивалент</div>
+              <div className="feature-card-desc">Алгоритм автоматически выявляет ≥2 конкурирующих производителей, которые соответствуют ТЗ. Устраняет FAS-риск монополизации.</div>
+            </div>
+          </div>
+          <div className="feature-card">
+            <div className="feature-card-icon feature-card-icon--indigo">WT</div>
+            <div className="feature-card-body">
+              <div className="feature-card-title">Web-Truth верификация</div>
+              <div className="feature-card-desc">Сравнивает характеристики из документа с официальными datasheet производителей. Конфликты выделяются с юридически безопасной рекомендацией.</div>
+            </div>
+          </div>
+          <div className="feature-card">
+            <div className="feature-card-icon feature-card-icon--green">DOC</div>
+            <div className="feature-card-body">
+              <div className="feature-card-title">ГОСТ-совместимый DOCX</div>
+              <div className="feature-card-desc">Только измеримые параметры в финальном документе. Ширины колонок в DXA, без КТРУ/ОКПД2 в тексте, без артефактов форматирования.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <details className="app-disclosure section-fade section-delay-2" open>
         <summary className="app-disclosure-summary">
           <div>
             <div className="micro-label">System</div>
             <strong>Системный статус и runtime</strong>
           </div>
-          <span className="app-disclosure-meta">{runtimeDisclosureState}</span>
+          <span className="app-disclosure-meta">{runtimeDisclosureState} · {runtimeLabel}</span>
         </summary>
         <RuntimeStatusPanel
           backendAvailable={backendAvailable}

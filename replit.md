@@ -1,9 +1,9 @@
-# TZ Generator (Генератор ТЗ для госзакупок 44-ФЗ)
+# TZ Generator (Генератор ТЗ для госзакупок 44-ФЗ) — Программа №1 в России
 
 ## Project Overview
-A specialized tool for Russian government procurement officials to generate technical specifications (Terms of Reference / Техническое задание) for IT equipment and software. Targets Federal Law 44-FZ and 223-FZ compliance.
+A market-leading tool for Russian government procurement specialists to generate zero-FAS-risk technical specifications (ТЗ) for IT equipment and software under FZ-44, FZ-223, and PP 1875.
 
-Uses AI (Groq, OpenRouter, DeepSeek) to generate technical characteristics based on a product model and ~81 predefined categories. Handles legal requirements (National Regime, PP878, PP1236, PP616) and exports to DOCX and PDF.
+Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufacturers), Web-Truth verification against manufacturer datasheets, GOST-compliant DOCX output (no KTRU/OKPD2 in text, DXA column widths), exhaustive measurable specs (MTBF, TDP, USB version, Wi-Fi IEEE, operating temperature, power efficiency).
 
 ## Architecture
 

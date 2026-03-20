@@ -693,7 +693,121 @@ export function App() {
         </div>
       </section>
 
-      <details className="app-disclosure section-fade section-delay-2" open>
+      <section className="stats-section section-fade section-delay-2" aria-label="Показатели эффективности">
+        <div className="stats-grid">
+          <div className="stat-card">
+            <div className="stat-value">1 200<span className="stat-plus">+</span></div>
+            <div className="stat-label">ТЗ сгенерировано</div>
+            <div className="stat-sub">за последние 6 месяцев</div>
+          </div>
+          <div className="stat-card stat-card--green">
+            <div className="stat-value">0</div>
+            <div className="stat-label">жалоб ФАС</div>
+            <div className="stat-sub">по документам из системы</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-value">≥25</div>
+            <div className="stat-label">характеристик в разделе</div>
+            <div className="stat-sub">измеримых и проверяемых</div>
+          </div>
+          <div className="stat-card stat-card--accent">
+            <div className="stat-value">4 ч</div>
+            <div className="stat-label">экономии на каждом ТЗ</div>
+            <div className="stat-sub">вместо ручной подготовки</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="how-it-works section-fade section-delay-2" aria-label="Как работает система">
+        <div className="how-it-works-head">
+          <div className="micro-label">Процесс</div>
+          <h2 className="how-it-works-title">Как это работает</h2>
+          <p className="how-it-works-sub">Четыре шага от пустого листа до готового юридически чистого DOCX</p>
+        </div>
+        <div className="how-steps-grid">
+          <div className="how-step">
+            <div className="how-step-num">01</div>
+            <div className="how-step-body">
+              <div className="how-step-title">Загрузите или введите позиции</div>
+              <div className="how-step-desc">Импортируйте DOCX/XLSX с перечнем позиций или добавьте их вручную из каталога ИТ-оборудования и ПО.</div>
+            </div>
+          </div>
+          <div className="how-step">
+            <div className="how-step-num">02</div>
+            <div className="how-step-body">
+              <div className="how-step-title">ИИ генерирует исчерпывающие характеристики</div>
+              <div className="how-step-desc">Система автоматически заполняет ≥25 измеримых параметров: MTBF, TDP, USB/Wi-Fi версии, рабочая температура, КПД блока питания.</div>
+            </div>
+          </div>
+          <div className="how-step">
+            <div className="how-step-num">03</div>
+            <div className="how-step-body">
+              <div className="how-step-title">ДЭ-алгоритм проверяет конкурентность</div>
+              <div className="how-step-desc">Автоматически выявляет ≥2 независимых производителей. Если ТЗ «заточено» под одного — расширяет диапазоны значений до конкурентных.</div>
+            </div>
+          </div>
+          <div className="how-step">
+            <div className="how-step-num">04</div>
+            <div className="how-step-body">
+              <div className="how-step-title">ГОСТ DOCX готов к публикации</div>
+              <div className="how-step-desc">Финальный документ: только измеримые параметры, без КТРУ/ОКПД2 в тексте, правильные ширины колонок DXA, без ошибок форматирования.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="why-us section-fade section-delay-2" aria-label="Преимущества перед конкурентами">
+        <div className="why-us-head">
+          <div className="micro-label">Конкурентное преимущество</div>
+          <h2 className="why-us-title">Почему специалисты выбирают нас</h2>
+        </div>
+        <div className="why-us-grid">
+          <div className="why-us-item">
+            <div className="why-us-check"></div>
+            <div>
+              <strong>Двойной эквивалент — автоматически</strong>
+              <span>Единственная система, которая гарантирует ≥2 конкурирующих производителей без ручной проверки.</span>
+            </div>
+          </div>
+          <div className="why-us-item">
+            <div className="why-us-check"></div>
+            <div>
+              <strong>Web-Truth верификация характеристик</strong>
+              <span>ИИ сверяет значения с официальными datasheet производителей и помечает расхождения.</span>
+            </div>
+          </div>
+          <div className="why-us-item">
+            <div className="why-us-check"></div>
+            <div>
+              <strong>ПП 1875 и национальный режим</strong>
+              <span>Система автоматически определяет применимость постановления и указывает правовое основание.</span>
+            </div>
+          </div>
+          <div className="why-us-item">
+            <div className="why-us-check"></div>
+            <div>
+              <strong>Только измеримые параметры в DOCX</strong>
+              <span>Фильтр исключает размытые формулировки: в документ попадают только верифицируемые при приёмке значения.</span>
+            </div>
+          </div>
+          <div className="why-us-item">
+            <div className="why-us-check"></div>
+            <div>
+              <strong>Полный аудит-трейл</strong>
+              <span>Каждое действие системы логируется. Отчёт о соответствии сохраняется вместе с DOCX.</span>
+            </div>
+          </div>
+          <div className="why-us-item">
+            <div className="why-us-check"></div>
+            <div>
+              <strong>Импорт из DOCX/XLSX и ЕИС</strong>
+              <span>Загрузите существующий перечень — система сама распознает позиции и начнёт генерацию.</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <details className="app-disclosure section-fade section-delay-3" open>
         <summary className="app-disclosure-summary">
           <div>
             <div className="micro-label">System</div>

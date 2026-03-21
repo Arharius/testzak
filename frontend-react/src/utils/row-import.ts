@@ -654,6 +654,9 @@ const SPEC_NAME_COL_EXACT = new Set([
 const SPEC_VALUE_COL_EXACT = new Set([
   'значение характеристики',
   'требуемое значение',
+  'требуемое значение параметра',
+  'требуемые значения',
+  'значение параметра',
   'требуемые характеристики',
   'технические требования',
   'минимальные требования',
@@ -729,24 +732,41 @@ function isSpecTable(rows: string[][]): boolean {
     return looksLikeHeaderlessSpecTable(rows.slice(headerIndex));
   }
 
-  const { valueCol } = detectSpecColumnOrder(rows[headerIndex] || []);
+  const { nameCol, valueCol } = detectSpecColumnOrder(rows[headerIndex] || []);
   const dataRows = rows.slice(headerIndex + 1).filter((row) => {
-    const name = normalizeCell(row[0] || '');
+    const first = normalizeCell(row[0] || '');
+    const name = normalizeCell(row[nameCol] || '');
     const value = normalizeCell(row[valueCol] || '');
     // Skip merged product-name rows (all cells identical)
-    if (name && row.every((cell) => normalizeCell(cell) === name)) return false;
-    return (name || value) && !(name && !value && !(row[2] || '').trim());
+    if (first && row.every((cell) => normalizeCell(cell) === first)) return false;
+    return (name || value) && !(name && !value && !(row[nameCol + 1] || '').trim());
   });
   if (dataRows.length === 0) return true;
   const validCount = dataRows.filter((row) => {
-    const name = normalizeCell(row[0] || '');
+    const name = normalizeCell(row[nameCol] || '');
     const value = normalizeCell(row[valueCol] || '');
     return isValidSpecName(name) && isValidSpecValue(value);
   }).length;
   return validCount / dataRows.length >= 0.4;
 }
 
-function detectSpecColumnOrder(headerRow: string[]): { valueCol: number; unitCol: number } {
+function detectSpecColumnOrder(headerRow: string[]): { nameCol: number; valueCol: number; unitCol: number } {
+  // 4-column format: "№ п/п | Наименование позиции | Единица измерения | Требуемое значение параметра"
+  // Detect by checking if col0 is a number/serial column, then shift all columns by 1
+  if (headerRow.length >= 4) {
+    const col0 = normalizeHeader(headerRow[0]);
+    const col0IsSerial = /^(№|#|nn|n°|номер|num|no\.?)(\s*(п\/п|п\.п\.|пп))?$/.test(col0);
+    if (col0IsSerial) {
+      // name(1) | unit(2) | value(3)
+      const col1 = normalizeHeader(headerRow[1]);
+      const col2 = normalizeHeader(headerRow[2]);
+      const col1IsUnit = /единиц|ед\.?\s*(изм|измер)|unit/.test(col1);
+      const col2IsUnit = /единиц|ед\.?\s*(изм|измер)|unit/.test(col2);
+      if (col2IsUnit) return { nameCol: 1, valueCol: 3, unitCol: 2 };
+      if (col1IsUnit) return { nameCol: 1, valueCol: 2, unitCol: 3 };
+      return { nameCol: 1, valueCol: 3, unitCol: 2 };
+    }
+  }
   // Default: name(0) | value(1) | unit(2)
   // Alternative: name(0) | unit(1) | value(2)  — common in Russian gov procurement docs
   if (headerRow.length >= 3) {
@@ -754,25 +774,26 @@ function detectSpecColumnOrder(headerRow: string[]): { valueCol: number; unitCol
     const col2 = normalizeHeader(headerRow[2]);
     const col1IsUnit = /единиц|ед\.?\s*(изм|измер)|unit/.test(col1);
     const col2IsValue = /значение|требован|value|specification/.test(col2);
-    if (col1IsUnit && col2IsValue) return { valueCol: 2, unitCol: 1 };
+    if (col1IsUnit && col2IsValue) return { nameCol: 0, valueCol: 2, unitCol: 1 };
   }
-  return { valueCol: 1, unitCol: 2 };
+  return { nameCol: 0, valueCol: 1, unitCol: 2 };
 }
 
 function parseSpecTable(rows: string[][]): SpecItem[] {
   const specs: SpecItem[] = [];
   const headerIndex = findSpecHeaderIndex(rows);
   const headerRow = rows[headerIndex] || [];
-  const { valueCol, unitCol } = detectSpecColumnOrder(headerRow);
+  const { nameCol, valueCol, unitCol } = detectSpecColumnOrder(headerRow);
   let currentGroup = 'Технические характеристики';
   for (const row of rows.slice(headerIndex + 1)) {
-    const name = normalizeCell(row[0] || '');
+    const first = normalizeCell(row[0] || '');
+    const name = normalizeCell(row[nameCol] || '');
     const rawValue = normalizeCell(row[valueCol] || '');
     const unit = normalizeCell(row[unitCol] || '') || '—';
     // Пропускаем объединённые строки-заголовки товара (все ячейки одинаковые)
-    if (name && row.every((cell) => normalizeCell(cell) === name)) continue;
+    if (first && row.every((cell) => normalizeCell(cell) === first)) continue;
     if (!name && !rawValue) continue;
-    if (name && !rawValue && !(row[2] || '').trim()) {
+    if (name && !rawValue && !(row[nameCol + 1] || '').trim()) {
       currentGroup = name;
       continue;
     }

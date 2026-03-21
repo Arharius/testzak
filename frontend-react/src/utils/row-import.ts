@@ -1350,7 +1350,14 @@ function findDocumentQty(paragraphs: string[]): number | null {
 }
 
 function extractAllDocumentLines(content: ParsedDocxContent): string[] {
-  const lines: string[] = [...content.paragraphs];
+  const lines: string[] = [];
+  for (const para of content.paragraphs) {
+    const subLines = String(para || '').split(/\r?\n/);
+    for (const sub of subLines) {
+      const text = normalizeCell(sub);
+      if (text) lines.push(text);
+    }
+  }
   for (const table of content.tables) {
     for (const row of table) {
       for (const cell of row) {
@@ -1492,7 +1499,7 @@ async function tryServerDocxParse(file: File): Promise<ParsedDocxContent | null>
     const data = await resp.json();
     if (!data.ok) return null;
 
-    const paragraphs: string[] = (data.paragraphs || []).map((p: string) => normalizeCell(p)).filter(Boolean);
+    const paragraphs: string[] = (data.paragraphs || []).map((p: string) => String(p || '').replace(/\u00a0/g, ' ').replace(/[\u2000-\u200d\u2028\u2029]/g, ' ').trim()).filter(Boolean);
     const tables: string[][][] = (data.tables || []).map((tbl: { rows: { cells: string[] }[] }) =>
       tbl.rows.map((row: { cells: string[] }) => row.cells.map((c: string) => normalizeCell(c))).filter((row: string[]) => row.some(Boolean)),
     );
@@ -1534,16 +1541,19 @@ export async function parseImportedRows(file: File): Promise<ImportedProcurement
   }
   if (lowerName.endsWith('.docx')) {
     const serverContent = await tryServerDocxParse(file);
-    if (serverContent && serverContent.tables.length > 0) {
-      const appendixRows = parseDocxAppendixRows(serverContent);
-      if (appendixRows.length > 0) return appendixRows;
-      const appendixParagraphRows = parseDocxAppendixParagraphRows(serverContent);
-      if (appendixParagraphRows.length > 0) return appendixParagraphRows;
-      const summaryTableRows = parseDocxSummaryTableRows(serverContent);
-      if (summaryTableRows.length > 0) return summaryTableRows;
-      const tableRows = parseDocxTableRows(serverContent.blocks);
-      if (tableRows.length > 0) return tableRows;
-      return parseDocxFallbackRows(serverContent);
+    if (serverContent) {
+      if (serverContent.tables.length > 0) {
+        const appendixRows = parseDocxAppendixRows(serverContent);
+        if (appendixRows.length > 0) return appendixRows;
+        const appendixParagraphRows = parseDocxAppendixParagraphRows(serverContent);
+        if (appendixParagraphRows.length > 0) return appendixParagraphRows;
+        const summaryTableRows = parseDocxSummaryTableRows(serverContent);
+        if (summaryTableRows.length > 0) return summaryTableRows;
+        const tableRows = parseDocxTableRows(serverContent.blocks);
+        if (tableRows.length > 0) return tableRows;
+      }
+      const fallbackRows = parseDocxFallbackRows(serverContent);
+      if (fallbackRows.length > 0) return fallbackRows;
     }
     return parseDocxRows(await file.arrayBuffer());
   }

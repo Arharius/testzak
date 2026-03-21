@@ -625,13 +625,10 @@ const PROCUREMENT_TYPE_TO_PURPOSE: Partial<Record<string, ProcurementPurposeKey>
   printer: 'peripherals',
   mfu: 'peripherals',
   scanner: 'peripherals',
-  keyboard: 'peripherals',
-  mouse: 'peripherals',
   kvm: 'peripherals',
   ups: 'peripherals',
   projector: 'peripherals',
   interactive: 'peripherals',
-  webcam: 'peripherals',
   headset: 'peripherals',
   cpu: 'components',
   gpu: 'components',
@@ -642,12 +639,37 @@ const PROCUREMENT_TYPE_TO_PURPOSE: Partial<Record<string, ProcurementPurposeKey>
   ssd: 'components',
   hdd: 'components',
   flashDrive: 'components',
-  dvd: 'components',
+  extSsd: 'components',
+  extHdd: 'components',
+  opticalDrive: 'components',
+  extOpticalDrive: 'components',
+  keyboard: 'components',
+  mouse: 'components',
+  keyboardMouseSet: 'components',
+  webcam: 'components',
+  conferenceCamera: 'components',
+  speakers: 'components',
+  videoAdapter: 'components',
+  usbToken: 'components',
+  usbHub: 'components',
+  memoryCard: 'components',
+  cardReader: 'components',
+  dockingStation: 'components',
   parts: 'components',
+  dvd: 'consumables',
+  cdr: 'consumables',
+  cdrw: 'consumables',
+  dvdr: 'consumables',
+  dvdrw: 'consumables',
+  bdr: 'consumables',
+  ltoTape: 'consumables',
+  ltoCleaningCartridge: 'consumables',
   cartridge: 'consumables',
   paper: 'consumables',
   toner: 'consumables',
   drum: 'consumables',
+  cableTester: 'network',
+  toolSet: 'network',
   os: 'software',
   office: 'software',
   virt: 'software',
@@ -793,11 +815,12 @@ function buildImportedSpecsPromptBlock(row: GoodsRow): string {
 function inferProcurementPurposeFromText(text: string): ProcurementPurposeKey {
   const normalized = String(text || '').toLowerCase();
   if (looksLikeServiceQuery(normalized)) return 'services';
-  if (/(коммутатор|switch|router|маршрутизатор|wifi|wi-fi|сете|rj45|патч|скс|витая пара|sfp|оптич)/i.test(normalized)) return 'network';
+  if (/(коммутатор|switch|router|маршрутизатор|wifi|wi-fi|сете|rj45|патч|скс|витая пара|sfp|оптич.*кабел|оптич.*волокн|тестер кабел|кабельный тестер)/i.test(normalized)) return 'network';
   if (/(сервер|схд|san|nas|ленточн|стойк|шкаф|kvm-server|хранилищ)/i.test(normalized)) return 'server';
   if (/(ноутбук|системный блок|моноблок|тонкий клиент|рабочая станция|планшет)/i.test(normalized)) return 'workstations';
-  if (/(процессор|cpu|gpu|видеокарт|материнск|памят|ram|ssd|hdd|блок питания|кулер|охлажден|dvd|cd-r|dvd-r|rw)/i.test(normalized)) return 'components';
-  if (/(монитор|принтер|мфу|сканер|клавиатур|мыш|гарнитур|веб-кам|проектор|ибп)/i.test(normalized)) return 'peripherals';
+  if (/(процессор|cpu|gpu|видеокарт|материнск|памят|ram|ssd|hdd|блок питания|кулер|охлажден|флеш|накопитель|клавиатур|мыш|веб.кам|колонк|токен|видеоадаптер|оптическ.*привод|внешний привод)/i.test(normalized)) return 'components';
+  if (/(монитор|принтер|мфу|сканер|гарнитур|проектор|ибп)/i.test(normalized)) return 'peripherals';
+  if (/(dvd|cd-r|dvd-r|rw|диск.*носитель|оптический диск|blu.ray диск|bd-r)/i.test(normalized)) return 'consumables';
   if (/(лиценз|астра|astra|ред ос|мойофис|р7|postgres|почтов|вкс|сэд|itsm|мониторинг|по\b|программн)/i.test(normalized)) return 'software';
   if (/(антивирус|siem|dlp|edr|pam|iam|крипт|скзи|межсетев|waf|иб\b|защит)/i.test(normalized)) return 'security';
   if (/(картридж|тонер|бумаг|фотобарабан|расходн)/i.test(normalized)) return 'consumables';

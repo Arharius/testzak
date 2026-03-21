@@ -676,6 +676,20 @@ const SPEC_VALUE_COL_LOOSE = new Set([
   'описание',
 ]);
 
+function isMergedHeaderRow(row: string[]): boolean {
+  if (row.length < 2) return true;
+  const first = normalizeCell(row[0] || '');
+  if (!first) return false;
+  return row.every((cell) => normalizeCell(cell) === first);
+}
+
+function findSpecHeaderIndex(rows: string[][]): number {
+  if (rows.length < 2) return 0;
+  if (rows[0].length === 1 && rows.length > 2) return 1;
+  if (isMergedHeaderRow(rows[0]) && rows.length > 2) return 1;
+  return 0;
+}
+
 function looksLikeHeaderlessSpecTable(rows: string[][]): boolean {
   // No recognized headers — try heuristic: 2-3 col table whose first col cells
   // look like spec names (short, Russian, no URL) and second col looks like values
@@ -694,7 +708,7 @@ function looksLikeHeaderlessSpecTable(rows: string[][]): boolean {
 
 function isSpecTable(rows: string[][]): boolean {
   if (rows.length < 2) return false;
-  const headerIndex = rows[0].length === 1 && rows.length > 2 ? 1 : 0;
+  const headerIndex = findSpecHeaderIndex(rows);
   const headers = rows[headerIndex].map((cell) => normalizeHeader(cell));
 
   const nameExact = headers.some((h) => SPEC_NAME_COL_EXACT.has(h));
@@ -726,7 +740,7 @@ function isSpecTable(rows: string[][]): boolean {
 
 function parseSpecTable(rows: string[][]): SpecItem[] {
   const specs: SpecItem[] = [];
-  const headerIndex = rows[0].length === 1 && rows.length > 2 ? 1 : 0;
+  const headerIndex = findSpecHeaderIndex(rows);
   let currentGroup = 'Технические характеристики';
   for (const row of rows.slice(headerIndex + 1)) {
     const name = normalizeCell(row[0] || '');

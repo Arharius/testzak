@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { TZReviewIssue, TZReviewResponse } from '../lib/backendApi';
 import { reviewTz } from '../lib/backendApi';
 
@@ -53,6 +53,14 @@ export function TZReviewPanel({ tzText, lawMode, onApplyFixes, onClose }: TZRevi
     }
   };
 
+  const didStart = useRef(false);
+  useEffect(() => {
+    if (!didStart.current && tzText.length > 0) {
+      didStart.current = true;
+      void runReview();
+    }
+  }, [tzText]);
+
   const toggleIssue = (id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -94,23 +102,9 @@ export function TZReviewPanel({ tzText, lawMode, onApplyFixes, onClose }: TZRevi
           <button type="button" className="tz-review-close" onClick={onClose}>✕</button>
         </div>
 
-        {!result && !loading && (
-          <div className="tz-review-intro">
-            <p>
-              AI-эксперт проверит текст вашего ТЗ ({Math.round(tzText.length / 1000)}K символов) на:
-            </p>
-            <ul>
-              <li><strong>Блокирующие</strong> — ФАС-риски: бренды, единственный поставщик, коды в описании</li>
-              <li><strong>Юридические</strong> — неточности по {lawMode === '44' ? '44-ФЗ' : '223-ФЗ'}: лишние сертификаты, некорректные ссылки</li>
-              <li><strong>Технические</strong> — логические ошибки: противоречия, нереальные параметры</li>
-            </ul>
-            <button
-              type="button"
-              className="tz-review-start-btn"
-              onClick={() => { void runReview(); }}
-            >
-              Запустить проверку
-            </button>
+        {!result && !loading && !error && (
+          <div className="tz-review-loading">
+            <p>Подготовка к проверке...</p>
           </div>
         )}
 

@@ -729,6 +729,12 @@ function isSpecTable(rows: string[][]): boolean {
 
   // Fallback: no recognized headers → try content heuristic
   if (!hasSpecHeaders) {
+    // Guard: if the header contains procurement-specific columns (qty, okpd2, licenseType, term)
+    // this is a procurement table, not a spec table.
+    const hmap = detectHeaderMap(rows[headerIndex] || []);
+    const hasProcHeaders = hmap.qty !== undefined || hmap.okpd2 !== undefined
+      || hmap.licenseType !== undefined || hmap.term !== undefined;
+    if (hasProcHeaders) return false;
     return looksLikeHeaderlessSpecTable(rows.slice(headerIndex));
   }
 
@@ -1097,6 +1103,31 @@ function parseDocxSummaryTableRows(content: ParsedDocxContent): ImportedProcurem
   return dedupeImportedRows(rows);
 }
 
+/** Extract product name from a spec table's rows (looks for a merged product-name row). */
+function extractMergedProductNameFromRows(rows: string[][]): string {
+  const headerIndex = findSpecHeaderIndex(rows);
+  // Helper: a merged row must be non-trivial (≥4 chars) and not look like a group heading
+  const isMergedProductRow = (row: string[]): string => {
+    const first = normalizeCell(row[0] || '');
+    if (first.length < 4) return '';
+    if (!row.every((cell) => normalizeCell(cell) === first)) return '';
+    // Reject generic group headings (all lowercase Russian words like "общие", "дополнительно")
+    if (/^[а-яёА-ЯЁa-zA-Z]{1,20}$/.test(first) && !/[0-9\-_\/]/.test(first) && first === first.toLowerCase()) return '';
+    return first;
+  };
+  // Check rows BEFORE the header (most common: row 0 = merged product name, row 1 = header)
+  for (let i = 0; i < headerIndex; i += 1) {
+    const name = isMergedProductRow(rows[i]);
+    if (name) return name;
+  }
+  // Check rows AFTER the header (less common)
+  for (const row of rows.slice(headerIndex + 1)) {
+    const name = isMergedProductRow(row);
+    if (name) return name;
+  }
+  return '';
+}
+
 function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementRow[] {
   const rows: ImportedProcurementRow[] = [];
   const { blocks } = content;
@@ -1123,7 +1154,12 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
         (b) => b.kind === 'table' && b.rows && isSpecTable(b.rows),
       );
       if (!specTable?.rows) continue;
-      let headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
+      // Try to get product name from a merged row inside the spec table first
+      let headerCell = extractMergedProductNameFromRows(specTable.rows);
+      // Fallback: first cell of the first row (old behaviour, works for 3-col tables without №)
+      if (!headerCell || shouldRejectImportText(headerCell)) {
+        headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
+      }
       const notes: string[] = ['Название позиции извлечено из заголовка таблицы характеристик.'];
       if (!headerCell || shouldRejectImportText(headerCell)) {
         const allLines = extractAllDocumentLines(content);
@@ -1182,7 +1218,11 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
         (b) => b.kind === 'table' && b.rows && isSpecTable(b.rows),
       );
       if (specTable?.rows) {
-        let headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
+        // Try to get product name from a merged row inside the spec table first
+        let headerCell = extractMergedProductNameFromRows(specTable.rows);
+        if (!headerCell || shouldRejectImportText(headerCell)) {
+          headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
+        }
         const fallbackNotes: string[] = ['Название позиции извлечено из заголовка таблицы характеристик.'];
         if (!headerCell || shouldRejectImportText(headerCell)) {
           const allLines = extractAllDocumentLines(content);
@@ -1445,30 +1485,7 @@ function extractProductNameFromSpecTable(blocks: DocxBlock[]): { name: string; s
   // The merged row can appear BEFORE the header row (most common) or AFTER it (less common).
   for (const block of blocks) {
     if (block.kind !== 'table' || !block.rows || !isSpecTable(block.rows)) continue;
-    const headerIndex = findSpecHeaderIndex(block.rows);
-    let productName = '';
-
-    // 1. Check rows BEFORE the header (e.g. headerIndex = 1, product name is at row 0)
-    for (let i = 0; i < headerIndex; i += 1) {
-      const row = block.rows[i];
-      const first = normalizeCell(row[0] || '');
-      if (first && first.length >= 2 && row.every((cell) => normalizeCell(cell) === first)) {
-        productName = first;
-        break;
-      }
-    }
-
-    // 2. Check rows AFTER the header (e.g. headerIndex = 0, product name is at row 1)
-    if (!productName) {
-      for (const row of block.rows.slice(headerIndex + 1)) {
-        const first = normalizeCell(row[0] || '');
-        if (first && first.length >= 2 && row.every((cell) => normalizeCell(cell) === first)) {
-          productName = first;
-          break;
-        }
-      }
-    }
-
+    const productName = extractMergedProductNameFromRows(block.rows);
     const specs = parseSpecTable(block.rows);
     if (productName) {
       return { name: productName, specs };
@@ -1652,37 +1669,23 @@ export async function parseImportedRows(file: File): Promise<ImportedProcurement
     const serverContent = await tryServerDocxParse(file);
     let serverFallbackRows: ImportedProcurementRow[] = [];
     if (serverContent) {
-      // DEBUG
-      console.log('[import-debug] tables count:', serverContent.tables.length, 'blocks:', serverContent.blocks.length);
-      serverContent.tables.forEach((t, i) => {
-        console.log(`[import-debug] table[${i}] rows=${t.length}, isSpec=${isSpecTable(t)}, isSummary=${isDocxSummaryTable(t)}, isProcurement=${!isSpecTable(t) && !isDocxSummaryTable(t)}`);
-        if (t[0]) console.log(`[import-debug] table[${i}] header:`, JSON.stringify(t[0]));
-        if (t[1]) console.log(`[import-debug] table[${i}] row1:`, JSON.stringify(t[1]));
-      });
       if (serverContent.tables.length > 0) {
         const appendixRows = parseDocxAppendixRows(serverContent);
-        console.log('[import-debug] appendixRows:', appendixRows.length);
         if (appendixRows.length > 0) return appendixRows;
         const appendixParagraphRows = parseDocxAppendixParagraphRows(serverContent);
-        console.log('[import-debug] appendixParagraphRows:', appendixParagraphRows.length);
         if (appendixParagraphRows.length > 0) return appendixParagraphRows;
         const summaryTableRows = parseDocxSummaryTableRows(serverContent);
-        console.log('[import-debug] summaryTableRows:', summaryTableRows.length);
         if (summaryTableRows.length > 0) return summaryTableRows;
         const tableRows = parseDocxTableRows(serverContent.blocks);
-        console.log('[import-debug] tableRows:', tableRows.length, tableRows.map(r => r.description));
         if (tableRows.length > 0) return tableRows;
       }
       const enumeratedRows = parseDocxEnumeratedRows(serverContent);
-      console.log('[import-debug] enumeratedRows:', enumeratedRows.length);
       if (enumeratedRows.length > 0) return enumeratedRows;
       // Fallback: don't return immediately — compare with client-side result below
       serverFallbackRows = parseDocxFallbackRows(serverContent);
-      console.log('[import-debug] serverFallbackRows:', serverFallbackRows.length, serverFallbackRows.map(r => r.description));
     }
     // Client-side parsing (JSZip + DOMParser): handles more DOCX structures
     const clientRows = await parseDocxRows(buffer);
-    console.log('[import-debug] clientRows:', clientRows.length, clientRows.map(r => r.description));
     // Prefer whichever parser found more positions; server fallback wins only on tie
     if (clientRows.length > serverFallbackRows.length) return clientRows;
     if (serverFallbackRows.length > 0) return serverFallbackRows;

@@ -26,9 +26,12 @@ from urllib.error import HTTPError, URLError
 
 import re as _re
 
+from pathlib import Path as _Path
+
 from fastapi import FastAPI, HTTPException, Depends, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -2655,3 +2658,16 @@ def validate_tz(req: TZValidateRequest, db: Session = Depends(get_db)):
         critical=critical,
         moderate=moderate,
     )
+
+
+_STATIC_DIR = _Path(__file__).resolve().parent / "static"
+
+if _STATIC_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_STATIC_DIR / "assets")), name="frontend-assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        file_path = _STATIC_DIR / full_path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(_STATIC_DIR / "index.html"))

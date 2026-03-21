@@ -36,7 +36,12 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **Start application**: `cd frontend-react && npm run dev` → port 5000
 
 ## Deployment
-- Static site deployment via `npm run build` in `frontend-react/`, serves `frontend-react/dist`
+- **Docker** (production): Multi-stage Dockerfile builds React frontend + FastAPI backend into a single container. FastAPI serves static files from `static/` directory.
+- **Render.com**: `render.yaml` Blueprint — web service + PostgreSQL, free tier. Auto-deploy from GitHub.
+- **Railway.app**: `railway.json` — Dockerfile builder, health check at `/health`.
+- **Dev mode**: Vite dev server on port 5000 with API proxy to backend on port 8000.
+- Dynamic PORT via `os.environ.get("PORT", 8000)` for PaaS compatibility.
+- Static file serving: FastAPI mounts `static/assets/` and serves SPA fallback `index.html` for all non-API routes (only when `static/` directory exists in production build).
 
 ## Key Features (after refactoring)
 - **Legal OS UI**: Inter font, Deep Blue `#1e293b` theme, high-contrast data tables

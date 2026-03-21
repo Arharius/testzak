@@ -763,14 +763,21 @@ function detectSpecColumnOrder(headerRow: string[]): { nameCol: number; valueCol
     const col0 = normalizeHeader(headerRow[0]);
     const col0IsSerial = /^(№|#|nn|n°|номер|num|no\.?)(\s*(п\/п|п\.п\.|пп))?$/.test(col0);
     if (col0IsSerial) {
-      // name(1) | unit(2) | value(3)
       const col1 = normalizeHeader(headerRow[1]);
       const col2 = normalizeHeader(headerRow[2]);
+      const col3 = headerRow.length >= 4 ? normalizeHeader(headerRow[3]) : '';
       const col1IsUnit = /единиц|ед\.?\s*(изм|измер)|unit/.test(col1);
       const col2IsUnit = /единиц|ед\.?\s*(изм|измер)|unit/.test(col2);
+      const col3IsUnit = /единиц|ед\.?\s*(изм|измер)|unit/.test(col3);
+      const col2IsValue = /значение|требован|value|specification/.test(col2);
+      // "№ | name | unit | value"  — e.g. MES2300B-48
       if (col2IsUnit) return { nameCol: 1, valueCol: 3, unitCol: 2 };
-      if (col1IsUnit) return { nameCol: 1, valueCol: 2, unitCol: 3 };
-      return { nameCol: 1, valueCol: 3, unitCol: 2 };
+      // "№ | name | value | unit"  — e.g. "№ | Наим. хар-ки | Значение / требование | Ед. изм."
+      if (col3IsUnit || col2IsValue) return { nameCol: 1, valueCol: 2, unitCol: 3 };
+      // "№ | unit | name | value" — exotic, rarely used
+      if (col1IsUnit) return { nameCol: 2, valueCol: 3, unitCol: 1 };
+      // fallback — assume "№ | name | value | unit"
+      return { nameCol: 1, valueCol: 2, unitCol: 3 };
     }
   }
   // Default: name(0) | value(1) | unit(2)
@@ -1128,12 +1135,94 @@ function extractMergedProductNameFromRows(rows: string[][]): string {
   return '';
 }
 
+function extractProductNameFromAppendixHeading(headingText: string): string {
+  const match = headingText.match(/приложени[еёeя]\s*[№#]?\s*[\d]+[.:\s—–\-]+(.+)$/iu);
+  if (!match) return '';
+  return normalizeCell(match[1]).replace(/[-:;,.]+$/, '').trim();
+}
+
+function stripSectionPrefix(text: string): string {
+  // Remove boilerplate section prefixes like "Спецификация [на] X" → X
+  // and "Требования к [X]" → ""
+  return text
+    .replace(/^спецификация\s+(на\s+)?/iu, '')
+    .replace(/^приложение\s*[№#]?\s*\d*[.:\s]*/iu, '')
+    .trim();
+}
+
+function findProductNameInAppendixSection(blocks: DocxBlock[], fromIdx: number, toIdx: number): string {
+  for (let j = fromIdx; j < toIdx; j += 1) {
+    const b = blocks[j];
+    if (b.kind !== 'paragraph') continue;
+    const text = normalizeCell(b.text || '');
+    if (!text || DOCX_OKPD2_PREFIX_RE.test(text)) continue;
+    if (shouldRejectImportText(text)) continue;
+    if (text.length >= 4) {
+      const stripped = stripSectionPrefix(text);
+      return stripped.length >= 4 ? stripped : text;
+    }
+  }
+  return '';
+}
+
+function extractMultiSpecRows(
+  blocks: DocxBlock[],
+  fromIdx: number,
+  toIdx: number,
+  content: ParsedDocxContent,
+  headingProductName: string,
+): ImportedProcurementRow[] | null {
+  const specTableIndices: number[] = [];
+  for (let j = fromIdx; j < toIdx; j += 1) {
+    const b = blocks[j];
+    if (b.kind === 'table' && b.rows && isSpecTable(b.rows)) specTableIndices.push(j);
+  }
+  if (specTableIndices.length < 2) return null;
+  const allLines = extractAllDocumentLines(content);
+  const sectionQty = findDocumentQty(
+    blocks.slice(fromIdx, toIdx).filter((b) => b.kind === 'paragraph').map((b) => b.text || ''),
+  ) || findDocumentQty(allLines);
+  const result: ImportedProcurementRow[] = [];
+  for (const tblIdx of specTableIndices) {
+    let productName = '';
+    for (let j = tblIdx - 1; j >= fromIdx; j -= 1) {
+      const b = blocks[j];
+      if (b.kind === 'table') break;
+      if (b.kind !== 'paragraph') continue;
+      const text = normalizeCell(b.text || '');
+      if (!text || DOCX_OKPD2_PREFIX_RE.test(text)) continue;
+      if (!shouldRejectImportText(text)) { productName = text; break; }
+    }
+    if (!productName && headingProductName) productName = headingProductName;
+    if (!productName || productName.length < 4 || shouldRejectImportText(productName)) continue;
+    const specTable = blocks[tblIdx];
+    const specs = parseSpecTable(specTable.rows!);
+    const okpd2 = extractOkpdFromBlocks(blocks, tblIdx + 1, Math.min(tblIdx + 12, toIdx));
+    result.push(makeImportedRow({
+      rawType: productName,
+      description: productName,
+      licenseType: '',
+      term: '',
+      qty: sectionQty || 1,
+      qtyExplicit: !!sectionQty,
+      sourceFormat: 'docx',
+      sourceKind: 'appendix',
+      sourceText: productName,
+      meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+      specs: specs.length > 0 ? specs : undefined,
+    }));
+  }
+  return result.length > 0 ? result : null;
+}
+
 function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementRow[] {
   const rows: ImportedProcurementRow[] = [];
   const { blocks } = content;
   for (let i = 0; i < blocks.length; i += 1) {
     const block = blocks[i];
     if (block.kind !== 'paragraph' || !DOCX_APPENDIX_HEADING_RE.test(block.text || '')) continue;
+    // Product name may be embedded in the appendix heading: "Приложение №1: Патч-корд (кабель)"
+    const headingProductName = extractProductNameFromAppendixHeading(block.text || '');
     const nextAppendixIndex = findNextBlockIndex(blocks, i + 1, (candidate) => candidate.kind === 'paragraph' && DOCX_APPENDIX_HEADING_RE.test(candidate.text || ''));
     let itemParagraphIndex = -1;
     for (let j = i + 1; j < nextAppendixIndex; j += 1) {
@@ -1150,13 +1239,45 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
       if (itemParagraphIndex < 0) itemParagraphIndex = j;
     }
     if (itemParagraphIndex < 0) {
+      // If there are 2+ spec tables in this section, create one row per table
+      const multiSpecRows = extractMultiSpecRows(blocks, i + 1, nextAppendixIndex, content, headingProductName);
+      if (multiSpecRows && multiSpecRows.length > 0) {
+        rows.push(...multiSpecRows);
+        continue;
+      }
       const specTable = blocks.slice(i + 1, nextAppendixIndex).find(
         (b) => b.kind === 'table' && b.rows && isSpecTable(b.rows),
       );
-      if (!specTable?.rows) continue;
-      // Try to get product name from a merged row inside the spec table first
-      let headerCell = extractMergedProductNameFromRows(specTable.rows);
-      // Fallback: first cell of the first row (old behaviour, works for 3-col tables without №)
+      if (!specTable?.rows) {
+        // No spec table — if we have a heading product name, still try to build a row
+        if (!headingProductName || headingProductName.length < 4 || shouldRejectImportText(headingProductName)) continue;
+        const okpd2 = extractOkpdFromBlocks(blocks, i + 1, nextAppendixIndex);
+        const allLines = extractAllDocumentLines(content);
+        const qty = findDocumentQty(
+          blocks.slice(i + 1, nextAppendixIndex).filter((b) => b.kind === 'paragraph').map((b) => b.text || ''),
+        ) || findDocumentQty(allLines);
+        rows.push(makeImportedRow({
+          rawType: headingProductName,
+          description: headingProductName,
+          licenseType: '',
+          term: '',
+          qty: qty || 1,
+          qtyExplicit: !!qty,
+          sourceFormat: 'docx',
+          sourceKind: 'appendix',
+          sourceText: headingProductName,
+          meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+        }));
+        continue;
+      }
+      // Priority: heading product name > merged row > local paragraphs > doc-level "объект поставки"
+      let headerCell = headingProductName && !shouldRejectImportText(headingProductName) ? headingProductName : '';
+      if (!headerCell) {
+        headerCell = extractMergedProductNameFromRows(specTable.rows) || '';
+      }
+      if (!headerCell || shouldRejectImportText(headerCell)) {
+        headerCell = findProductNameInAppendixSection(blocks, i + 1, nextAppendixIndex);
+      }
       if (!headerCell || shouldRejectImportText(headerCell)) {
         headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
       }
@@ -1218,8 +1339,12 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
         (b) => b.kind === 'table' && b.rows && isSpecTable(b.rows),
       );
       if (specTable?.rows) {
-        // Try to get product name from a merged row inside the spec table first
-        let headerCell = extractMergedProductNameFromRows(specTable.rows);
+        // Priority: heading product name > merged row > local section paragraphs > doc-level "объект поставки"
+        let headerCell = headingProductName && !shouldRejectImportText(headingProductName) ? headingProductName : '';
+        if (!headerCell) headerCell = extractMergedProductNameFromRows(specTable.rows) || '';
+        if (!headerCell || shouldRejectImportText(headerCell)) {
+          headerCell = findProductNameInAppendixSection(blocks, i + 1, nextAppendixIndex);
+        }
         if (!headerCell || shouldRejectImportText(headerCell)) {
           headerCell = normalizeCell(specTable.rows[0]?.[0] || '');
         }

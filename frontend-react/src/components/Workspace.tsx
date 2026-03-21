@@ -137,6 +137,7 @@ const DOCX_STRONG_IT_CONTEXT_TOKENS = [
   'наушник', 'гарнитура', 'микрофон', 'динамик', 'колонк',
   'набор инструментов', 'кримпер', 'обжимной инструмент', 'паяльник',
   'прецизионная отвертка', 'набор отверток', 'ремонтный набор',
+  'внешний накопитель', 'носитель информации', 'флэш накопитель', 'флэш-накопитель',
 ];
 
 function normalizeTypeMatchText(value: string): string {
@@ -323,6 +324,9 @@ function detectTypeByImportedOkpd2(description: string, okpd2?: string): string 
   }
   if (/(накопител|storage|drive)/.test(normalized) && /^26\.20\.40\.110$/.test(code)) {
     return 'extHdd';
+  }
+  if (/^26\.20\.14\./.test(code)) {
+    return 'flashDrive';
   }
   if (/(набор инструментов|tool set|toolkit|набор отверток|ремонтный набор|монтажный набор|сервисный набор)/.test(normalized)
     && /^(25\.73|27\.33)/.test(code)) {

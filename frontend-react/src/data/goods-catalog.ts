@@ -1946,7 +1946,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['оперативная память','оперативка','озу','ram','dimm','so-dimm','ecc dimm','rdimm','lrdimm','ddr4','ddr5','kingston fury','crucial ballistix','samsung m3','hynix hma'], type: 'ram' },
 
   // ── Флешки ──
-  { tokens: ['флеш-накопитель','флеш накопитель','флешка','флэшка','флеш','flash drive','usb flash','usb накопитель','usb-накопитель','usb флеш','юсб флеш','transcend jetflash','sandisk cruzer'], type: 'flashDrive' },
+  { tokens: ['флеш-накопитель','флеш накопитель','флешка','флэшка','флеш','flash drive','usb flash','usb накопитель','usb-накопитель','usb флеш','юсб флеш','transcend jetflash','sandisk cruzer','внешний накопитель на флеш','носитель на флеш','флэш-накопитель','флэш накопитель'], type: 'flashDrive' },
 
   // ── Оптические носители / ленточные ──
   { tokens: ['cd-rw','cdrw','перезаписываемый cd','компакт-диск rw'], type: 'cdrw' },

@@ -1421,25 +1421,37 @@ function buildServiceSpecsFromParagraphs(paragraphs: string[]): SpecItem[] {
 function extractProductNameFromSpecTable(blocks: DocxBlock[]): { name: string; specs: SpecItem[] } | null {
   // Find the first spec table and try to extract the product name from a merged row
   // (a row where all cells have the same non-empty value, e.g. ["MES2300B-48", "MES2300B-48", "MES2300B-48"])
+  // The merged row can appear BEFORE the header row (most common) or AFTER it (less common).
   for (const block of blocks) {
     if (block.kind !== 'table' || !block.rows || !isSpecTable(block.rows)) continue;
     const headerIndex = findSpecHeaderIndex(block.rows);
     let productName = '';
-    const dataStartRows = block.rows.slice(headerIndex + 1);
-    // First non-header row that is a merged product name row
-    for (const row of dataStartRows) {
+
+    // 1. Check rows BEFORE the header (e.g. headerIndex = 1, product name is at row 0)
+    for (let i = 0; i < headerIndex; i += 1) {
+      const row = block.rows[i];
       const first = normalizeCell(row[0] || '');
       if (first && first.length >= 2 && row.every((cell) => normalizeCell(cell) === first)) {
         productName = first;
         break;
       }
     }
+
+    // 2. Check rows AFTER the header (e.g. headerIndex = 0, product name is at row 1)
+    if (!productName) {
+      for (const row of block.rows.slice(headerIndex + 1)) {
+        const first = normalizeCell(row[0] || '');
+        if (first && first.length >= 2 && row.every((cell) => normalizeCell(cell) === first)) {
+          productName = first;
+          break;
+        }
+      }
+    }
+
+    const specs = parseSpecTable(block.rows);
     if (productName) {
-      const specs = parseSpecTable(block.rows);
       return { name: productName, specs };
     }
-    // No merged product row — still return specs with empty name so caller can decide
-    const specs = parseSpecTable(block.rows);
     if (specs.length > 0) return { name: '', specs };
   }
   return null;
@@ -1619,23 +1631,37 @@ export async function parseImportedRows(file: File): Promise<ImportedProcurement
     const serverContent = await tryServerDocxParse(file);
     let serverFallbackRows: ImportedProcurementRow[] = [];
     if (serverContent) {
+      // DEBUG
+      console.log('[import-debug] tables count:', serverContent.tables.length, 'blocks:', serverContent.blocks.length);
+      serverContent.tables.forEach((t, i) => {
+        console.log(`[import-debug] table[${i}] rows=${t.length}, isSpec=${isSpecTable(t)}, isSummary=${isDocxSummaryTable(t)}, isProcurement=${!isSpecTable(t) && !isDocxSummaryTable(t)}`);
+        if (t[0]) console.log(`[import-debug] table[${i}] header:`, JSON.stringify(t[0]));
+        if (t[1]) console.log(`[import-debug] table[${i}] row1:`, JSON.stringify(t[1]));
+      });
       if (serverContent.tables.length > 0) {
         const appendixRows = parseDocxAppendixRows(serverContent);
+        console.log('[import-debug] appendixRows:', appendixRows.length);
         if (appendixRows.length > 0) return appendixRows;
         const appendixParagraphRows = parseDocxAppendixParagraphRows(serverContent);
+        console.log('[import-debug] appendixParagraphRows:', appendixParagraphRows.length);
         if (appendixParagraphRows.length > 0) return appendixParagraphRows;
         const summaryTableRows = parseDocxSummaryTableRows(serverContent);
+        console.log('[import-debug] summaryTableRows:', summaryTableRows.length);
         if (summaryTableRows.length > 0) return summaryTableRows;
         const tableRows = parseDocxTableRows(serverContent.blocks);
+        console.log('[import-debug] tableRows:', tableRows.length, tableRows.map(r => r.description));
         if (tableRows.length > 0) return tableRows;
       }
       const enumeratedRows = parseDocxEnumeratedRows(serverContent);
+      console.log('[import-debug] enumeratedRows:', enumeratedRows.length);
       if (enumeratedRows.length > 0) return enumeratedRows;
       // Fallback: don't return immediately — compare with client-side result below
       serverFallbackRows = parseDocxFallbackRows(serverContent);
+      console.log('[import-debug] serverFallbackRows:', serverFallbackRows.length, serverFallbackRows.map(r => r.description));
     }
     // Client-side parsing (JSZip + DOMParser): handles more DOCX structures
     const clientRows = await parseDocxRows(buffer);
+    console.log('[import-debug] clientRows:', clientRows.length, clientRows.map(r => r.description));
     // Prefer whichever parser found more positions; server fallback wins only on tie
     if (clientRows.length > serverFallbackRows.length) return clientRows;
     if (serverFallbackRows.length > 0) return serverFallbackRows;

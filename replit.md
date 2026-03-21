@@ -78,6 +78,18 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
   - Button "🔍 Проверить и исправить ТЗ" in workspace toolbar, enabled when `docxReady=true`
   - Apply fixes: replaces `originalText` with `suggestedText` in row specs, reruns compliance gate
 
+## Anti-FAS Compliance Hardening
+- **Forbidden Phrases Detection** (`compliance.ts`): `FORBIDDEN_PHRASES` array catches obsolete legal terms in spec values:
+  - «выписка из реестра Минцифры» → «номер реестровой записи в Едином реестре российских программ»
+  - «контроль отсутствия НДВ» → «требования к уровню доверия не ниже 4-го уровня»
+  - «выпущен не ранее чем за 12 месяцев» → «актуальная стабильная версия, официально поддерживаемая производителем»
+- **Auto-fix support**: `buildAntiFasAutoFixes()` replaces forbidden phrases automatically via «Исправить автоматически» button
+- **Template corrections applied** in `npa-blocks.ts` and `Workspace.tsx`:
+  - Section 2: «Участник закупки указывает номер реестровой записи» (not «Поставщик представляет выписку»)
+  - Appendix 7 year: «актуальная стабильная версия, поддерживаемая производителем» (not «не ранее 12 мес.»)
+  - FSTEC crypto: «уровень доверия не ниже 4-го» (not «контроль отсутствия НДВ»)
+  - Licensing: «Архитектурная возможность масштабирования» (not «Максимальный объём лицензирования»)
+
 ## Development Notes
 - Backend API proxied via Vite dev server at `/api` → Railway backend
 - `VITE_BACKEND_URL` env var controls backend target (defaults to Railway)

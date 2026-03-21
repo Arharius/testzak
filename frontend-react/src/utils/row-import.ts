@@ -663,6 +663,11 @@ const SPEC_VALUE_COL_EXACT = new Set([
 const SPEC_NAME_COL_LOOSE = new Set([
   ...SPEC_NAME_COL_EXACT,
   'наименование',
+  'наименование позиции',
+  'наименование товара',
+  'наименование изделия',
+  'наименование оборудования',
+  'наименование технической характеристики',
   'название',
   'name',
   'parameter',
@@ -724,38 +729,58 @@ function isSpecTable(rows: string[][]): boolean {
     return looksLikeHeaderlessSpecTable(rows.slice(headerIndex));
   }
 
+  const { valueCol } = detectSpecColumnOrder(rows[headerIndex] || []);
   const dataRows = rows.slice(headerIndex + 1).filter((row) => {
     const name = normalizeCell(row[0] || '');
-    const value = normalizeCell(row[1] || '');
+    const value = normalizeCell(row[valueCol] || '');
+    // Skip merged product-name rows (all cells identical)
+    if (name && row.every((cell) => normalizeCell(cell) === name)) return false;
     return (name || value) && !(name && !value && !(row[2] || '').trim());
   });
   if (dataRows.length === 0) return true;
   const validCount = dataRows.filter((row) => {
     const name = normalizeCell(row[0] || '');
-    const value = normalizeCell(row[1] || '');
+    const value = normalizeCell(row[valueCol] || '');
     return isValidSpecName(name) && isValidSpecValue(value);
   }).length;
   return validCount / dataRows.length >= 0.4;
 }
 
+function detectSpecColumnOrder(headerRow: string[]): { valueCol: number; unitCol: number } {
+  // Default: name(0) | value(1) | unit(2)
+  // Alternative: name(0) | unit(1) | value(2)  — common in Russian gov procurement docs
+  if (headerRow.length >= 3) {
+    const col1 = normalizeHeader(headerRow[1]);
+    const col2 = normalizeHeader(headerRow[2]);
+    const col1IsUnit = /единиц|ед\.?\s*(изм|измер)|unit/.test(col1);
+    const col2IsValue = /значение|требован|value|specification/.test(col2);
+    if (col1IsUnit && col2IsValue) return { valueCol: 2, unitCol: 1 };
+  }
+  return { valueCol: 1, unitCol: 2 };
+}
+
 function parseSpecTable(rows: string[][]): SpecItem[] {
   const specs: SpecItem[] = [];
   const headerIndex = findSpecHeaderIndex(rows);
+  const headerRow = rows[headerIndex] || [];
+  const { valueCol, unitCol } = detectSpecColumnOrder(headerRow);
   let currentGroup = 'Технические характеристики';
   for (const row of rows.slice(headerIndex + 1)) {
     const name = normalizeCell(row[0] || '');
-    const value = normalizeCell(row[1] || '');
-    const unit = normalizeCell(row[2] || '') || '—';
-    if (!name && !value) continue;
-    if (name && !value && !(row[2] || '').trim()) {
+    const rawValue = normalizeCell(row[valueCol] || '');
+    const unit = normalizeCell(row[unitCol] || '') || '—';
+    // Пропускаем объединённые строки-заголовки товара (все ячейки одинаковые)
+    if (name && row.every((cell) => normalizeCell(cell) === name)) continue;
+    if (!name && !rawValue) continue;
+    if (name && !rawValue && !(row[2] || '').trim()) {
       currentGroup = name;
       continue;
     }
-    if (!isValidSpecName(name) || !isValidSpecValue(value)) continue;
+    if (!isValidSpecName(name) || !isValidSpecValue(rawValue)) continue;
     specs.push({
       group: currentGroup,
       name,
-      value: value || 'Да',
+      value: rawValue || 'Да',
       unit,
     });
   }
@@ -1393,6 +1418,33 @@ function buildServiceSpecsFromParagraphs(paragraphs: string[]): SpecItem[] {
   return specs;
 }
 
+function extractProductNameFromSpecTable(blocks: DocxBlock[]): { name: string; specs: SpecItem[] } | null {
+  // Find the first spec table and try to extract the product name from a merged row
+  // (a row where all cells have the same non-empty value, e.g. ["MES2300B-48", "MES2300B-48", "MES2300B-48"])
+  for (const block of blocks) {
+    if (block.kind !== 'table' || !block.rows || !isSpecTable(block.rows)) continue;
+    const headerIndex = findSpecHeaderIndex(block.rows);
+    let productName = '';
+    const dataStartRows = block.rows.slice(headerIndex + 1);
+    // First non-header row that is a merged product name row
+    for (const row of dataStartRows) {
+      const first = normalizeCell(row[0] || '');
+      if (first && first.length >= 2 && row.every((cell) => normalizeCell(cell) === first)) {
+        productName = first;
+        break;
+      }
+    }
+    if (productName) {
+      const specs = parseSpecTable(block.rows);
+      return { name: productName, specs };
+    }
+    // No merged product row — still return specs with empty name so caller can decide
+    const specs = parseSpecTable(block.rows);
+    if (specs.length > 0) return { name: '', specs };
+  }
+  return null;
+}
+
 function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementRow[] {
   const { paragraphs, blocks } = content;
   const allLines = extractAllDocumentLines(content);
@@ -1445,6 +1497,29 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
   });
   if (row) {
     return dedupeImportedRows([{ ...row, qty: findDocumentQty(allLines) || row.qty || 1 }]);
+  }
+
+  // Документ содержит только таблицу характеристик без отдельного заголовка позиции.
+  // Пробуем извлечь название товара из объединённой строки внутри таблицы.
+  const specTableResult = extractProductNameFromSpecTable(blocks);
+  if (specTableResult && (specTableResult.name || specTableResult.specs.length > 0)) {
+    const productName = specTableResult.name || 'Товар';
+    const productSpecs = specTableResult.specs;
+    const qty = findDocumentQty(allLines) || 1;
+    return dedupeImportedRows([makeImportedRow({
+      rawType: productName,
+      description: productName,
+      licenseType: '',
+      term: '',
+      qty,
+      qtyExplicit: qty > 1,
+      sourceFormat: 'docx',
+      sourceKind: 'fallback',
+      sourceText: productName,
+      meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+      specs: productSpecs.length > 0 ? productSpecs : undefined,
+      notes: ['Позиция и характеристики извлечены из таблицы спецификаций.'],
+    })]);
   }
 
   const plainLineRows: ImportedProcurementRow[] = [];

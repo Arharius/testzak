@@ -135,6 +135,8 @@ const DOCX_STRONG_IT_CONTEXT_TOKENS = [
   'шредер', 'уничтожител', 'ламинатор', 'переплетчик', 'брошюровщик',
   'кабель', 'удлинител', 'сетевой фильтр', 'блок питания', 'адаптер питания',
   'наушник', 'гарнитура', 'микрофон', 'динамик', 'колонк',
+  'набор инструментов', 'кримпер', 'обжимной инструмент', 'паяльник',
+  'прецизионная отвертка', 'набор отверток', 'ремонтный набор',
 ];
 
 function normalizeTypeMatchText(value: string): string {
@@ -321,6 +323,22 @@ function detectTypeByImportedOkpd2(description: string, okpd2?: string): string 
   }
   if (/(накопител|storage|drive)/.test(normalized) && /^26\.20\.40\.110$/.test(code)) {
     return 'extHdd';
+  }
+  if (/(набор инструментов|tool set|toolkit|набор отверток|ремонтный набор|монтажный набор|сервисный набор)/.test(normalized)
+    && /^(25\.73|27\.33)/.test(code)) {
+    return 'toolSet';
+  }
+  if (/(кримпер|обжимной инструмент|crimper|обжимка|клещи обжимные)/.test(normalized)
+    && /^25\.73/.test(code)) {
+    return 'crimper';
+  }
+  if (/(паяльник|паяльная станция|soldering)/.test(normalized)
+    && /^27\.90\.31/.test(code)) {
+    return 'soldering';
+  }
+  if (/(мультиметр|мультитестер|multimeter)/.test(normalized)
+    && /^26\.51/.test(code)) {
+    return 'multimeter';
   }
 
   return null;

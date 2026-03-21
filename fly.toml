@@ -2,7 +2,7 @@ app = "tz-generator-api"
 primary_region = "ams"
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "Dockerfile.backend"
 
 [http_service]
   internal_port = 8000

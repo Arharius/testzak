@@ -180,6 +180,7 @@ CORS_ORIGINS = [s.strip() for s in _cors_raw.split(",") if s.strip()] if _cors_r
     "https://tz-generator-frontend.onrender.com",
     "https://tz-generator-frontend-new.onrender.com",
     "https://arharius.github.io",
+    "https://testzak-m5wlp8ow5-andrews-projects-cfbdf1b9.vercel.app",
     "http://localhost:5000",
     "http://localhost:5173",
     "http://localhost:5174",
@@ -189,7 +190,7 @@ CORS_ORIGINS = [s.strip() for s in _cors_raw.split(",") if s.strip()] if _cors_r
 ]
 _cors_origin_regex = os.getenv(
     "CORS_ALLOW_ORIGIN_REGEX",
-    r"https://.*\.replit\.dev|https://.*\.repl\.co|https://.*\.railway\.app",
+    r"https://.*\.replit\.dev|https://.*\.repl\.co|https://.*\.railway\.app|https://.*\.vercel\.app",
 )
 
 # ── Rate limiter ───────────────────────────────────────────────

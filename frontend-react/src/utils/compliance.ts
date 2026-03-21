@@ -558,6 +558,94 @@ export function sanitizeProcurementSpecs(row: Pick<RowForCompliance, 'type' | 'm
   return normalized;
 }
 
+export type AntiFasAutoFix = {
+  rowId: number;
+  specIdx: number;
+  field: 'name' | 'value';
+  oldText: string;
+  newText: string;
+  reason: string;
+};
+
+export function buildAntiFasAutoFixes(rows: RowForCompliance[]): AntiFasAutoFix[] {
+  const fixes: AntiFasAutoFix[] = [];
+  for (const row of rows) {
+    if (row.status !== 'done' || !Array.isArray(row.specs)) continue;
+    for (let specIdx = 0; specIdx < row.specs.length; specIdx++) {
+      const spec = row.specs[specIdx];
+      const name = String(spec.name || '');
+      const value = String(spec.value || '');
+      const text = `${name} ${value}`.trim();
+      if (!text) continue;
+
+      if (IDENTITY_SPEC_NAME_RE.test(name)) {
+        fixes.push({
+          rowId: row.id,
+          specIdx,
+          field: 'name',
+          oldText: name,
+          newText: '',
+          reason: 'Удалена характеристика-идентификатор (модель/бренд/артикул)',
+        });
+        continue;
+      }
+
+      const textNoStd = text.replace(TECH_STANDARD_WHITELIST, '___').trim();
+      if (BRAND_RE.test(textNoStd) && !/или\s+эквивалент/i.test(value)) {
+        const cleanValue = value.replace(BRAND_RE, '').replace(/\s{2,}/g, ' ').trim();
+        if (cleanValue) {
+          fixes.push({
+            rowId: row.id,
+            specIdx,
+            field: 'value',
+            oldText: value,
+            newText: cleanValue + ' или эквивалент',
+            reason: 'Убрано упоминание бренда, добавлено «или эквивалент»',
+          });
+        } else {
+          fixes.push({
+            rowId: row.id,
+            specIdx,
+            field: 'value',
+            oldText: value,
+            newText: value + ' или эквивалент',
+            reason: 'Добавлено «или эквивалент» к бренду',
+          });
+        }
+      }
+
+      const hasArticle = ARTICLE_RE.test(text);
+      const hasModel = MODEL_WORD_RE.test(name);
+      const hasArticleCode = ARTICLE_CODE_RE.test(value) && !ARTICLE_CODE_WHITELIST.test(value.match(ARTICLE_CODE_RE)?.[0] ?? '');
+      if (hasArticle || hasModel || hasArticleCode) {
+        if (hasModel && !BRAND_RE.test(textNoStd)) {
+          fixes.push({
+            rowId: row.id,
+            specIdx,
+            field: 'name',
+            oldText: name,
+            newText: '',
+            reason: 'Удалена характеристика с моделью/артикулом',
+          });
+        } else if (hasArticleCode) {
+          const cleaned = value.replace(ARTICLE_CODE_RE, '').replace(/\s{2,}/g, ' ').trim();
+          if (cleaned && cleaned !== value) {
+            fixes.push({
+              rowId: row.id,
+              specIdx,
+              field: 'value',
+              oldText: value,
+              newText: cleaned,
+              reason: 'Удалён артикул/код из значения характеристики',
+            });
+          }
+        }
+      }
+    }
+  }
+  return fixes;
+}
+
 export function buildAntiFasReport(rows: RowForCompliance[], minScore = 85): ComplianceReport {
   const issues: ComplianceIssue[] = [];
   for (const row of rows) {

@@ -36,7 +36,7 @@ type DraftSourceComparison = {
   onlyDraft: DraftSourcePair[];
 };
 
-type ReadinessActionKind = 'focus' | 'internet' | 'eis' | 'classify' | 'benchmark_missing' | 'benchmark_all' | 'service_fill_core' | 'service_fill_all' | 'legal_safe_fix';
+type ReadinessActionKind = 'focus' | 'internet' | 'eis' | 'classify' | 'benchmark_missing' | 'benchmark_all' | 'service_fill_core' | 'service_fill_all' | 'legal_safe_fix' | 'antifas_autofix';
 
 type ReadinessIssue = {
   key: string;
@@ -607,6 +607,8 @@ export function createWorkspacePublicationTools({
           level: 'block',
           text: `Anti-ФАС: ${complianceReport.critical} критичных нарушений, score ${complianceReport.score}/${complianceReport.minScore}.`,
           action: 'исправить критичные характеристики до выгрузки',
+          actionKind: 'antifas_autofix',
+          actionLabel: 'Исправить автоматически',
         });
       }
       if (complianceReport.major > 0 || complianceReport.minor > 0) {

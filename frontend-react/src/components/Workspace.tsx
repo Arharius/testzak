@@ -381,7 +381,7 @@ function detectAllCatalogTypes(query: string): Array<{ type: string; name: strin
 function isUniversalMetaComplete(meta: Record<string, string> = {}): boolean {
   return !!String(meta.okpd2_code || '').trim() && !!String(meta.okpd2_name || '').trim();
 }
-import { buildAntiFasReport, sanitizeProcurementSpecs, type ComplianceReport } from '../utils/compliance';
+import { buildAntiFasReport, buildAntiFasAutoFixes, sanitizeProcurementSpecs, type ComplianceReport } from '../utils/compliance';
 
 type Provider = 'openrouter' | 'groq' | 'deepseek';
 
@@ -429,7 +429,7 @@ type RowBenchmarkEvidence = {
 type BenchmarkRiskLevel = 'ok' | 'warn' | 'block';
 
 type ReadinessIssueLevel = 'block' | 'warn';
-type ReadinessActionKind = 'focus' | 'internet' | 'eis' | 'classify' | 'benchmark_missing' | 'benchmark_all' | 'service_fill_core' | 'service_fill_all' | 'legal_safe_fix';
+type ReadinessActionKind = 'focus' | 'internet' | 'eis' | 'classify' | 'benchmark_missing' | 'benchmark_all' | 'service_fill_core' | 'service_fill_all' | 'legal_safe_fix' | 'antifas_autofix';
 
 type ReadinessIssue = {
   key: string;
@@ -7739,20 +7739,30 @@ ${hint || '- Используй детальные, проверяемые эк�
   }, [rows]);
 
   const handleApplyReviewFixes = useCallback((fixes: TZReviewIssue[]) => {
+    let appliedCount = 0;
     setRows((prev) => {
       const updated = prev.map((row) => {
         if (!row.specs || row.specs.length === 0) return row;
         let changed = false;
         const newSpecs = row.specs.map((spec) => {
           const specText = `${spec.name}: ${spec.value}${spec.unit ? ' ' + spec.unit : ''}`;
+          const specValueLower = spec.value.toLowerCase();
+          const specNameLower = spec.name.toLowerCase();
           for (const fix of fixes) {
-            if (specText.includes(fix.originalText) || spec.value.includes(fix.originalText)) {
+            const origLower = fix.originalText.toLowerCase();
+            const origTrimmed = fix.originalText.replace(/\s+/g, ' ').trim();
+            if (specText.includes(fix.originalText) || spec.value.includes(fix.originalText) ||
+                specValueLower.includes(origLower) || specText.includes(origTrimmed)) {
               changed = true;
-              return { ...spec, value: spec.value.replace(fix.originalText, fix.suggestedText) };
+              appliedCount++;
+              const re = new RegExp(fix.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+              return { ...spec, value: spec.value.replace(re, fix.suggestedText) };
             }
-            if (spec.name.includes(fix.originalText)) {
+            if (spec.name.includes(fix.originalText) || specNameLower.includes(origLower)) {
               changed = true;
-              return { ...spec, name: spec.name.replace(fix.originalText, fix.suggestedText) };
+              appliedCount++;
+              const re = new RegExp(fix.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+              return { ...spec, name: spec.name.replace(re, fix.suggestedText) };
             }
           }
           return spec;
@@ -7762,8 +7772,13 @@ ${hint || '- Используй детальные, проверяемые эк�
       runComplianceGate(updated);
       return updated;
     });
+    if (appliedCount > 0) {
+      showToast(`✅ Применено ${appliedCount} исправлений по рецензии`, true);
+    } else {
+      showToast('ℹ️ Совпадений не найдено в характеристиках. Нажмите «Исправить автоматически» в блоке Anti-ФАС.', false);
+    }
     setShowReviewPanel(false);
-  }, [runComplianceGate]);
+  }, [runComplianceGate, showToast]);
 
   const applyBenchmarkPatch = useCallback((rowId: number, mode: 'missing' | 'changed' | 'all') => {
     const nextRows = rows.map((row) => (
@@ -9833,9 +9848,49 @@ ${hint || '- Используй детальные, проверяемые эк�
     if (legalTouched > 0) summaryParts.push(`юридика ${legalTouched}`);
     showToast(`✅ Safe auto-fix: ${summaryParts.join(', ')}`, true);
   }, [enterpriseSettings.benchmarking, rows, runComplianceGate, showToast]);
+
+  const applyAntiFasAutoFix = useCallback(() => {
+    const complianceRows = rows.map((row) => ({
+      id: row.id,
+      type: row.type,
+      model: row.model,
+      licenseType: getResolvedCommercialContext(row).suggestedLicenseType,
+      term: getResolvedCommercialContext(row).suggestedTerm,
+      status: row.status,
+      specs: row.specs,
+      strictMinSpecs: getMinimumSpecCount(row),
+    }));
+    const fixes = buildAntiFasAutoFixes(complianceRows);
+    if (fixes.length === 0) {
+      showToast('ℹ️ Нет автоматически исправимых нарушений Anti-ФАС', false);
+      return;
+    }
+    const rowsToDeleteSpecs = new Set<string>();
+    fixes.forEach((f) => {
+      if (f.field === 'name' && f.newText === '') {
+        rowsToDeleteSpecs.add(`${f.rowId}_${f.specIdx}`);
+      }
+    });
+    const nextRows = rows.map((row) => {
+      const rowFixes = fixes.filter((f) => f.rowId === row.id);
+      if (rowFixes.length === 0 || !row.specs) return row;
+      let specs = row.specs.map((spec, idx) => {
+        const fix = rowFixes.find((f) => f.specIdx === idx);
+        if (!fix) return spec;
+        if (fix.field === 'name' && fix.newText === '') return null;
+        return { ...spec, [fix.field]: fix.newText };
+      }).filter(Boolean) as typeof row.specs;
+      return { ...row, specs };
+    });
+    setRows(nextRows);
+    const report = runComplianceGate(nextRows);
+    setDocxReady(nextRows.some((row) => row.status === 'done' && !!row.specs?.length));
+    showToast(`✅ Anti-ФАС: исправлено ${fixes.length} нарушений. Score: ${report.score}`, true);
+  }, [rows, runComplianceGate, showToast]);
+
   const handleReadinessIssueAction = useCallback((issue: ReadinessIssue) => {
     if (!issue.actionKind) return;
-    if (!issue.rowId && issue.actionKind !== 'benchmark_all') return;
+    if (!issue.rowId && issue.actionKind !== 'benchmark_all' && issue.actionKind !== 'antifas_autofix') return;
     switch (issue.actionKind) {
       case 'focus':
         focusRow(issue.rowId!, true);
@@ -9866,8 +9921,11 @@ ${hint || '- Используй детальные, проверяемые эк�
       case 'legal_safe_fix':
         applyLegalReadinessPatch(issue.rowId!);
         break;
+      case 'antifas_autofix':
+        applyAntiFasAutoFix();
+        break;
     }
-  }, [applyBenchmarkPatch, applyLegalReadinessPatch, applyServiceReadinessPatch, focusRow, refreshRowClassification, refreshRowFromSource]);
+  }, [applyAntiFasAutoFix, applyBenchmarkPatch, applyLegalReadinessPatch, applyServiceReadinessPatch, focusRow, refreshRowClassification, refreshRowFromSource]);
 
   const exportDocx = async () => {
     if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для экспорта DOCX.')) {
@@ -9889,11 +9947,15 @@ ${hint || '- Используй детальные, проверяемые эк�
       }
       return;
     }
-    if (readinessGate.status === 'block') {
-      showToast(`❌ Экспорт DOCX заблокирован: ${buildReadinessIssuePreview(readinessGate.blockers)}`, false);
+    const nonAntifasBlockers = readinessGate.blockers.filter((b) => b.key !== 'antifas-critical');
+    if (nonAntifasBlockers.length > 0) {
+      showToast(`❌ Экспорт DOCX заблокирован: ${buildReadinessIssuePreview(nonAntifasBlockers)}`, false);
       return;
     }
-    if (readinessGate.status !== 'ready') {
+    if (readinessGate.status === 'block') {
+      showToast(`⚠️ Anti-ФАС: остались нарушения. Рекомендуется исправить перед публикацией.`, false);
+    }
+    if (readinessGate.status !== 'ready' && nonAntifasBlockers.length === 0 && readinessGate.warnings.length > 0) {
       showToast(`⚠️ Перед публикацией проверьте: ${buildReadinessIssuePreview(readinessGate.warnings)}`, false);
     }
     const doExport = async () => {
@@ -9946,11 +10008,15 @@ ${hint || '- Используй детальные, проверяемые эк�
       }
       return;
     }
-    if (readinessGate.status === 'block') {
-      showToast(`❌ Экспорт PDF заблокирован: ${buildReadinessIssuePreview(readinessGate.blockers)}`, false);
+    const nonAntifasBlockersPdf = readinessGate.blockers.filter((b) => b.key !== 'antifas-critical');
+    if (nonAntifasBlockersPdf.length > 0) {
+      showToast(`❌ Экспорт PDF заблокирован: ${buildReadinessIssuePreview(nonAntifasBlockersPdf)}`, false);
       return;
     }
-    if (readinessGate.status !== 'ready') {
+    if (readinessGate.status === 'block') {
+      showToast(`⚠️ Anti-ФАС: остались нарушения. Рекомендуется исправить перед публикацией.`, false);
+    }
+    if (readinessGate.status !== 'ready' && nonAntifasBlockersPdf.length === 0 && readinessGate.warnings.length > 0) {
       showToast(`⚠️ Перед публикацией проверьте: ${buildReadinessIssuePreview(readinessGate.warnings)}`, false);
     }
     const done = rows.filter((r) => r.status === 'done' && r.specs);

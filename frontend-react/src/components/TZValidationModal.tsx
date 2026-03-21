@@ -4,6 +4,7 @@ type Props = {
   result: TZValidateResponse;
   onClose: () => void;
   onProceed: () => void;
+  onAutoFix?: () => void;
 };
 
 function RiskCard({ item, type }: { item: TZRiskItem; type: 'critical' | 'moderate' }) {
@@ -76,7 +77,7 @@ function RiskCard({ item, type }: { item: TZRiskItem; type: 'critical' | 'modera
   );
 }
 
-export function TZValidationModal({ result, onClose, onProceed }: Props) {
+export function TZValidationModal({ result, onClose, onProceed, onAutoFix }: Props) {
   const hasCritical = result.critical.length > 0;
   const hasModerate = result.moderate.length > 0;
 
@@ -198,7 +199,12 @@ export function TZValidationModal({ result, onClose, onProceed }: Props) {
           }}
         >
           <button
-            onClick={onClose}
+            onClick={() => {
+              if (onAutoFix) {
+                onAutoFix();
+              }
+              onClose();
+            }}
             style={{
               padding: '8px 18px',
               borderRadius: 8,
@@ -210,7 +216,7 @@ export function TZValidationModal({ result, onClose, onProceed }: Props) {
               color: '#374151',
             }}
           >
-            Исправить
+            Исправить автоматически
           </button>
           {!hasCritical && (
             <button

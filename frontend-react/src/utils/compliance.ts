@@ -57,10 +57,10 @@ const SOFTWARE_TYPE_KEYS = new Set([
 ]);
 
 // Whitelist: технические стандарты и интерфейсы, которые НЕ являются торговыми марками
-const TECH_STANDARD_WHITELIST = /\b(RJ-?45|RJ-?11|RJ-?12|USB|HDMI|VGA|DVI|DP|DisplayPort|SFP|SFP\+|QSFP|QSFP\+|QSFP28|LC|SC|FC|ST|MTP|MPO|Cat\.?\s*[5-8][eaEA]?|UTP|FTP|STP|S\/FTP|PoE|PoE\+|DDR[2-5]|PCIe|PCI-?E|SATA|SAS|NVMe|M\.2|mSATA|SO-?DIMM|DIMM|ECC|LAN|WAN|IEEE\s*802\.\d+|Wi-?Fi\s*\d*[a-z]?|Bluetooth|BLE|Ethernet|GbE|10GbE|40GbE|100GbE|IPv[46]|TCP|UDP|HTTP[S]?|FTP|SNMP|SSH|SSL|TLS|AES|RSA|SHA|IPS|IDS|RAID|SSD|HDD|NAND|TLC|QLC|MLC|SLC|OLED|IPS|VA|TN|LED|LCD|ГГц|МГц|ГБ|МБ|ТБ|Вт|дБ|лк|кд|Гбит|Мбит)\b/i;
+const TECH_STANDARD_WHITELIST = /\b(RJ-?45|RJ-?11|RJ-?12|USB|HDMI|VGA|DVI|DP|DisplayPort|SFP|SFP\+|QSFP|QSFP\+|QSFP28|LC|SC|FC|ST|MTP|MPO|Cat\.?\s*[5-8][eaEA]?|UTP|FTP|STP|S\/FTP|PoE|PoE\+|DDR[2-5]|PCIe|PCI-?E|SATA|SAS|NVMe|M\.2|mSATA|SO-?DIMM|DIMM|ECC|LAN|WAN|IEEE\s*802\.\d+|Wi-?Fi\s*\d*[a-z]?|Bluetooth|BLE|Ethernet|GbE|10GbE|40GbE|100GbE|IPv[46]|TCP|UDP|HTTP[S]?|FTP|SNMP|SSH|SSL|TLS|AES|RSA|SHA|IPS|IDS|RAID|SSD|HDD|NAND|TLC|QLC|MLC|SLC|OLED|IPS|VA|TN|LED|LCD|ГГц|МГц|ГБ|МБ|ТБ|Вт|дБ|лк|кд|Гбит|Мбит|PKCS|FIPS|ISO|IEC|IEEE|ITU|RFC|UVC|AVC|HEVC|RS-232|RS-485|CAN-bus|SNMP|LDAP|SAML|OAuth|OpenID|TOTP|HOTP|GOST|ГОСТ)\b/i;
 
-// Whitelist для ARTICLE_CODE_RE: разрешённые паттерны типа "RJ-45", "Cat-6", "USB-C"
-const ARTICLE_CODE_WHITELIST = /^(RJ-?\d+|Cat-?\d+[eaEA]?|USB-?[A-C]|SFP-?\d*|DP-?\d*|Type-?[A-C])$/i;
+// Whitelist для ARTICLE_CODE_RE: разрешённые паттерны типа "RJ-45", "Cat-6", "USB-C", "PKCS-11"
+const ARTICLE_CODE_WHITELIST = /^(RJ-?\d+|Cat-?\d+[eaEA]?|USB-?[A-C0-9]?|SFP-?\d*|DP-?\d*|Type-?[A-C]|PKCS-?\d+|FIPS-?\d+|ISO-?\d+|IEC-?\d+|IEEE-?\d+|ITU-?\d+|RFC-?\d+|UVC-?\d*|AVC-?\d*|HEVC-?\d*|RS-?\d+|TIA-?\d+|EIA-?\d+|CAN-?\d*|SHA-?\d+|AES-?\d+|RSA-?\d+|MD-?\d+|Wi-Fi\s*\d*[a-z]?|Wi-Fi|G-\d+|LTE-?\d*|5G-?\d*|PoE-?\d*|DDR-?\d+|DDR[2-5]L?|PCIe-?\d+|USB-?\d+[\.\d]*[A-Za-z]?)$/i;
 const FORBIDDEN_PHRASES: Array<{ re: RegExp; severity: ComplianceSeverity; reason: string; recommendation: string }> = getDetectionRules();
 const SERVICE_TYPE_KEYS = new Set(['otherService']);
 const PRODUCT_ONLY_SPEC_NAME_RE = /^(состояние товара|комплект поставки|документация на русском языке|маркировка и идентификация|гарантия производителя|упаковка)$/i;

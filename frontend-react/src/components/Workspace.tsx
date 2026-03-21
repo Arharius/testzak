@@ -5191,6 +5191,10 @@ const SPECIFIC_MODEL_TEMPLATE_FALLBACK_TYPES = new Set([
   'toolSet', 'precisionScrewdriver', 'handTools',
   'paperA4', 'paperA3', 'stationerySet', 'pen', 'folder', 'envelope',
   'detergent', 'trashBin', 'paperTowelDispenser', 'toiletPaper',
+  'usbToken', 'smartCardReader', 'dockingStation', 'monitorArm',
+  'laptopBag', 'laptopStand', 'keyboardMouseSet', 'mousePad',
+  'graphicsTablet', 'signaturePad', 'headset', 'speakers', 'microphone',
+  'webcam', 'videoAdapter', 'discCase', 'discSleeve',
 ]);
 
 function canFallbackToCatalogTemplateForSpecificModel(type: string): boolean {
@@ -9443,9 +9447,20 @@ ${hint || '- Используй детальные, проверяемые эк�
       row.id === rowId ? { ...row, status: 'loading', error: '' } : row
     )));
     try {
-      const candidate = source === 'eis'
+      let candidate = source === 'eis'
         ? await fetchEisCandidateForRow(currentRow)
         : await fetchInternetCandidateForRow(currentRow);
+      if ((!candidate || candidate.specs.length === 0) && canFallbackToCatalogTemplateForSpecificModel(currentRow.type)) {
+        const fallback = buildCatalogTemplateFallback(currentRow);
+        if (fallback && fallback.specs.length > 0) {
+          const enriched = await expandSpecsToMinimum(currentRow, fallback.specs, fallback.meta);
+          candidate = {
+            source: 'internet',
+            specs: enriched,
+            meta: normalizeResolvedMeta(currentRow.type, { ...fallback.meta, classification_source: 'catalog_fallback' }),
+          };
+        }
+      }
       if (!candidate || candidate.specs.length === 0) {
         throw new Error(source === 'eis' ? 'данные ЕИС не найдены' : 'характеристики не найдены');
       }
@@ -9485,6 +9500,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     apiKey,
     fetchEisCandidateForRow,
     fetchInternetCandidateForRow,
+    expandSpecsToMinimum,
     enterpriseSettings.benchmarking,
     focusRow,
     runComplianceGate,
@@ -11188,6 +11204,9 @@ ${hint || '- Используй детальные, проверяемые эк�
       {validationResult && (
         <TZValidationModal
           result={validationResult}
+          onAutoFix={() => {
+            applyAntiFasAutoFix();
+          }}
           onClose={() => {
             setValidationResult(null);
             setPendingExportFn(null);

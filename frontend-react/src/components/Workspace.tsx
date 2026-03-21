@@ -55,6 +55,7 @@ import { looksLikeSpecificModelQuery } from '../utils/model-search';
 import { hasSufficientExactModelCoverage } from '../utils/model-quality';
 import { type LawMode } from '../utils/npa-blocks';
 import { buildOrganizationMemoryPromptBlock, getOrganizationPresetMeta } from '../utils/organization-memory';
+import { toGenitive } from '../utils/morph';
 import {
   getSuggestedOrganizationTemplatePacks,
   suggestTemplateNameForPreset,
@@ -1173,12 +1174,12 @@ function getProcurementObjectName(rows: GoodsRow[]): string {
     return 'программного обеспечения и сертификатов технической поддержки экосистемы Astra';
   }
   if (isServiceOnlyProcurement(rows)) {
-    return rows.length > 1 ? `услуг (${rows.length} позиций)` : lookupCatalog(rows[0]?.type ?? 'otherService').name.toLowerCase();
+    return rows.length > 1 ? `услуг (${rows.length} позиций)` : toGenitive(lookupCatalog(rows[0]?.type ?? 'otherService').name.toLowerCase());
   }
   if (rows.length > 1) {
     return `комплекта товаров (${rows.length} позиций)`;
   }
-  return lookupCatalog(rows[0]?.type ?? 'otherGoods').name.toLowerCase();
+  return toGenitive(lookupCatalog(rows[0]?.type ?? 'otherGoods').name.toLowerCase());
 }
 
 function getProcurementIntro(rows: GoodsRow[]): string {

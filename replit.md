@@ -95,6 +95,13 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
   - FSTEC crypto: «уровень доверия не ниже 4-го» (not «контроль отсутствия НДВ»)
   - Licensing: «Архитектурная возможность масштабирования» (not «Максимальный объём лицензирования»)
 
+## Russian Morphology (Genitive Declension)
+- **`morph.ts`** (`frontend-react/src/utils/morph.ts`): Rule-based Russian noun/adjective declension to genitive plural case.
+  - `toGenitive(name)` — converts procurement object name from nominative to genitive plural (e.g. «ноутбук» → «ноутбуков», «системный блок» → «системных блоков»)
+  - Dictionary of ~70 known IT procurement nouns with pre-computed genitive forms
+  - Rule-based fallback: handles masculine (-ов/-ев/-ей), feminine (-∅/-ей/-ий), neuter (-∅/-й) endings + adjective declension (-ый→-ых, -ий→-их)
+  - Applied in `getProcurementObjectName()` in `Workspace.tsx` for DOCX title page: «Техническое задание на поставку {genitive}»
+
 ## Development Notes
 - Backend API proxied via Vite dev server at `/api` → Railway backend
 - `VITE_BACKEND_URL` env var controls backend target (defaults to Railway)

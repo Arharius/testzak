@@ -300,6 +300,9 @@ function getLaw175MeasureText(status: string, regime: string, basis = ''): strin
 function detectTypeByImportedOkpd2(description: string, okpd2?: string): string | null {
   const code = String(okpd2 || '').trim();
   if (!code) return null;
+
+  if (/^26\.20\.14\./.test(code)) return 'flashDrive';
+
   const normalized = normalizeTypeMatchText(description);
   if (!normalized) return null;
 
@@ -324,9 +327,6 @@ function detectTypeByImportedOkpd2(description: string, okpd2?: string): string 
   }
   if (/(накопител|storage|drive)/.test(normalized) && /^26\.20\.40\.110$/.test(code)) {
     return 'extHdd';
-  }
-  if (/^26\.20\.14\./.test(code)) {
-    return 'flashDrive';
   }
   if (/(набор инструментов|tool set|toolkit|набор отверток|ремонтный набор|монтажный набор|сервисный набор)/.test(normalized)
     && /^(25\.73|27\.33)/.test(code)) {

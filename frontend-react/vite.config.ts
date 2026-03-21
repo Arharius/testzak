@@ -15,24 +15,25 @@ export default defineConfig(({ mode }) => {
   ]);
   const normalizeBackendTarget = (value: string) => {
     const normalized = String(value || '').trim().replace(/\/$/, '');
-    if (!normalized) return 'https://backend-production-f736.up.railway.app';
+    if (!normalized) return 'http://localhost:8000';
     if (deprecatedBackendTargets.has(normalized)) {
-      return 'https://backend-production-f736.up.railway.app';
+      return 'http://localhost:8000';
     }
     return normalized;
   };
   const backendTarget = normalizeBackendTarget(env.VITE_BACKEND_URL || 'http://localhost:8000');
   const devHost = env.VITE_DEV_HOST || '127.0.0.1';
+  const isHttpsTarget = backendTarget.startsWith('https://');
   const apiProxy = {
     '/api': {
       target: backendTarget,
       changeOrigin: true,
-      secure: true,
+      secure: isHttpsTarget,
     },
     '/health': {
       target: backendTarget,
       changeOrigin: true,
-      secure: true,
+      secure: isHttpsTarget,
     },
     '/proxy/zakupki': {
       target: 'https://zakupki.gov.ru',

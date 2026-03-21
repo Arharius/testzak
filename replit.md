@@ -1,5 +1,13 @@
 # TZ Generator (Генератор ТЗ для госзакупок 44-ФЗ) — Программа №1 в России
 
+## Replit Environment Setup
+- Python packages installed via `pip install` (fastapi, uvicorn, sqlalchemy, alembic, psycopg2-binary, pyjwt, python-multipart, slowapi, httpx)
+- Node packages installed via `npm install` in `frontend-react/`
+- Database: Replit PostgreSQL (DATABASE_URL set as a secret)
+- Backend runs on port 8000, Frontend runs on port 5000
+- Vite proxies `/api` and `/health` to `http://localhost:8000`
+
+
 ## Project Overview
 A market-leading tool for Russian government procurement specialists to generate zero-FAS-risk technical specifications (ТЗ) for IT equipment and software under FZ-44, FZ-223, and PP 1875.
 

@@ -22,6 +22,7 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **Auth**: PyJWT, Magic Links
 - **Rate Limiting**: Slowapi
 - **DOCX Parser**: python-docx (server-side table extraction via `/api/parse-docx`)
+- **DOCX Compliance Post-processor**: `/api/fix-docx` — Run-aware regex replacements preserving formatting (brands → «или эквивалент», выписки → реестровые записи, НДВ → уровень доверия, etc.)
 
 ### Legacy
 - `index.html`: Original monolithic SPA (~2700 lines)

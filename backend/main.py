@@ -2459,6 +2459,156 @@ async def parse_docx_endpoint(file: UploadFile = FastAPIFile(...)):
     )
 
 
+_COMPLIANCE_RULES = [
+    {
+        'id': 'fas-registry-extract',
+        'pattern': _re.compile(r'выписку?\s+(из\s+)?реестра\s+Минцифры(\s+России)?\s*(с\s+актуальным\s+регистрационным\s+номером\s+ПО)?', _re.IGNORECASE),
+        'replacement': 'номер реестровой записи в Едином реестре российских программ',
+        'log': 'Устранено: выписка из реестра Минцифры',
+    },
+    {
+        'id': 'fas-gisp-extract',
+        'pattern': _re.compile(r'выписку?\s+(из\s+)?ГИСП(\s+или\s+реестров(?:ая|ую)\s+запис[ьи])?', _re.IGNORECASE),
+        'replacement': 'номера реестровых записей из реестра российской промышленной продукции или евразийского реестра промышленной продукции',
+        'log': 'Устранено: выписка из ГИСП',
+    },
+    {
+        'id': 'fas-copy-registry',
+        'pattern': _re.compile(r'копи[юя]\s+реестровой\s+записи', _re.IGNORECASE),
+        'replacement': 'номер реестровой записи',
+        'log': 'Устранено: копия реестровой записи',
+    },
+    {
+        'id': 'fas-original-guarantee',
+        'pattern': _re.compile(r'оригинал\s+документа[,.]?\s*подтверждающ(?:его|ий)\s+(?:предоставление\s+)?гаранти[юи]', _re.IGNORECASE),
+        'replacement': 'документ (гарантийный талон, сертификат или иной документ), подтверждающий гарантийные обязательства',
+        'log': 'Устранено: оригинал документа гарантии',
+    },
+    {
+        'id': 'fas-original-document-generic',
+        'pattern': _re.compile(r'оригинал\s+документа', _re.IGNORECASE),
+        'replacement': 'документ (гарантийный талон, сертификат или иной документ), подтверждающий гарантийные обязательства',
+        'log': 'Устранено: оригинал документа (общий)',
+    },
+    {
+        'id': 'fas-software-freshness',
+        'pattern': _re.compile(r'выпущен[аоы]?\s+не\s+ранее\s+чем\s+за\s+12\s*\([^)]*\)\s*месяцев?\s+до\s+даты\s+(?:поставки|подачи\s+заявки)', _re.IGNORECASE),
+        'replacement': 'актуальная стабильная версия, официально поддерживаемая производителем на момент поставки',
+        'log': 'Устранено: свежесть ПО (12 мес.)',
+    },
+    {
+        'id': 'fas-freshness-short',
+        'pattern': _re.compile(r'не\s+ранее\s+чем\s+за\s+12\s+месяцев', _re.IGNORECASE),
+        'replacement': 'актуальная стабильная версия, официально поддерживаемая производителем',
+        'log': 'Устранено: свежесть ПО (краткая)',
+    },
+    {
+        'id': 'fas-ndv',
+        'pattern': _re.compile(r'(?:по\s+)?контрол[юя]\s+отсутствия\s+(?:недекларированных\s+возможностей\s*\(НДВ\)|НДВ)', _re.IGNORECASE),
+        'replacement': 'по требованиям к уровню доверия не ниже 4-го уровня',
+        'log': 'Устранено: контроль НДВ → уровень доверия',
+    },
+    {
+        'id': 'fas-registry-extract-verb',
+        'pattern': _re.compile(r'представить\s+реестровую\s+запись\s*\(выписку\)', _re.IGNORECASE),
+        'replacement': 'указать номер реестровой записи',
+        'log': 'Устранено: представить реестровую запись (выписку)',
+    },
+]
+
+_BRAND_PATTERN = _re.compile(
+    r'\b(Astra\s+Linux|Termidesk|ALD\s+Pro|CommuniGate|Р7-Офис|МойОфис|Kaspersky|Лаборатори[ия]\s+Касперского|Dr\.?\s*Web|Vipnet|ViPNet|КриптоПро|InfoWatch|Континент|Secret\s+Net|Dallas\s+Lock|Код\s+Безопасности)\b',
+    _re.IGNORECASE,
+)
+_EQUIV_CHECK = _re.compile(r'или\s+эквивалент', _re.IGNORECASE)
+
+
+def _apply_compliance_to_text(text: str) -> tuple[str, list[str]]:
+    result = text
+    fixes = []
+    for rule in _COMPLIANCE_RULES:
+        if rule['pattern'].search(result):
+            new_text = rule['pattern'].sub(rule['replacement'], result)
+            if new_text != result:
+                fixes.append(rule['log'])
+                result = new_text
+    if _BRAND_PATTERN.search(result) and not _EQUIV_CHECK.search(result):
+        result = result + ' или эквивалент'
+        fixes.append('Добавлено «или эквивалент» к торговой марке')
+    return result, fixes
+
+
+def _fix_paragraph_runs(paragraph) -> list[str]:
+    runs = paragraph.runs
+    if not runs:
+        return []
+    full_text = ''.join(r.text for r in runs)
+    if not full_text.strip():
+        return []
+    fixed_text, fixes = _apply_compliance_to_text(full_text)
+    if fixes and fixed_text != full_text:
+        runs[0].text = fixed_text
+        for r in runs[1:]:
+            r.text = ''
+    return fixes
+
+
+def _fix_docx_document(doc) -> list[str]:
+    all_fixes = []
+    for para in doc.paragraphs:
+        fixes = _fix_paragraph_runs(para)
+        all_fixes.extend(fixes)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    fixes = _fix_paragraph_runs(para)
+                    all_fixes.extend(fixes)
+                for nested_table in cell.tables:
+                    for nested_row in nested_table.rows:
+                        for nested_cell in nested_row.cells:
+                            for para in nested_cell.paragraphs:
+                                fixes = _fix_paragraph_runs(para)
+                                all_fixes.extend(fixes)
+    return all_fixes
+
+
+@app.post("/api/fix-docx")
+async def fix_docx_endpoint(file: UploadFile = FastAPIFile(...)):
+    if not file.filename or not file.filename.lower().endswith('.docx'):
+        raise HTTPException(status_code=400, detail="Только .docx файлы поддерживаются")
+
+    contents = await file.read()
+    if len(contents) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 50 МБ)")
+
+    try:
+        import docx as python_docx
+    except ImportError:
+        raise HTTPException(status_code=500, detail="python-docx не установлен на сервере")
+
+    try:
+        doc = python_docx.Document(io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Не удалось открыть DOCX: {str(e)}")
+
+    fixes = _fix_docx_document(doc)
+
+    output = io.BytesIO()
+    doc.save(output)
+    output.seek(0)
+
+    from starlette.responses import StreamingResponse
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f'attachment; filename="{file.filename}"',
+            "X-Compliance-Fixes": str(len(fixes)),
+        },
+    )
+
+
 class TZReviewRequest(BaseModel):
     tzText: str
     lawMode: str = "44"

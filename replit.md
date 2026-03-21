@@ -83,12 +83,17 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
   - Button "🔍 Проверить и исправить ТЗ" in workspace toolbar, enabled when `docxReady=true`
   - Apply fixes: replaces `originalText` with `suggestedText` in row specs, reruns compliance gate
 
-## Anti-FAS Compliance Hardening
-- **Forbidden Phrases Detection** (`compliance.ts`): `FORBIDDEN_PHRASES` array catches obsolete legal terms in spec values:
-  - «выписка из реестра Минцифры» → «номер реестровой записи в Едином реестре российских программ»
-  - «контроль отсутствия НДВ» → «требования к уровню доверия не ниже 4-го уровня»
-  - «выпущен не ранее чем за 12 месяцев» → «актуальная стабильная версия, официально поддерживаемая производителем»
-- **Auto-fix support**: `buildAntiFasAutoFixes()` replaces forbidden phrases automatically via «Исправить автоматически» button
+## Centralized Compliance Engine (`legal-rules.ts`)
+- **Architecture**: Centralized rule registry in `frontend-react/src/utils/legal-rules.ts`, structured by four legal pillars:
+  - **БЛОК 1 — Практика ФАС** (защита конкуренции): 10 правил замены (выписки, оригиналы, свежесть ПО, НДВ, торговые марки)
+  - **БЛОК 2 — ПП РФ № 1875** (национальный режим): 2 обязательных условия (реестр ПО, реестр промпродукции)
+  - **БЛОК 3 — 44-ФЗ / 223-ФЗ** (описание объекта закупки): плейсхолдеры [!], твёрдая цена
+- **Key exports**: `COMPLIANCE_RULES[]`, `MANDATORY_CLAUSES[]`, `applyComplianceFixes(text)`, `validateDocumentText(fullText, context)`, `getDetectionRules()`, `getAllRulesSummary()`
+- **Integration points**:
+  - `compliance.ts`: `FORBIDDEN_PHRASES` now sourced from `getDetectionRules()` (centralized)
+  - `buildAntiFasAutoFixes()`: uses `applyComplianceFixes()` for all rule-based replacements
+  - `buildDocx()`: runs `validateDocumentText()` on full document text before export, logging violations/passed checks
+- **Console logging**: `[ФАС Compliance]`, `[ПП1875 Compliance]`, `[44-ФЗ Compliance]` prefixes in console
 - **Template corrections applied** in `npa-blocks.ts` and `Workspace.tsx`:
   - Section 2: «Участник закупки указывает номер реестровой записи» (not «Поставщик представляет выписку»)
   - Appendix 7 year: «актуальная стабильная версия, поддерживаемая производителем» (not «не ранее 12 мес.»)

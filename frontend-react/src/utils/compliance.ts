@@ -1,4 +1,8 @@
 import type { SpecItem } from './spec-processor';
+import { getDetectionRules, applyComplianceFixes, validateDocumentText, getAllRulesSummary, type ComplianceFixResult } from './legal-rules';
+
+export { validateDocumentText, getAllRulesSummary, applyComplianceFixes };
+export type { ComplianceFixResult };
 
 export type ComplianceSeverity = 'critical' | 'major' | 'minor';
 
@@ -57,14 +61,7 @@ const TECH_STANDARD_WHITELIST = /\b(RJ-?45|RJ-?11|RJ-?12|USB|HDMI|VGA|DVI|DP|Dis
 
 // Whitelist для ARTICLE_CODE_RE: разрешённые паттерны типа "RJ-45", "Cat-6", "USB-C"
 const ARTICLE_CODE_WHITELIST = /^(RJ-?\d+|Cat-?\d+[eaEA]?|USB-?[A-C]|SFP-?\d*|DP-?\d*|Type-?[A-C])$/i;
-const FORBIDDEN_PHRASES: Array<{ re: RegExp; severity: ComplianceSeverity; reason: string; recommendation: string }> = [
-  { re: /выписку?\s+(из\s+)?реестра\s+Минцифры/i, severity: 'critical', reason: 'Устаревшая формулировка: требование «выписки из реестра Минцифры» ограничивает конкуренцию.', recommendation: 'Замените на «номер реестровой записи в Едином реестре российских программ».' },
-  { re: /контрол[яю]\s+отсутствия\s+(?:недекларированных\s+возможностей|НДВ)/i, severity: 'critical', reason: 'Устаревшая терминология ФСТЭК: «контроль отсутствия НДВ» отменён с 2020 года.', recommendation: 'Замените на «требования к уровню доверия не ниже 4-го уровня».' },
-  { re: /выпущен[аоы]?\s+не\s+ранее\s+чем\s+за\s+12/i, severity: 'major', reason: 'Ограничение по дате релиза может ограничивать конкуренцию (Приложение № 7).', recommendation: 'Замените на «актуальная стабильная версия, официально поддерживаемая производителем на момент поставки».' },
-  { re: /выписку?\s+(из\s+)?ГИСП/i, severity: 'critical', reason: 'Требование «выписки из ГИСП» ограничивает нацрежим для оборудования: участник не обязан предоставлять выписку.', recommendation: 'Замените на «номера реестровых записей из реестра российской промышленной продукции или евразийского реестра промышленной продукции».' },
-  { re: /оригинал\s+документа/i, severity: 'major', reason: 'Требование «оригинала документа» — избыточное формальное ограничение, сужающее конкуренцию.', recommendation: 'Замените на «документ (гарантийный талон, сертификат или иной документ), подтверждающий гарантийные обязательства».' },
-  { re: /\[!\]/i, severity: 'critical', reason: 'Системный маркер-плейсхолдер «[!]» остался в финальном документе.', recommendation: 'Удалите маркер «[!]» и весь комментарий, оставив только содержательный текст характеристики.' },
-];
+const FORBIDDEN_PHRASES: Array<{ re: RegExp; severity: ComplianceSeverity; reason: string; recommendation: string }> = getDetectionRules();
 const SERVICE_TYPE_KEYS = new Set(['otherService']);
 const PRODUCT_ONLY_SPEC_NAME_RE = /^(состояние товара|комплект поставки|документация на русском языке|маркировка и идентификация|гарантия производителя|упаковка)$/i;
 const EXPORT_NOISE_SPEC_NAME_RE = /^(удал[её]нное администрирование(?:\s*\/\s*мониторинг состояния)?|поддержка модернизации и замены компонентов|торп|состояние товара|комплект поставки|документация на русском языке|маркировка и идентификация|гарантия производителя|упаковка)$/i;
@@ -622,57 +619,18 @@ export function buildAntiFasAutoFixes(rows: RowForCompliance[]): AntiFasAutoFix[
         }
       }
 
-      if (/выписку?\s+(из\s+)?реестра\s+Минцифры/i.test(value)) {
+      const complianceResult = applyComplianceFixes(value);
+      if (complianceResult.fixes.length > 0) {
         fixes.push({
           rowId: row.id,
           specIdx,
           field: 'value',
           oldText: value,
-          newText: value.replace(/выписку?\s+(из\s+)?реестра\s+Минцифры\s*(России\s*)?с\s+актуальным\s+регистрационным\s+номером\s+ПО/i, 'номер реестровой записи в Едином реестре российских программ').replace(/выписку?\s+(из\s+)?реестра\s+Минцифры/i, 'номер реестровой записи в Едином реестре российских программ'),
-          reason: 'Заменена устаревшая формулировка «выписка из реестра Минцифры»',
+          newText: complianceResult.text,
+          reason: complianceResult.fixes.map((f) => f.logMessage).join('; '),
         });
       }
-      if (/контрол[яю]\s+отсутствия\s+(?:недекларированных\s+возможностей|НДВ)/i.test(value)) {
-        fixes.push({
-          rowId: row.id,
-          specIdx,
-          field: 'value',
-          oldText: value,
-          newText: value.replace(/(?:по\s+)?контрол[юя]\s+отсутствия\s+(?:недекларированных\s+возможностей\s*\(НДВ\)|НДВ)/i, 'по требованиям к уровню доверия не ниже 4-го уровня'),
-          reason: 'Заменена устаревшая терминология ФСТЭК (НДВ → уровень доверия)',
-        });
-      }
-      if (/выпущен[аоы]?\s+не\s+ранее\s+чем\s+за\s+12/i.test(value)) {
-        fixes.push({
-          rowId: row.id,
-          specIdx,
-          field: 'value',
-          oldText: value,
-          newText: value.replace(/выпущен[аоы]?\s+не\s+ранее\s+чем\s+за\s+12\s*\([^)]*\)\s*месяцев?\s+до\s+даты\s+(?:поставки|подачи\s+заявки)/i, 'актуальная стабильная версия, официально поддерживаемая производителем на момент поставки'),
-          reason: 'Заменено ограничение по дате релиза на поддержку производителем',
-        });
-      }
-      if (/выписку?\s+(из\s+)?ГИСП/i.test(value)) {
-        fixes.push({
-          rowId: row.id,
-          specIdx,
-          field: 'value',
-          oldText: value,
-          newText: value.replace(/выписку?\s+(из\s+)?ГИСП(\s+или\s+реестров(?:ая|ую)\s+запис[ьи])?/i, 'номера реестровых записей из реестра российской промышленной продукции или евразийского реестра промышленной продукции'),
-          reason: 'Заменена формулировка «выписка из ГИСП» на реестровые записи',
-        });
-      }
-      if (/оригинал\s+документа/i.test(value)) {
-        fixes.push({
-          rowId: row.id,
-          specIdx,
-          field: 'value',
-          oldText: value,
-          newText: value.replace(/оригинал\s+документа[,.]?\s*подтверждающ(?:его|ий)\s+(?:предоставление\s+)?гаранти[юи]/i, 'документ (гарантийный талон, сертификат или иной документ), подтверждающий гарантийные обязательства').replace(/оригинал\s+документа/i, 'документ (гарантийный талон, сертификат или иной документ), подтверждающий гарантийные обязательства'),
-          reason: 'Заменено избыточное требование «оригинал документа» на нейтральную формулировку',
-        });
-      }
-      if (/\[!\]/.test(value)) {
+      if (/\[!\]/.test(value) && !complianceResult.fixes.some((f) => f.ruleId === 'fas-placeholder')) {
         fixes.push({
           rowId: row.id,
           specIdx,

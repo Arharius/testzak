@@ -387,7 +387,7 @@ function detectAllCatalogTypes(query: string): Array<{ type: string; name: strin
 function isUniversalMetaComplete(meta: Record<string, string> = {}): boolean {
   return !!String(meta.okpd2_code || '').trim() && !!String(meta.okpd2_name || '').trim();
 }
-import { buildAntiFasReport, buildAntiFasAutoFixes, sanitizeProcurementSpecs, type ComplianceReport } from '../utils/compliance';
+import { buildAntiFasReport, buildAntiFasAutoFixes, sanitizeProcurementSpecs, validateDocumentText, type ComplianceReport } from '../utils/compliance';
 
 type Provider = 'openrouter' | 'groq' | 'deepseek';
 
@@ -6872,6 +6872,36 @@ async function buildDocx(
   children.push(regPara('Специалист ___________________________'));
   children.push(new Paragraph({ children: [], spacing: { after: 40 } }));
   children.push(regPara(`«____» _______________ ${currentYear} г.                                     _______________`));
+
+  const allSpecTexts: string[] = [];
+  for (const row of doneRows) {
+    if (!row.specs) continue;
+    for (const spec of row.specs) {
+      allSpecTexts.push(`${spec.name || ''} ${spec.value || ''}`);
+    }
+  }
+  const sectionTexts = [
+    ...docSections.section1Rows,
+    ...docSections.section2Rows,
+    ...docSections.section3Rows,
+    ...docSections.section4Rows,
+    ...docSections.section5Rows,
+    ...docSections.section6Rows,
+  ].map((r) => r.value);
+  const fullDocText = [...allSpecTexts, ...sectionTexts].join('\n');
+  const _swTypeSet = new Set(['os', 'office', 'virt', 'vdi', 'dbms', 'erp', 'cad', 'license', 'antivirus', 'edr', 'firewall_sw', 'dlp', 'siem', 'crypto', 'waf', 'pam', 'iam', 'pki', 'email', 'vks', 'ecm', 'portal', 'project_sw', 'bpm', 'backup_sw', 'itsm', 'monitoring', 'mdm', 'hr', 'gis', 'ldap', 'osSupport', 'supportCert', 'remoteAccessSw']);
+  const hasSoftware = doneRows.some((r) => _swTypeSet.has(r.type));
+  const hasHardware = doneRows.some((r) => !_swTypeSet.has(r.type) && r.type !== 'otherService');
+  const docValidation = validateDocumentText(fullDocText, { lawMode, hasSoftware, hasHardware });
+  if (docValidation.violations.length > 0) {
+    console.warn(`[ФАС Compliance] Финальная проверка документа: ${docValidation.violations.length} нарушений обнаружено`);
+    for (const v of docValidation.violations) {
+      console.warn(`  ${v.logMessage}: ${v.reason}`);
+    }
+  }
+  for (const p of docValidation.passed) {
+    console.log(p.logMessage);
+  }
 
   const doc = new Document({
     styles: { default: { document: { run: { font: FONT, size: FONT_SIZE } } } },

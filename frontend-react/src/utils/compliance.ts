@@ -595,6 +595,54 @@ export function buildAntiFasAutoFixes(rows: RowForCompliance[]): AntiFasAutoFix[
         continue;
       }
 
+      if (INTERNAL_WORKFLOW_RE.test(name) || INTERNAL_WORKFLOW_RE.test(value)) {
+        fixes.push({
+          rowId: row.id,
+          specIdx,
+          field: 'name',
+          oldText: name,
+          newText: '',
+          reason: 'Удалена служебная/системная характеристика',
+        });
+        continue;
+      }
+
+      if (FOREIGN_MARKETING_RE.test(name) || FOREIGN_MARKETING_RE.test(value)) {
+        fixes.push({
+          rowId: row.id,
+          specIdx,
+          field: 'name',
+          oldText: name,
+          newText: '',
+          reason: 'Удалена характеристика с иностранным маркетинговым текстом',
+        });
+        continue;
+      }
+
+      if (STRICT_WEAK_VALUE_RE.test(value)) {
+        fixes.push({
+          rowId: row.id,
+          specIdx,
+          field: 'name',
+          oldText: name,
+          newText: '',
+          reason: 'Удалена характеристика с размытой/недопустимой формулировкой значения',
+        });
+        continue;
+      }
+
+      if (LOW_SIGNAL_EXPORT_VALUE_RE.test(value)) {
+        fixes.push({
+          rowId: row.id,
+          specIdx,
+          field: 'name',
+          oldText: name,
+          newText: '',
+          reason: 'Удалена характеристика с низкоинформативным значением',
+        });
+        continue;
+      }
+
       const textNoStd = text.replace(TECH_STANDARD_WHITELIST, '___').trim();
       if (BRAND_RE.test(textNoStd) && !/или\s+эквивалент/i.test(value)) {
         const cleanValue = value.replace(BRAND_RE, '').replace(/\s{2,}/g, ' ').trim();
@@ -638,6 +686,37 @@ export function buildAntiFasAutoFixes(rows: RowForCompliance[]): AntiFasAutoFix[
           oldText: value,
           newText: value.replace(/\s*\[!\]\s*[^\n]*/g, '').trim(),
           reason: 'Удалён системный маркер-плейсхолдер «[!]» из значения характеристики',
+        });
+      }
+
+      if (OPERATOR_RE.test(value)) {
+        const fixed = value
+          .replace(/>=/g, 'не менее ')
+          .replace(/<=/g, 'не более ')
+          .replace(/>(?!=)/g, 'более ')
+          .replace(/<(?!=)/g, 'менее ')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+        if (fixed !== value) {
+          fixes.push({
+            rowId: row.id,
+            specIdx,
+            field: 'value',
+            oldText: value,
+            newText: fixed,
+            reason: 'Операторы сравнения (>=, <=, >, <) заменены на «не менее»/«не более»',
+          });
+        }
+      }
+
+      if (/^\d{3,4}[xх×]\d{3,4}$/i.test(value.trim()) && !/не менее/i.test(value)) {
+        fixes.push({
+          rowId: row.id,
+          specIdx,
+          field: 'value',
+          oldText: value,
+          newText: 'не менее ' + value.trim(),
+          reason: 'Точное разрешение заменено на формулировку «не менее»',
         });
       }
 

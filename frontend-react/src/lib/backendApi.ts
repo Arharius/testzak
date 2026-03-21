@@ -70,7 +70,10 @@ export function isBackendApiAvailable(): boolean {
     host === '127.0.0.1' ||
     host.endsWith('.replit.dev') ||
     host.endsWith('.repl.co') ||
-    host.endsWith('.janeway.replit.dev')
+    host.endsWith('.janeway.replit.dev') ||
+    host.endsWith('.hf.space') ||
+    host.endsWith('.vercel.app') ||
+    host.endsWith('.github.io')
   );
 }
 

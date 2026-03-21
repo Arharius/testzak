@@ -1191,6 +1191,8 @@ def _yookassa_create_payment(amount: str, currency: str, description: str, retur
 
 @app.get("/")
 def root():
+    if _STATIC_DIR.is_dir():
+        return FileResponse(str(_STATIC_DIR / "index.html"))
     return {"message": "TZ Generator API", "version": app.version}
 
 def _readiness_check(status: str, detail: str, critical: bool = False, extra: dict[str, Any] | None = None) -> dict[str, Any]:

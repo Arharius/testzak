@@ -7,9 +7,10 @@ import { GOODS_CATALOG } from '../data/goods-catalog';
  * - same-origin API on Netlify via /api/* proxy redirects
  */
 
-const CURRENT_BACKEND_URL = 'https://backend-production-f736.up.railway.app';
+const CURRENT_BACKEND_URL = 'https://archibald123-tz-generator-backend.hf.space';
 const DEPRECATED_BACKEND_URLS = new Set([
   'https://backend-production-3b942.up.railway.app',
+  'https://backend-production-f736.up.railway.app',
 ]);
 
 function normalizeBackendUrl(value: string): string {
@@ -20,7 +21,7 @@ function normalizeBackendUrl(value: string): string {
 }
 
 // If VITE_BACKEND_URL is empty, requests go to same-origin (/api/...) which
-// allows Netlify to proxy API calls to the backend service.
+// allows Netlify/Replit to proxy API calls to the backend service.
 // NOTE: Vite only replaces `import.meta.env.VITE_*` statically — dynamic access won't work.
 export const BACKEND_URL = normalizeBackendUrl(String(import.meta.env.VITE_BACKEND_URL || ''));
 const NON_LATIN1_RE = /[^\x00-\xff]/;
@@ -33,12 +34,22 @@ function shouldUseSameOriginApi(): boolean {
   return false;
 }
 
+function getRuntimeBackendUrl(): string {
+  if (BACKEND_URL) return BACKEND_URL;
+  if (typeof window === 'undefined') return '';
+  const host = String(window.location.hostname || '').toLowerCase();
+  if (host.endsWith('.vercel.app') || host.endsWith('.github.io')) {
+    return CURRENT_BACKEND_URL;
+  }
+  return '';
+}
+
 function buildApiUrl(path: string): string {
   const normalizedPath = String(path || '').startsWith('/') ? String(path) : `/${String(path || '')}`;
-  if (!BACKEND_URL || shouldUseSameOriginApi()) {
-    return normalizedPath;
-  }
-  return `${BACKEND_URL}${normalizedPath}`;
+  if (shouldUseSameOriginApi()) return normalizedPath;
+  const runtimeUrl = getRuntimeBackendUrl();
+  if (!runtimeUrl) return normalizedPath;
+  return `${runtimeUrl}${normalizedPath}`;
 }
 
 function normalizeBearerToken(value: string): string {

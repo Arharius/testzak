@@ -1552,6 +1552,8 @@ export async function parseImportedRows(file: File): Promise<ImportedProcurement
         const tableRows = parseDocxTableRows(serverContent.blocks);
         if (tableRows.length > 0) return tableRows;
       }
+      const enumeratedRows = parseDocxEnumeratedRows(serverContent);
+      if (enumeratedRows.length > 0) return enumeratedRows;
       const fallbackRows = parseDocxFallbackRows(serverContent);
       if (fallbackRows.length > 0) return fallbackRows;
     }

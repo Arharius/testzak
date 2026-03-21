@@ -114,6 +114,10 @@ function isConcreteValue(value: string): boolean {
   }
   if (/[;,/]/.test(normalized)) return true;
   if (normalized.split(/\s+/).length >= 5 && !isWeakStrictValue(normalized)) return true;
+  // Стандартные разрешения и широко признанные технические квалификаторы — конкретные значения
+  if (/\b(full[\s-]?hd|fhd|4k|uhd|qhd|wqhd|2k|8k|hd[\s-]?ready|720p|1080[pi]|1440p|2160p|wuxga|uxga|sxga|wxga|xga|svga|vga|ntsc|pal|secam)\b/i.test(normalized)) return true;
+  // Конкретные стандарты подключения, сжатия, аудио/видео без цифры в имени
+  if (/\b(usb[\s-]?[abc2-3.]+|hdmi|displayport|thunderbolt|vga|dvi|rs[\s-]?232|rs[\s-]?485|rj[\s-]?\d+|cat[\s-]?\d+|sfp|qsfp|poe|bluetooth|wi[\s-]?fi|nfc|lte|5g|h\.26[45]|h26[45]|avc|hevc|vp[89]|aac|mp3|flac|opus|g\.71[12]|mjpeg|mpeg[\s-]?\d)\b/i.test(normalized)) return true;
   return false;
 }
 
@@ -784,6 +788,64 @@ export function buildAntiFasAutoFixes(rows: RowForCompliance[]): AntiFasAutoFix[
           }
         }
       }
+
+      // Авто-фикс: характеристика с измеримым именем, но непроверяемым значением → удалить
+      if (
+        MEASURABLE_NAME_RE.test(name) &&
+        !BOOLEAN_ALLOWED_NAME_RE.test(name) &&
+        !QUALITATIVE_ALLOWED_NAME_RE.test(name) &&
+        !isConcreteValue(value) &&
+        !isWeakStrictValue(value)
+      ) {
+        const alreadyScheduled = fixes.some(
+          (f) => f.rowId === row.id && f.specIdx === specIdx && f.field === 'name' && f.newText === ''
+        );
+        if (!alreadyScheduled) {
+          fixes.push({
+            rowId: row.id,
+            specIdx,
+            field: 'name',
+            oldText: name,
+            newText: '',
+            reason: 'Удалена характеристика с непроверяемым значением для измеримого параметра',
+          });
+        }
+      }
+    }
+
+    // Авто-фикс: дублирующиеся имена → оставляем только лучшую копию
+    const seenNames = new Map<string, number>();
+    for (let specIdx = 0; specIdx < row.specs.length; specIdx++) {
+      const spec = row.specs[specIdx];
+      const key = normalizeSpecKey(String(spec.name || ''));
+      if (!key) continue;
+      const alreadyDeleted = fixes.some(
+        (f) => f.rowId === row.id && f.specIdx === specIdx && f.field === 'name' && f.newText === ''
+      );
+      if (alreadyDeleted) continue;
+      if (!seenNames.has(key)) {
+        seenNames.set(key, specIdx);
+        continue;
+      }
+      const bestIdx = seenNames.get(key)!;
+      const bestSpec = row.specs[bestIdx];
+      const thisStrength = inferSpecStrength(spec);
+      const bestStrength = inferSpecStrength(bestSpec);
+      const idxToRemove = thisStrength > bestStrength ? bestIdx : specIdx;
+      if (thisStrength > bestStrength) seenNames.set(key, specIdx);
+      const alreadyHasFix = fixes.some(
+        (f) => f.rowId === row.id && f.specIdx === idxToRemove && f.field === 'name' && f.newText === ''
+      );
+      if (!alreadyHasFix) {
+        fixes.push({
+          rowId: row.id,
+          specIdx: idxToRemove,
+          field: 'name',
+          oldText: String(row.specs[idxToRemove].name || ''),
+          newText: '',
+          reason: 'Удалён дублирующийся параметр (оставлена наиболее конкретная формулировка)',
+        });
+      }
     }
   }
   return fixes;
@@ -966,7 +1028,27 @@ export function buildAntiFasReport(rows: RowForCompliance[], minScore = 85): Com
   const critical = issues.filter((x) => x.severity === 'critical').length;
   const major = issues.filter((x) => x.severity === 'major').length;
   const minor = issues.filter((x) => x.severity === 'minor').length;
-  const score = Math.max(0, 100 - critical * 22 - major * 8 - minor * 3);
+
+  // Считаем оценку как среднее по строкам: каждая строка оценивается отдельно,
+  // итог — среднее арифметическое. Это устраняет накопительный штраф при большом числе позиций.
+  const doneRowIds = rows
+    .filter((r) => r.status === 'done' && Array.isArray(r.specs) && (r.specs?.length ?? 0) > 0)
+    .map((r) => r.id);
+  let score: number;
+  if (doneRowIds.length === 0) {
+    score = 100;
+  } else {
+    let rowScoreSum = 0;
+    for (const rowId of doneRowIds) {
+      const ri = issues.filter((x) => x.rowId === rowId);
+      const rc = ri.filter((x) => x.severity === 'critical').length;
+      const rm = ri.filter((x) => x.severity === 'major').length;
+      const rn = ri.filter((x) => x.severity === 'minor').length;
+      rowScoreSum += Math.max(0, 100 - rc * 22 - rm * 8 - rn * 3);
+    }
+    score = Math.round(rowScoreSum / doneRowIds.length);
+  }
+
   const blocked = critical > 0 || score < minScore;
 
   return {

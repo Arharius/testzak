@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { TZReviewIssue, TZReviewResponse } from '../lib/backendApi';
 import { reviewTz } from '../lib/backendApi';
 
@@ -91,7 +92,14 @@ export function TZReviewPanel({ tzText, lawMode, onApplyFixes, onClose }: TZRevi
     issues: result.issues.filter(i => i.level === level),
   })).filter(g => g.issues.length > 0) : [];
 
-  return (
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setPortalTarget(document.body);
+  }, []);
+
+  if (!portalTarget) return null;
+
+  return createPortal(
     <div className="tz-review-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="tz-review-panel">
         <div className="tz-review-header">
@@ -201,6 +209,7 @@ export function TZReviewPanel({ tzText, lawMode, onApplyFixes, onClose }: TZRevi
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    portalTarget,
   );
 }

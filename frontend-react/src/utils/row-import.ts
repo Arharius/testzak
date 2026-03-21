@@ -1439,6 +1439,21 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
   if (row) {
     return dedupeImportedRows([{ ...row, qty: findDocumentQty(allLines) || row.qty || 1 }]);
   }
+
+  const plainLineRows: ImportedProcurementRow[] = [];
+  for (const line of allLines) {
+    const parts = line.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    for (const part of parts) {
+      const lineRow = buildImportedRowFromText(part, 'fallback', {
+        allowWithoutQty: true,
+        meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+        notes: ['Позиция извлечена из текстового содержимого документа.'],
+      });
+      if (lineRow) plainLineRows.push(lineRow);
+    }
+  }
+  if (plainLineRows.length > 0) return dedupeImportedRows(plainLineRows);
+
   return [];
 }
 

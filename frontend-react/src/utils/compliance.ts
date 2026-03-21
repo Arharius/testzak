@@ -60,7 +60,7 @@ const SOFTWARE_TYPE_KEYS = new Set([
 const TECH_STANDARD_WHITELIST = /\b(RJ-?45|RJ-?11|RJ-?12|USB|HDMI|VGA|DVI|DP|DisplayPort|SFP|SFP\+|QSFP|QSFP\+|QSFP28|LC|SC|FC|ST|MTP|MPO|Cat\.?\s*[5-8][eaEA]?|UTP|FTP|STP|S\/FTP|PoE|PoE\+|DDR[2-5]|PCIe|PCI-?E|SATA|SAS|NVMe|M\.2|mSATA|SO-?DIMM|DIMM|ECC|LAN|WAN|IEEE\s*802\.\d+|Wi-?Fi\s*\d*[a-z]?|Bluetooth|BLE|Ethernet|GbE|10GbE|40GbE|100GbE|IPv[46]|TCP|UDP|HTTP[S]?|FTP|SNMP|SSH|SSL|TLS|AES|RSA|SHA|IPS|IDS|RAID|SSD|HDD|NAND|TLC|QLC|MLC|SLC|OLED|IPS|VA|TN|LED|LCD|ГГц|МГц|ГБ|МБ|ТБ|Вт|дБ|лк|кд|Гбит|Мбит|PKCS|FIPS|ISO|IEC|IEEE|ITU|RFC|UVC|AVC|HEVC|RS-232|RS-485|CAN-bus|SNMP|LDAP|SAML|OAuth|OpenID|TOTP|HOTP|GOST|ГОСТ)\b/i;
 
 // Whitelist для ARTICLE_CODE_RE: разрешённые паттерны типа "RJ-45", "Cat-6", "USB-C", "PKCS-11"
-const ARTICLE_CODE_WHITELIST = /^(RJ-?\d+|Cat-?\d+[eaEA]?|USB-?[A-C0-9]?|SFP-?\d*|DP-?\d*|Type-?[A-C]|PKCS-?\d+|FIPS-?\d+|ISO-?\d+|IEC-?\d+|IEEE-?\d+|ITU-?\d+|RFC-?\d+|UVC-?\d*|AVC-?\d*|HEVC-?\d*|RS-?\d+|TIA-?\d+|EIA-?\d+|CAN-?\d*|SHA-?\d+|AES-?\d+|RSA-?\d+|MD-?\d+|Wi-Fi\s*\d*[a-z]?|Wi-Fi|G-\d+|LTE-?\d*|5G-?\d*|PoE-?\d*|DDR-?\d+|DDR[2-5]L?|PCIe-?\d+|USB-?\d+[\.\d]*[A-Za-z]?)$/i;
+const ARTICLE_CODE_WHITELIST = /^(RJ-?\d+|Cat-?\d+[eaEA]?|USB-?[A-C0-9]?|SFP-?\d*|DP-?\d*|Type-?[A-C]|PKCS-?\d+|FIPS-?\d+|ISO-?\d+|IEC-?\d+|IEEE-?\d+|ITU-?\d+|RFC-?\d+|UVC-?\d*|AVC-?\d*|HEVC-?\d*|RS-?\d+|TIA-?\d+|EIA-?\d+|CAN-?\d*|SHA-?\d+|AES-?\d+|RSA-?\d+|MD-?\d+|Wi-Fi\s*\d*[a-z]?|Wi-Fi|G-\d+|H-\d+|MPEG-?\d+|VP-?\d+|YUV-?\d+|EAL-?\d+|LTE-?\d*|5G-?\d*|PoE-?\d*|DDR-?\d+|DDR[2-5]L?|PCIe-?\d+|USB-?\d+[\.\d]*[A-Za-z]?|TLS-?\d+[\.\d]*|ГОСТ-?Р?-?\d+|SP-?\d+|NIST-?\d+|CC-?\d+|ANSI-?\d+)$/i;
 const FORBIDDEN_PHRASES: Array<{ re: RegExp; severity: ComplianceSeverity; reason: string; recommendation: string }> = getDetectionRules();
 const SERVICE_TYPE_KEYS = new Set(['otherService']);
 const PRODUCT_ONLY_SPEC_NAME_RE = /^(состояние товара|комплект поставки|документация на русском языке|маркировка и идентификация|гарантия производителя|упаковка)$/i;
@@ -722,7 +722,8 @@ export function buildAntiFasAutoFixes(rows: RowForCompliance[]): AntiFasAutoFix[
 
       const hasArticle = ARTICLE_RE.test(text);
       const hasModel = MODEL_WORD_RE.test(name);
-      const hasArticleCode = ARTICLE_CODE_RE.test(value) && !ARTICLE_CODE_WHITELIST.test(value.match(ARTICLE_CODE_RE)?.[0] ?? '');
+      const allArticleCodesInValue = value.match(new RegExp(ARTICLE_CODE_RE.source, 'gi')) ?? [];
+      const hasArticleCode = allArticleCodesInValue.length > 0 && allArticleCodesInValue.some((code) => !ARTICLE_CODE_WHITELIST.test(code));
       if (hasArticle || hasModel || hasArticleCode) {
         if (hasModel && !BRAND_RE.test(textNoStd)) {
           fixes.push({
@@ -734,7 +735,13 @@ export function buildAntiFasAutoFixes(rows: RowForCompliance[]): AntiFasAutoFix[
             reason: 'Удалена характеристика с моделью/артикулом',
           });
         } else if (hasArticleCode) {
-          const cleaned = value.replace(ARTICLE_CODE_RE, '').replace(/\s{2,}/g, ' ').trim();
+          let cleaned = value;
+          for (const code of allArticleCodesInValue) {
+            if (!ARTICLE_CODE_WHITELIST.test(code)) {
+              cleaned = cleaned.replace(code, '');
+            }
+          }
+          cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
           if (cleaned && cleaned !== value) {
             fixes.push({
               rowId: row.id,
@@ -743,6 +750,36 @@ export function buildAntiFasAutoFixes(rows: RowForCompliance[]): AntiFasAutoFix[
               oldText: value,
               newText: cleaned,
               reason: 'Удалён артикул/код из значения характеристики',
+            });
+          } else {
+            fixes.push({
+              rowId: row.id,
+              specIdx,
+              field: 'name',
+              oldText: name,
+              newText: '',
+              reason: 'Удалена характеристика: значение является артикулом/кодом',
+            });
+          }
+        } else if (hasArticle && /артикул|арт\./i.test(name)) {
+          fixes.push({
+            rowId: row.id,
+            specIdx,
+            field: 'name',
+            oldText: name,
+            newText: '',
+            reason: 'Удалена характеристика-артикул по названию поля',
+          });
+        } else if (hasArticle && /артикул|арт\./i.test(value)) {
+          const cleaned = value.replace(/\bарт\.?\s*\S*/gi, '').replace(/\s{2,}/g, ' ').trim();
+          if (cleaned && cleaned !== value) {
+            fixes.push({
+              rowId: row.id,
+              specIdx,
+              field: 'value',
+              oldText: value,
+              newText: cleaned,
+              reason: 'Удалена ссылка на артикул из значения характеристики',
             });
           }
         }
@@ -886,10 +923,11 @@ export function buildAntiFasReport(rows: RowForCompliance[], minScore = 85): Com
         );
       }
 
-      // Check for article/model — but skip whitelisted tech codes like RJ-45, Cat-6
+      // Check for article/model — but skip whitelisted tech codes like RJ-45, Cat-6, H-264
       const hasArticle = ARTICLE_RE.test(text);
       const hasModel = MODEL_WORD_RE.test(name);
-      const hasArticleCode = ARTICLE_CODE_RE.test(value) && !ARTICLE_CODE_WHITELIST.test(value.match(ARTICLE_CODE_RE)?.[0] ?? '');
+      const allArticleCodes = value.match(new RegExp(ARTICLE_CODE_RE.source, 'gi')) ?? [];
+      const hasArticleCode = allArticleCodes.length > 0 && allArticleCodes.some((code) => !ARTICLE_CODE_WHITELIST.test(code));
       if (hasArticle || hasModel || hasArticleCode) {
         addIssue(
           issues,

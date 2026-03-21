@@ -155,7 +155,7 @@ OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "").strip()
 
 YOOKASSA_SHOP_ID       = os.getenv("YOOKASSA_SHOP_ID", "").strip()
 YOOKASSA_SECRET_KEY    = os.getenv("YOOKASSA_SECRET_KEY", "").strip()
-YOOKASSA_RETURN_URL    = os.getenv("YOOKASSA_RETURN_URL", "https://arharius.github.io/testzak/").strip()
+YOOKASSA_RETURN_URL    = os.getenv("YOOKASSA_RETURN_URL", "https://archibald123-tz-generator-backend.hf.space/").strip()
 YOOKASSA_WEBHOOK_SECRET = os.getenv("YOOKASSA_WEBHOOK_SECRET", "").strip()
 
 AI_TIMEOUT = float(os.getenv("AI_TIMEOUT", "100"))

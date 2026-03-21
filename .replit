@@ -63,3 +63,4 @@ publicDir = "frontend-react/dist"
 [userenv.shared]
 SUPERADMIN_USERNAME = "weerowoolf"
 SUPERADMIN_EMAIL = "admin@tz-generator.ru"
+YOOKASSA_SHOP_ID = "1283549"

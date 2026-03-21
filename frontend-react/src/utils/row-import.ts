@@ -1540,7 +1540,9 @@ export async function parseImportedRows(file: File): Promise<ImportedProcurement
     return dedupeImportedRows(mapRows(rows, 'xlsx'));
   }
   if (lowerName.endsWith('.docx')) {
+    const buffer = await file.arrayBuffer();
     const serverContent = await tryServerDocxParse(file);
+    let serverFallbackRows: ImportedProcurementRow[] = [];
     if (serverContent) {
       if (serverContent.tables.length > 0) {
         const appendixRows = parseDocxAppendixRows(serverContent);
@@ -1554,10 +1556,15 @@ export async function parseImportedRows(file: File): Promise<ImportedProcurement
       }
       const enumeratedRows = parseDocxEnumeratedRows(serverContent);
       if (enumeratedRows.length > 0) return enumeratedRows;
-      const fallbackRows = parseDocxFallbackRows(serverContent);
-      if (fallbackRows.length > 0) return fallbackRows;
+      // Fallback: don't return immediately — compare with client-side result below
+      serverFallbackRows = parseDocxFallbackRows(serverContent);
     }
-    return parseDocxRows(await file.arrayBuffer());
+    // Client-side parsing (JSZip + DOMParser): handles more DOCX structures
+    const clientRows = await parseDocxRows(buffer);
+    // Prefer whichever parser found more positions; server fallback wins only on tie
+    if (clientRows.length > serverFallbackRows.length) return clientRows;
+    if (serverFallbackRows.length > 0) return serverFallbackRows;
+    return clientRows;
   }
   const text = await file.text();
   return dedupeImportedRows(mapRows(parseDelimitedText(text), 'text'));

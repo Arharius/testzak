@@ -118,6 +118,8 @@ function isConcreteValue(value: string): boolean {
   if (/\b(full[\s-]?hd|fhd|4k|uhd|qhd|wqhd|2k|8k|hd[\s-]?ready|720p|1080[pi]|1440p|2160p|wuxga|uxga|sxga|wxga|xga|svga|vga|ntsc|pal|secam)\b/i.test(normalized)) return true;
   // Конкретные стандарты подключения, сжатия, аудио/видео без цифры в имени
   if (/\b(usb[\s-]?[abc2-3.]+|hdmi|displayport|thunderbolt|vga|dvi|rs[\s-]?232|rs[\s-]?485|rj[\s-]?\d+|cat[\s-]?\d+|sfp|qsfp|poe|bluetooth|wi[\s-]?fi|nfc|lte|5g|h\.26[45]|h26[45]|avc|hevc|vp[89]|aac|mp3|flac|opus|g\.71[12]|mjpeg|mpeg[\s-]?\d)\b/i.test(normalized)) return true;
+  // Технические аббревиатуры режимов работы оптических носителей
+  if (/\bcav\b|\bclv\b|\bcav.*constant\b|\bclv.*constant\b/i.test(normalized)) return true;
   return false;
 }
 
@@ -186,6 +188,11 @@ function normalizeWeakBoilerplateValue(name: string, rawValue: string): string {
 
   if (/доменная аутентификац/.test(normalizedName) && /ald pro/i.test(value)) {
     return 'поддержка LDAP, Kerberos и интеграции со службой каталогов или эквивалентным решением';
+  }
+
+  // CAV — режим записи оптического диска с постоянной угловой скоростью
+  if (/^cav$/i.test(value.trim())) {
+    return 'CAV (Constant Angular Velocity)';
   }
 
   if (/совместимость с отечественными скзи|интеграция с скзи/.test(normalizedName) && /криптопро/i.test(value)) {

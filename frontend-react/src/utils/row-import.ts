@@ -829,12 +829,14 @@ function isDocxSummaryTable(rows: string[][]): boolean {
   if (rows.length < 2) return false;
   const headers = rows[0].map((cell) => normalizeHeader(cell));
   const hasName = headers.includes('наименование');
-  const hasOkpd2 = headers.includes('окпд2') || headers.includes('окпд 2');
+  // "Прил.№" column is the key differentiator — few tables outside TZ have it
   const hasAppendix = headers.some((cell) => cell.includes('прил'));
-  const hasCommercial = headers.includes('тип лицензии') || headers.includes('срок действия');
+  const hasCommercial = headers.some((cell) =>
+    HEADER_ALIASES.licenseType.includes(cell) || HEADER_ALIASES.term.includes(cell));
   const hasQty = headers.some((cell) => HEADER_ALIASES.qty.includes(cell));
-  // Стандартный формат с коммерческими полями, или упрощённый формат ТЗ-генератора (без тип лицензии/срок)
-  return hasName && hasOkpd2 && hasAppendix && (hasCommercial || hasQty);
+  // ОКПД2 присутствует только в легаси-формате (7 колонок) — в текущем формате нет, НЕ требуем
+  // Сигнатура: Наименование + Прил.№ + (Кол-во ИЛИ коммерческие поля)
+  return hasName && hasAppendix && (hasCommercial || hasQty);
 }
 
 function collectRequirementContext(lines: string[]): { text: string; count: number } {

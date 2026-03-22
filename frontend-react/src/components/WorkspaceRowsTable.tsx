@@ -328,15 +328,16 @@ export function WorkspaceRowsTable({
                           {generationPending ? '⏳ Генерация...' : row.importInfo?.sourceFormat === 'docx' && row.specs?.length ? '⚙ Нормализовать ТЗ' : '🚀 Сгенерировать ТЗ'}
                         </button>
                       )}
-                      {row.status === 'error' && (
+                      {row.status === 'error' && row.model.trim() && (
                         <button
                           type="button"
                           className="row-inline-action"
                           onClick={() => onGenerateRow(row.id)}
-                          disabled={!canStartGeneration || generationPending}
+                          disabled={generationPending}
                           title="Повторить поиск характеристик и генерацию ТЗ для этой строки"
+                          style={{ borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.12)', color: '#f87171' }}
                         >
-                          {generationPending ? '⏳ Генерация...' : '🔄 Повторить'}
+                          {generationPending ? '⏳ Генерация...' : '🔄 Повторить поиск'}
                         </button>
                       )}
                       {needsQuickClassificationAction && (

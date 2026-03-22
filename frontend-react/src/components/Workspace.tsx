@@ -729,7 +729,7 @@ function cloneGoodsRows(rows: GoodsRow[]): GoodsRow[] {
 }
 
 function hasImportedSeedSpecs(row: GoodsRow): boolean {
-  return row.status === 'idle' && getImportedSpecs(row).length > 0;
+  return row.status !== 'done' && getImportedSpecs(row).length > 0;
 }
 
 function getImportedSourceContext(row: GoodsRow): string {
@@ -8616,22 +8616,53 @@ ${hint || '- Используй детальные, проверяемые эк�
               classification_source: currentRow.meta?.classification_source || (currentRow.importInfo?.sourceFormat === 'docx' ? 'docx_import' : 'import'),
             });
             const resolvedMeta = await resolveUniversalMeta(currentRow, baseMeta, getImportedSourceContext(currentRow));
-            const enrichedSpecs = await expandSpecsToMinimum(
-              currentRow,
-              adjustSpecsForCommercialContext(currentRow, getImportedSpecs(currentRow)),
-              resolvedMeta,
-            );
+
+            // Try internet/EIS search to enrich imported specs with real data
+            let pickedCandidate: SpecsCandidate | null = null;
+            if (useBackend && currentRow.model.trim()) {
+              try {
+                const [internetResult, eisResult] = await Promise.allSettled([
+                  fetchInternetCandidateForRow(currentRow),
+                  fetchEisCandidateForRow(currentRow),
+                ]);
+                const internetCandidate = internetResult.status === 'fulfilled' ? internetResult.value : null;
+                const eisCandidate = eisResult.status === 'fulfilled' ? eisResult.value : null;
+                pickedCandidate = pickBestCandidate(currentRow, internetCandidate, eisCandidate, true);
+              } catch {
+                // ignore search errors, fall back to imported specs
+              }
+            }
+
+            let finalSpecs: SpecItem[];
+            let finalMeta: Record<string, string>;
+            let statSource: 'internet' | 'eis' | 'imported';
+            if (pickedCandidate && pickedCandidate.specs.length > 0) {
+              finalSpecs = pickedCandidate.specs;
+              finalMeta = normalizeResolvedMeta(currentRow.type, { ...pickedCandidate.meta, classification_source: pickedCandidate.source });
+              statSource = pickedCandidate.source as 'internet' | 'eis';
+            } else {
+              finalSpecs = await expandSpecsToMinimum(
+                currentRow,
+                adjustSpecsForCommercialContext(currentRow, getImportedSpecs(currentRow)),
+                resolvedMeta,
+              );
+              finalMeta = normalizeResolvedMeta(currentRow.type, {
+                ...resolvedMeta,
+                classification_source: currentRow.meta?.classification_source || (currentRow.importInfo?.sourceFormat === 'docx' ? 'docx_import' : 'import'),
+              });
+              statSource = 'imported';
+            }
+
             next[i] = {
               ...currentRow,
               status: 'done',
-              specs: enrichedSpecs,
-              meta: normalizeResolvedMeta(currentRow.type, {
-                ...resolvedMeta,
-                classification_source: currentRow.meta?.classification_source || (currentRow.importInfo?.sourceFormat === 'docx' ? 'docx_import' : 'import'),
-              }),
-              benchmark: undefined,
+              specs: finalSpecs,
+              meta: finalMeta,
+              benchmark: pickedCandidate && enterpriseSettings.benchmarking ? buildRowBenchmarkEvidence(currentRow, pickedCandidate) : undefined,
             };
-            sourceStats.imported += 1;
+            if (statSource === 'internet') sourceStats.internet += 1;
+            else if (statSource === 'eis') sourceStats.eis += 1;
+            else sourceStats.imported += 1;
             setRows([...next]);
             if ((processedIndex + 1) % batchSize === 0 && processedIndex < targetIndices.length - 1) {
               await new Promise((resolve) => window.setTimeout(resolve, 0));

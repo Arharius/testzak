@@ -333,7 +333,6 @@ export function WorkspaceRowsTable({
                           type="button"
                           className="row-inline-action"
                           onClick={() => onGenerateRow(row.id)}
-                          disabled={generationPending}
                           title="Повторить поиск характеристик и генерацию ТЗ для этой строки"
                           style={{ borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.12)', color: '#f87171' }}
                         >

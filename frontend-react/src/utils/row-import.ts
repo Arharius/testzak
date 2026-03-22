@@ -114,7 +114,11 @@ function normalizeHeader(value: string): string {
   return normalizeCell(value)
     .toLowerCase()
     .replace(/ё/g, 'е')
-    .replace(/[.:;"'()]/g, '');
+    .replace(/[.:;"'()]/g, '')
+    // Схлопываем пробелы вокруг дефисов (артефакт переноса строк в ячейках DOCX)
+    // "кол- во" → "кол-во", "прил №" остаётся как есть
+    .replace(/\s*-\s+/g, '-')
+    .replace(/\s+-\s*/g, '-');
 }
 
 function normalizeDocxLine(value: string): string {
@@ -1746,6 +1750,11 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
 
 async function parseDocxRows(buffer: ArrayBuffer): Promise<ImportedProcurementRow[]> {
   const content = await parseDocxContent(buffer);
+
+  // Сводная таблица ТЗ-генератора: первый приоритет (надёжная сигнатура с ОКПД2/Прил.№)
+  const summaryTableRows = parseDocxSummaryTableRows(content);
+  if (summaryTableRows.length > 0) return summaryTableRows;
+
   const appendixRows = parseDocxAppendixRows(content);
   if (appendixRows.length > 0) return appendixRows;
 
@@ -1757,9 +1766,6 @@ async function parseDocxRows(buffer: ArrayBuffer): Promise<ImportedProcurementRo
 
   const enumeratedRows = parseDocxEnumeratedRows(content);
   if (enumeratedRows.length > 0) return enumeratedRows;
-
-  const summaryTableRows = parseDocxSummaryTableRows(content);
-  if (summaryTableRows.length > 0) return summaryTableRows;
 
   const tableRows = parseDocxTableRows(content.blocks);
   if (tableRows.length > 0) return tableRows;
@@ -1825,12 +1831,13 @@ export async function parseImportedRows(file: File): Promise<ImportedProcurement
     let serverFallbackRows: ImportedProcurementRow[] = [];
     if (serverContent) {
       if (serverContent.tables.length > 0) {
+        // Сводная таблица: первый приоритет для файлов ТЗ-генератора
+        const summaryTableRows = parseDocxSummaryTableRows(serverContent);
+        if (summaryTableRows.length > 0) return summaryTableRows;
         const appendixRows = parseDocxAppendixRows(serverContent);
         if (appendixRows.length > 0) return appendixRows;
         const appendixParagraphRows = parseDocxAppendixParagraphRows(serverContent);
         if (appendixParagraphRows.length > 0) return appendixParagraphRows;
-        const summaryTableRows = parseDocxSummaryTableRows(serverContent);
-        if (summaryTableRows.length > 0) return summaryTableRows;
         const tableRows = parseDocxTableRows(serverContent.blocks);
         if (tableRows.length > 0) return tableRows;
       }

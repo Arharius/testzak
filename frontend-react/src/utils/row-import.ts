@@ -702,11 +702,33 @@ function findSpecHeaderIndex(rows: string[][]): number {
   return 0;
 }
 
+// Regex for document clause/section numbers like "1.1", "2.3.4", "1."
+const CLAUSE_NUM_RE = /^(\d+\.(\d+\.?)*)\s*$/;
+
+function isDocxClauseTable(rows: string[][]): boolean {
+  if (rows.length < 3) return false;
+  const firstRow = rows[0];
+  if (firstRow.length >= 2) {
+    const h0 = normalizeHeader(firstRow[0]);
+    const h1 = normalizeHeader(firstRow[1]);
+    if ((h0 === 'пункт' || h0 === 'п' || h0 === 'п/п') && (h1 === 'содержание' || h1 === 'описание')) return true;
+  }
+  // Check data: if ≥50% of first-col cells in first 8 rows look like "1.", "1.1", "2.3" section numbers
+  const dataRows = rows.slice(1, Math.min(rows.length, 9));
+  const clauseCount = dataRows.filter((row) => CLAUSE_NUM_RE.test(normalizeCell(row[0] || ''))).length;
+  return clauseCount >= Math.max(2, Math.floor(dataRows.length * 0.5));
+}
+
 function looksLikeHeaderlessSpecTable(rows: string[][]): boolean {
   // No recognized headers — try heuristic: 2-3 col table whose first col cells
   // look like spec names (short, Russian, no URL) and second col looks like values
   if (rows.length < 4 || rows[0].length < 2 || rows[0].length > 4) return false;
+  // Guard: reject clause/section tables (e.g. "1.1 | Наименование объекта")
+  if (isDocxClauseTable(rows)) return false;
   const sample = rows.slice(0, Math.min(rows.length, 10));
+  // Extra guard: if ≥40% of first-col cells look like section numbers → not a spec table
+  const clauseLikeCells = sample.filter((row) => CLAUSE_NUM_RE.test(normalizeCell(row[0] || ''))).length;
+  if (clauseLikeCells / sample.length >= 0.4) return false;
   const specLikeCols0 = sample.filter((row) => {
     const n = normalizeCell(row[0] || '');
     return n.length > 2 && n.length < 60 && isValidSpecName(n);
@@ -720,6 +742,8 @@ function looksLikeHeaderlessSpecTable(rows: string[][]): boolean {
 
 function isSpecTable(rows: string[][]): boolean {
   if (rows.length < 2) return false;
+  // Early exit: document section/clause table (e.g. "Пункт | Содержание")
+  if (isDocxClauseTable(rows)) return false;
   const headerIndex = findSpecHeaderIndex(rows);
   const headers = rows[headerIndex].map((cell) => normalizeHeader(cell));
 
@@ -931,21 +955,6 @@ function extractRowDescription(row: string[], map: HeaderMap): string {
   const description = normalizeCell(row[descriptionIndex] || primary);
   if (description && description !== primary) return description;
   return primary;
-}
-
-const CLAUSE_NUM_RE = /^(\d+\.\d+|[РПРР]\.\d+|РР?\.\d+|ПП?\.\d+)\s*$/;
-
-function isDocxClauseTable(rows: string[][]): boolean {
-  if (rows.length < 3) return false;
-  const firstRow = rows[0];
-  if (firstRow.length === 2) {
-    const h0 = normalizeHeader(firstRow[0]);
-    const h1 = normalizeHeader(firstRow[1]);
-    if ((h0 === 'пункт' || h0 === '№' || h0 === 'п') && (h1 === 'содержание' || h1 === 'описание')) return true;
-  }
-  const dataRows = rows.slice(1, Math.min(rows.length, 8));
-  const clauseCount = dataRows.filter((row) => CLAUSE_NUM_RE.test(normalizeCell(row[0] || ''))).length;
-  return clauseCount >= Math.max(2, Math.floor(dataRows.length * 0.5));
 }
 
 function isLikelyProcurementTable(rawRows: string[][]): boolean {

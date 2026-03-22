@@ -348,8 +348,11 @@ function detectTypeByImportedOkpd2(description: string, okpd2?: string): string 
   return null;
 }
 
-function detectFreeformRowType(rawType: string, description: string, options?: { conservativeGeneral?: boolean; okpd2?: string }): string {
-  const text = `${rawType} ${description}`.trim();
+function detectFreeformRowType(rawType: string, description: string, options?: { conservativeGeneral?: boolean; okpd2?: string; contextText?: string }): string {
+  const primaryText = `${rawType} ${description}`.trim();
+  const text = (options?.contextText && primaryText)
+    ? `${primaryText} ${options.contextText.slice(0, 400)}`
+    : primaryText;
   if (!text) return 'otherGoods';
   const normalized = normalizeTypeMatchText(text);
   if (looksLikeServiceQuery(text)) {
@@ -7217,6 +7220,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
         const type = detectFreeformRowType(item.rawType, item.description, {
           conservativeGeneral: item.importInfo.sourceFormat === 'docx',
           okpd2: item.meta?.okpd2_code || item.meta?.okpd2,
+          contextText: item.importInfo.sourceContextText,
         });
         const classificationSource = item.importInfo.sourceFormat === 'docx' ? 'docx_import' : 'import';
         const hasSeedSpecs = !!item.specs?.length;

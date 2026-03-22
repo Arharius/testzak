@@ -328,6 +328,17 @@ export function WorkspaceRowsTable({
                           {generationPending ? '⏳ Генерация...' : row.importInfo?.sourceFormat === 'docx' && row.specs?.length ? '⚙ Нормализовать ТЗ' : '🚀 Сгенерировать ТЗ'}
                         </button>
                       )}
+                      {row.status === 'error' && (
+                        <button
+                          type="button"
+                          className="row-inline-action"
+                          onClick={() => onGenerateRow(row.id)}
+                          disabled={!canStartGeneration || generationPending}
+                          title="Повторить поиск характеристик и генерацию ТЗ для этой строки"
+                        >
+                          {generationPending ? '⏳ Генерация...' : '🔄 Повторить'}
+                        </button>
+                      )}
                       {needsQuickClassificationAction && (
                         <button
                           type="button"

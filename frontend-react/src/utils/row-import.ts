@@ -828,7 +828,9 @@ function isDocxSummaryTable(rows: string[][]): boolean {
   const hasOkpd2 = headers.includes('окпд2') || headers.includes('окпд 2');
   const hasAppendix = headers.some((cell) => cell.includes('прил'));
   const hasCommercial = headers.includes('тип лицензии') || headers.includes('срок действия');
-  return hasName && hasOkpd2 && hasAppendix && hasCommercial;
+  const hasQty = headers.some((cell) => HEADER_ALIASES.qty.includes(cell));
+  // Стандартный формат с коммерческими полями, или упрощённый формат ТЗ-генератора (без тип лицензии/срок)
+  return hasName && hasOkpd2 && hasAppendix && (hasCommercial || hasQty);
 }
 
 function collectRequirementContext(lines: string[]): { text: string; count: number } {
@@ -1085,19 +1087,47 @@ function parseDocxSummaryTableRows(content: ParsedDocxContent): ImportedProcurem
   const specTableMap = buildDocxSpecTableMap(content);
   for (const tableRows of content.tables) {
     if (!isDocxSummaryTable(tableRows)) continue;
+    const headerRow = tableRows[0];
+    const hMap = detectHeaderMap(headerRow);
+    // Определяем колонку "Прил.№" гибко
+    const appendixColIdx = headerRow.findIndex((cell) => normalizeHeader(cell).includes('прил'));
+    // Fallback на старые хардкод-индексы для совместимости со старым форматом (7 колонок)
+    const isLegacyFormat = headerRow.length >= 7 && !Object.keys(hMap).includes('qty');
     for (const row of tableRows.slice(1)) {
-      const description = normalizeCell(row[1] || '');
+      let description: string;
+      let licenseType: string;
+      let term: string;
+      let qtyCell: string;
+      let okpd2Cell: string;
+      let appendixCell: string;
+      if (isLegacyFormat) {
+        description = normalizeCell(row[1] || '');
+        licenseType = normalizeCell(row[2] || '').replace(/^—$/u, '');
+        term = normalizeCell(row[3] || '').replace(/^—$/u, '');
+        qtyCell = row[4] || '1';
+        okpd2Cell = row[5] || '';
+        appendixCell = row[6] || '';
+      } else {
+        const typeIdx = hMap.type ?? hMap.description ?? 1;
+        description = normalizeCell(row[typeIdx] || '');
+        licenseType = hMap.licenseType != null ? normalizeCell(row[hMap.licenseType] || '').replace(/^—$/u, '') : '';
+        term = hMap.term != null ? normalizeCell(row[hMap.term] || '').replace(/^—$/u, '') : '';
+        qtyCell = hMap.qty != null ? row[hMap.qty] || '1' : '1';
+        okpd2Cell = hMap.okpd2 != null ? row[hMap.okpd2] || '' : '';
+        appendixCell = appendixColIdx >= 0 ? row[appendixColIdx] || '' : '';
+      }
       if (!description || shouldRejectImportText(description)) continue;
-      const appendixMatch = normalizeCell(row[6] || '').match(/(\d+)/);
+      const appendixMatch = normalizeCell(appendixCell).match(/(\d+)/);
       const appendixIndex = appendixMatch ? Number(appendixMatch[1]) : null;
+      const okpd2 = extractOkpd2Code(okpd2Cell);
       const imported = makeImportedRow({
         rawType: description,
         description,
-        licenseType: normalizeCell(row[2] || '').replace(/^—$/u, ''),
-        term: normalizeCell(row[3] || '').replace(/^—$/u, ''),
-        qty: parseQty(row[4] || '1'),
-        qtyExplicit: /\d/.test(normalizeCell(row[4] || '')),
-        meta: extractOkpd2Code(row[5] || '') ? { okpd2_code: extractOkpd2Code(row[5] || '') } : undefined,
+        licenseType,
+        term,
+        qty: parseQty(qtyCell),
+        qtyExplicit: /\d/.test(normalizeCell(qtyCell)),
+        meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
         specs: appendixIndex ? specTableMap.get(appendixIndex) : undefined,
         notes: ['Позиция извлечена из сводной таблицы ТЗ.'],
         sourceFormat: 'docx',

@@ -337,7 +337,7 @@ export function WorkspaceRowsTable({
                           title="Повторить поиск характеристик и генерацию ТЗ для этой строки"
                           style={{ borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.12)', color: '#f87171' }}
                         >
-                          {generationPending ? '⏳ Генерация...' : '🔄 Повторить поиск'}
+                          🔄 Повторить поиск
                         </button>
                       )}
                       {needsQuickClassificationAction && (

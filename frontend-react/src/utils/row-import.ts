@@ -1255,6 +1255,7 @@ function extractMultiSpecRows(
       sourceText: productName,
       meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
       specs: specs.length > 0 ? specs : undefined,
+      sourceContextText: content.paragraphs.slice(0, 12).filter((p) => p.trim().length > 3).join(' ').slice(0, 500) || undefined,
     }));
   }
   return result.length > 0 ? result : null;
@@ -1263,6 +1264,9 @@ function extractMultiSpecRows(
 function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementRow[] {
   const rows: ImportedProcurementRow[] = [];
   const { blocks } = content;
+  // Первые абзацы документа содержат заголовок/назначение (напр. "коммутатор", "маршрутизатор")
+  // и используются как контекст при определении типа товара по номеру модели (напр. MES2300B-48)
+  const docTitleContext = content.paragraphs.slice(0, 12).filter((p) => p.trim().length > 3).join(' ').slice(0, 500) || undefined;
   for (let i = 0; i < blocks.length; i += 1) {
     const block = blocks[i];
     if (block.kind !== 'paragraph' || !DOCX_APPENDIX_HEADING_RE.test(block.text || '')) continue;
@@ -1312,6 +1316,7 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
           sourceKind: 'appendix',
           sourceText: headingProductName,
           meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+          sourceContextText: docTitleContext,
         }));
         continue;
       }
@@ -1357,6 +1362,7 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
         meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
         specs: specs.length > 0 ? specs : undefined,
         notes,
+        sourceContextText: docTitleContext,
       }));
       continue;
     }

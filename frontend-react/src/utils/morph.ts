@@ -109,7 +109,6 @@ function declineLastWord(word: string): string {
   }
   if (w.endsWith('ка') && w.length > 3) {
     const base = w.slice(0, -2);
-    const lastTwo = base.slice(-2);
     if (/[йь]$/.test(base)) return base.slice(0, -1) + 'ек';
     if (/[жчшщ]к$/i.test(w.slice(-3))) return base + 'ек';
     return base + 'ок';

@@ -160,7 +160,7 @@ const FAS_RULES: ComplianceRule[] = [
     severity: 'critical',
     action: 'replace',
     pattern: /\b(Astra\s+Linux|Termidesk|ALD\s+Pro|CommuniGate|Р7-Офис|МойОфис|Kaspersky|Лаборатори[ия]\s+Касперского|Dr\.?\s*Web|Vipnet|ViPNet|КриптоПро|InfoWatch|Континент|Secret\s+Net|Dallas\s+Lock|Код\s+Безопасности)\b/i,
-    replaceFn: (match, full) => {
+    replaceFn: (_match, full) => {
       if (/или\s+эквивалент/i.test(full)) return full;
       return full + ' или эквивалент';
     },

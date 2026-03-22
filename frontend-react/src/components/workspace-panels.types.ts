@@ -9,7 +9,8 @@ export type ReadinessActionKind =
   | 'benchmark_all'
   | 'service_fill_core'
   | 'service_fill_all'
-  | 'legal_safe_fix';
+  | 'legal_safe_fix'
+  | 'antifas_autofix';
 
 export type ClassificationBulkMode = 'all' | 'missing' | 'review';
 export type BenchmarkBulkMode = 'missing' | 'changed' | 'all';

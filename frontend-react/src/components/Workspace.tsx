@@ -355,8 +355,9 @@ function detectFreeformRowType(rawType: string, description: string, options?: {
   if (looksLikeServiceQuery(text)) {
     return 'otherService';
   }
+  // пример ввода: масло для шредера 350 мл
   if (/(масл|смазк|lubric|oil)/.test(normalized)
-    && /(шредер|уничтожител|бумагоуничтожител|document shred)/.test(normalized)) {
+    && /(шредер|уничтожител|бумагоуничтожател|document shred)/.test(normalized)) {
     return 'shredderOil';
   }
   if (normalized.includes('мфу') || normalized.includes('многофункциональное устройство')) {

@@ -138,8 +138,8 @@ const checks = [
     ok: workspace.includes('const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null);')
       && workspace.includes('if (hasImportedSeedSpecs(currentRow)) {')
       && workspace.includes('sourceStats.imported += 1;')
-      && workspace.includes('Пакетная обработка включена, размер батча')
-      && workspace.includes('Генерация ${generationProgress.current}/${generationProgress.total}'),
+      && workspace.includes('Пакетная обработка, размер пакета:')
+      && workspace.includes('Генерация ${generationProgress.current} / ${generationProgress.total}'),
   },
   {
     name: 'Imported diagnostics are persisted through save and load history',
@@ -233,8 +233,8 @@ const checks = [
     name: 'Workspace now supports organization template packs and saved team templates',
     ok: workspace.includes('getSuggestedOrganizationTemplatePacks')
       && workspace.includes('saveWorkspaceTemplate')
-      && workspace.includes('Шаблоны организации')
-      && workspace.includes('Сохранить текущий набор как шаблон')
+      && workspace.includes('Шаблоны типовых закупок')
+      && workspace.includes('Сохранить набор как шаблон')
       && workspace.includes('Сохранённые шаблоны команды'),
   },
 ];

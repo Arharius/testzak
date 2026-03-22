@@ -1086,19 +1086,27 @@ def _call_ai(provider: str, model: str, messages: list, temperature: float = 0.3
 
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = URLRequest(url, data=body, headers=headers, method="POST")
-    try:
-        with urlopen(req, timeout=AI_TIMEOUT) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-            return json.loads(raw)
-    except HTTPError as e:
-        if e.code == 401:
-            raise HTTPException(status_code=502, detail="API ключ ИИ недействителен или не настроен. Обратитесь к администратору.")
-        detail = e.read().decode("utf-8", errors="ignore") if hasattr(e, "read") else str(e)
-        raise HTTPException(status_code=502, detail=f"AI error {e.code}: {detail[:400]}")
-    except URLError as e:
-        raise HTTPException(status_code=502, detail=f"AI connection error: {e.reason}")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"AI error: {str(e)[:400]}")
+    import time as _time
+    for _attempt in range(3):
+        try:
+            with urlopen(req, timeout=AI_TIMEOUT) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+                return json.loads(raw)
+        except HTTPError as e:
+            if e.code == 429:
+                # Rate limited — wait and retry
+                retry_after = int(e.headers.get("Retry-After", 5 + _attempt * 10))
+                _time.sleep(min(retry_after, 30))
+                continue
+            if e.code == 401:
+                raise HTTPException(status_code=502, detail="API ключ ИИ недействителен или не настроен. Обратитесь к администратору.")
+            detail = e.read().decode("utf-8", errors="ignore") if hasattr(e, "read") else str(e)
+            raise HTTPException(status_code=502, detail=f"AI error {e.code}: {detail[:400]}")
+        except URLError as e:
+            raise HTTPException(status_code=502, detail=f"AI connection error: {e.reason}")
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"AI error: {str(e)[:400]}")
+    raise HTTPException(status_code=502, detail="AI error 429: превышен лимит запросов, повторите позже")
 
 
 def _call_ai_streaming(provider: str, model: str, messages: list, temperature: float = 0.3, max_tokens: int = 4096):

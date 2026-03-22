@@ -7889,38 +7889,94 @@ ${hint || '- Используй детальные, проверяемые эк�
 
   const handleApplyReviewFixes = useCallback((fixes: TZReviewIssue[]) => {
     let appliedCount = 0;
+
+    // Normalize for fuzzy matching: strip trademarks, trailing dashes, collapse spaces
+    const normMatch = (s: string) => s
+      .replace(/[®™©]/g, '')
+      .replace(/\s*[—–-]+\s*$/, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+
     setRows((prev) => {
       const updated = prev.map((row) => {
         if (!row.specs || row.specs.length === 0) return row;
         let changed = false;
-        const newSpecs = row.specs.map((spec) => {
+
+        // Collect per-spec decisions first to avoid double-counting
+        const specsToRemove = new Set<number>();
+        const specReplacements = new Map<number, typeof row.specs[0]>();
+
+        row.specs.forEach((spec, specIdx) => {
           const specText = `${spec.name}: ${spec.value}${spec.unit ? ' ' + spec.unit : ''}`;
-          const specValueLower = spec.value.toLowerCase();
-          const specNameLower = spec.name.toLowerCase();
+          const specNameNorm = normMatch(spec.name);
+
           for (const fix of fixes) {
-            const origLower = fix.originalText.toLowerCase();
-            const origTrimmed = fix.originalText.replace(/\s+/g, ' ').trim();
-            if (specText.includes(fix.originalText) || spec.value.includes(fix.originalText) ||
-                specValueLower.includes(origLower) || specText.includes(origTrimmed)) {
-              changed = true;
-              appliedCount++;
-              const re = new RegExp(fix.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-              return { ...spec, value: spec.value.replace(re, fix.suggestedText) };
+            if (specReplacements.has(specIdx) || specsToRemove.has(specIdx)) break;
+
+            const isDeletion = /^(удалить|убрать|исключить|delete|remove)\b/i.test(fix.suggestedText.trim());
+
+            // ── Strategy 1: match by spec name extracted from "SpecName: ..." format ──
+            const colonIdx = fix.originalText.indexOf(': ');
+            if (colonIdx > 0) {
+              const origSpecName = normMatch(fix.originalText.substring(0, colonIdx));
+              if (origSpecName === specNameNorm) {
+                if (isDeletion) {
+                  specsToRemove.add(specIdx);
+                } else {
+                  const sugColonIdx = fix.suggestedText.indexOf(': ');
+                  const sugSpecName = sugColonIdx > 0 ? normMatch(fix.suggestedText.substring(0, sugColonIdx)) : '';
+                  const newValue = (sugColonIdx > 0 && sugSpecName === specNameNorm)
+                    ? fix.suggestedText.substring(sugColonIdx + 2).trim()
+                    : fix.suggestedText;
+                  specReplacements.set(specIdx, { ...spec, value: newValue });
+                }
+                changed = true;
+                appliedCount++;
+                break;
+              }
             }
-            if (spec.name.includes(fix.originalText) || specNameLower.includes(origLower)) {
+
+            // ── Strategy 2: normalized fuzzy substring match ──
+            const normOrig = normMatch(fix.originalText);
+            // Strip leading non-alphanumeric (e.g. "® Core" → "core") to handle AI truncation
+            const normOrigTrimmed = normOrig.replace(/^[^а-яёa-z\d]*/i, '');
+            const normSpecText = normMatch(specText);
+            const normSpecVal = normMatch(spec.value);
+
+            const fuzzyMatch = normSpecText.includes(normOrig) || normSpecVal.includes(normOrig) ||
+              (normOrigTrimmed.length > 5 && (normSpecText.includes(normOrigTrimmed) || normSpecVal.includes(normOrigTrimmed)));
+
+            if (fuzzyMatch) {
+              if (isDeletion) {
+                specsToRemove.add(specIdx);
+              } else {
+                const sugColonIdx = fix.suggestedText.indexOf(': ');
+                const sugSpecName = sugColonIdx > 0 ? normMatch(fix.suggestedText.substring(0, sugColonIdx)) : '';
+                const newValue = (sugColonIdx > 0 && sugSpecName === specNameNorm)
+                  ? fix.suggestedText.substring(sugColonIdx + 2).trim()
+                  : fix.suggestedText;
+                specReplacements.set(specIdx, { ...spec, value: newValue });
+              }
               changed = true;
               appliedCount++;
-              const re = new RegExp(fix.originalText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-              return { ...spec, name: spec.name.replace(re, fix.suggestedText) };
+              break;
             }
           }
-          return spec;
         });
-        return changed ? { ...row, specs: newSpecs } : row;
+
+        if (!changed) return row;
+
+        const newSpecs = row.specs
+          .map((spec, idx) => specReplacements.has(idx) ? specReplacements.get(idx)! : spec)
+          .filter((_, idx) => !specsToRemove.has(idx));
+
+        return { ...row, specs: newSpecs };
       });
       runComplianceGate(updated);
       return updated;
     });
+
     if (appliedCount > 0) {
       showToast(`✅ Применено ${appliedCount} исправлений по рецензии`, true);
     } else {

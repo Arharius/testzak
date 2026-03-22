@@ -8289,7 +8289,7 @@ ${hint || '- Используй детальные, проверяемые эк�
                 okpd2_name: g.okpd2name,
                 ktru_code: g.ktruFixed ?? '',
               });
-            if (specificModelRequested && !hasSufficientExactModelCoverage(finalSpecs)) {
+            if (specificModelRequested && !isUniversalGoodsType(row.type) && !hasSufficientExactModelCoverage(finalSpecs)) {
               console.warn('[internet] backend search returned weak exact-model result, continuing with AI fallback');
             } else {
             return {
@@ -8340,7 +8340,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       console.warn('[autopilot] Internet AI candidate rejected: mostly placeholder values');
       return null;
     }
-    if (specificModelRequested && !hasSufficientExactModelCoverage(enriched)) {
+    if (specificModelRequested && !isUniversalGoodsType(row.type) && !hasSufficientExactModelCoverage(enriched)) {
       console.warn('[autopilot] Internet AI candidate rejected: exact model still has weak/generic values');
       return null;
     }
@@ -8405,7 +8405,7 @@ ${hint || '- Используй детальные, проверяемые эк�
                 okpd2_name: g.okpd2name,
                 ktru_code: g.ktruFixed ?? '',
               });
-            if (specificModelRequested && !hasSufficientExactModelCoverage(finalSpecs)) {
+            if (specificModelRequested && !isUniversalGoodsType(row.type) && !hasSufficientExactModelCoverage(finalSpecs)) {
               console.warn('[eis] backend search returned weak exact-model result, continuing with AI fallback');
             } else {
             return {
@@ -8468,7 +8468,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       console.warn('[autopilot] EIS AI candidate rejected: mostly placeholder values');
       return null;
     }
-    if (specificModelRequested && !hasSufficientExactModelCoverage(enriched)) {
+    if (specificModelRequested && !isUniversalGoodsType(row.type) && !hasSufficientExactModelCoverage(enriched)) {
       console.warn('[autopilot] EIS AI candidate rejected: exact model still has weak/generic values');
       return null;
     }
@@ -8509,7 +8509,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     const isAcceptable = (candidate: SpecsCandidate | null) => {
       if (!candidate) return false;
       if (candidate.specs.length < minQualitySpecs) return false;
-      if (!specificModelRequested) return true;
+      if (!specificModelRequested || isUniversalGoodsType(row.type)) return true;
       return hasSufficientExactModelCoverage(candidate.specs);
     };
     if (!autoPickTopCandidate) {
@@ -8794,7 +8794,7 @@ ${hint || '- Используй детальные, проверяемые эк�
             if (!isGenericGoods && !hasRealSpecValues(enrichedSpecs)) {
               throw new Error('характеристики не найдены');
             }
-            if (specificModelRequested && !hasSufficientExactModelCoverage(enrichedSpecs)) {
+            if (specificModelRequested && !isGenericGoods && !hasSufficientExactModelCoverage(enrichedSpecs)) {
               throw new Error('характеристики не найдены');
             }
             const finalMeta = normalizeResolvedMeta(currentRow.type, { ...validatedMeta, classification_source: 'ai' });
@@ -8809,7 +8809,7 @@ ${hint || '- Используй детальные, проверяемые эк�
           } catch (e) {
             const rawMsg = e instanceof Error ? e.message : 'generation_error';
             const providerAuthFailed = isAiProviderAuthErrorMessage(rawMsg);
-            const shouldTrySearchFallback = providerAuthFailed || isBackendTimeoutMessage(rawMsg) || !specificModelRequested;
+            const shouldTrySearchFallback = providerAuthFailed || isBackendTimeoutMessage(rawMsg) || !specificModelRequested || isGenericGoods;
             if (shouldTrySearchFallback) {
               try {
                 const [internetResult, eisResult] = await Promise.allSettled([

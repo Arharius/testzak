@@ -1718,10 +1718,6 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
   if (serviceName) {
     const description = normalizeCell(serviceName);
     const serviceSpecs = buildServiceSpecsFromParagraphs(paragraphs);
-    const equipmentRows = extractEquipmentTableRows(content);
-    if (equipmentRows.length >= 2) {
-      return dedupeImportedRows(equipmentRows);
-    }
     return dedupeImportedRows([
       makeImportedRow({
         ...parseCommercialMeta(serviceName),

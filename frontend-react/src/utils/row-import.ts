@@ -1677,6 +1677,31 @@ function extractProductNameFromSpecTable(blocks: DocxBlock[]): { name: string; s
   return null;
 }
 
+function extractEquipmentTableRows(content: ParsedDocxContent): ImportedProcurementRow[] {
+  const rows: ImportedProcurementRow[] = [];
+  for (const tableRows of content.tables) {
+    if (tableRows.length < 2) continue;
+    const headerRow = tableRows[0].map((h) => normalizeHeader(h));
+    const typeIdx = headerRow.findIndex((h) => h.includes('оборудован') || h === 'наименование');
+    const modelIdx = headerRow.findIndex((h) => h === 'модель' || h === 'марка' || h === 'артикул');
+    if (typeIdx === -1 && modelIdx === -1) continue;
+    const dataRows = tableRows.slice(1);
+    for (const row of dataRows) {
+      const typeCell = normalizeCell(typeIdx >= 0 ? (row[typeIdx] || '') : '');
+      const modelCell = normalizeCell(modelIdx >= 0 ? (row[modelIdx] || '') : '');
+      const description = [typeCell, modelCell].filter(Boolean).join(' ').trim();
+      if (!description || description.length < 3 || countMeaningfulWords(description) < 1) continue;
+      const imported = buildImportedRowFromText(description, 'appendix', {
+        allowWithoutQty: true,
+        notes: ['Позиция извлечена из перечня оборудования в приложении ТЗ.'],
+      });
+      if (imported) rows.push(imported);
+    }
+    if (rows.length > 0) break;
+  }
+  return rows;
+}
+
 function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementRow[] {
   const { paragraphs, blocks } = content;
   const allLines = extractAllDocumentLines(content);
@@ -1693,6 +1718,10 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
   if (serviceName) {
     const description = normalizeCell(serviceName);
     const serviceSpecs = buildServiceSpecsFromParagraphs(paragraphs);
+    const equipmentRows = extractEquipmentTableRows(content);
+    if (equipmentRows.length >= 2) {
+      return dedupeImportedRows(equipmentRows);
+    }
     return dedupeImportedRows([
       makeImportedRow({
         ...parseCommercialMeta(serviceName),

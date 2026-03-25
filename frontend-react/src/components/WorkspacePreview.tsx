@@ -34,6 +34,8 @@ type DocumentSectionBundleLike = {
   section5Title: string;
   section6Title: string;
   section7Title?: string;
+  approvalPersonName?: string;
+  approvalPersonTitle?: string;
 };
 
 type CatalogLike = {
@@ -82,6 +84,8 @@ export function WorkspacePreview({
     multi,
     showCommercialTerms,
     objectName,
+    approvalPersonName,
+    approvalPersonTitle,
   } = docSections;
 
   const editCellStyle: CSSProperties = {
@@ -314,7 +318,10 @@ export function WorkspacePreview({
       })}
 
       <div style={{ marginTop: 28 }}>
-        <p style={pStyle}>Специалист ___________________________</p>
+        <p style={pStyle}>
+          {approvalPersonTitle || 'Специалист'} ___________________________
+          {approvalPersonName ? ` / ${approvalPersonName} /` : ''}
+        </p>
         <p style={pStyle}>«____» _______________ {currentYear} г.                                     _______________</p>
       </div>
     </div>

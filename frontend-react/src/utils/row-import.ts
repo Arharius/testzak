@@ -72,7 +72,7 @@ const DOCX_TRAILING_QTY_RE = new RegExp(
 const DOCX_IMPORT_STOP_RE = /^(код окпд2(?:\s|$|[.:])|код ктру(?:\s|$|[.:])|наименование характеристики|значение характеристики|единица измерения характеристики|спецификация(?:\s|$|[.:])|требования к|составил:|согласовано:|утверждаю(?:\s|$|[.:])|техническое задание(?:\s|$|[.:]))/i;
 const DOCX_SECTION_HEADING_RE = /^(\d+(?:\.\d+)*\.?\s+|приложение(?:\s|$|[.:])|раздел(?:\s|$|[.:])|глава(?:\s|$|[.:])|составил:|согласовано:|утверждаю(?:\s|$|[.:]))/i;
 const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии(?:\s|$|[.:])|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право|юридическое резюме|национальный режим|основание\s*\/\s*исключение|подтверждающие документы|источник классификации|классификация позиции|паспорт публикации|сводка готовности|итоговый статус|блокирующие замечания|предупреждения и что проверить|справочная таблица|anti-фас|специалист|«[_\s]*»|_{3,}|\(должность\)|\(фио\)|\(ф\.?\s*и\.?\s*о\.?\)|к техническому заданию|к договору|к контракту|к тз|перечень оборудования|перечень товаров|перечень позиций|инв\.\s*№|инвентарный\s+номер|местоположение)/i;
-const DOCX_APPROVAL_ANYWHERE_RE = /\bутверждаю\b/i;
+const DOCX_APPROVAL_ANYWHERE_RE = /утверждаю/i;
 const DOCX_APPENDIX_HEADING_RE = /^приложение(?:\s|$|[.:])/i;
 const DOCX_OKPD2_PREFIX_RE = /^код окпд2(?:\s|$|[.:])/i;
 const DOCX_CLAUSE_PREFIXES = [
@@ -1188,7 +1188,7 @@ function extractProductNameFromAppendixHeading(headingText: string): string {
   const extracted = normalizeCell(match[1]).replace(/[-:;,.]+$/, '').trim();
   if (!extracted) return '';
   const lc = extracted.toLowerCase().replace(/ё/g, 'е');
-  if (/^(к\s+|на\s+основании|к\s+договору|к\s+контракту|к\s+тз\b)/.test(lc)) return '';
+  if (/^(к\s+|на\s+основании|к\s+договору|к\s+контракту|к\s+тз(?:\s|$|[.,;:]))/.test(lc)) return '';
   return extracted;
 }
 
@@ -1682,7 +1682,7 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
   const allLines = extractAllDocumentLines(content);
   const serviceName =
     findParagraphValue(allLines, /наименование оказываемых услуг/i) ||
-    allLines.find((line) => /^на оказание услуг\b/i.test(normalizeCell(line))) ||
+    allLines.find((line) => /^на оказание услуг(?:\s|$)/i.test(normalizeCell(line))) ||
     '';
   const requirementContext = collectRequirementContext(
     allLines.filter((line) => looksLikeRequirementText(line) || looksLikeNormativeText(line)),
@@ -1713,7 +1713,7 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
 
   const rawObjectName =
     findParagraphValue(allLines, /наименование объекта поставки/i) ||
-    allLines.find((line) => /^на (?:поставку|закупку)\b/i.test(normalizeCell(line))) ||
+    allLines.find((line) => /^на (?:поставку|закупку)(?:\s|$)/i.test(normalizeCell(line))) ||
     '';
   const objectName = normalizeCell(rawObjectName)
     .replace(/\s*\(далее[^)]*\)/gi, '')
@@ -1776,26 +1776,24 @@ async function parseDocxRows(buffer: ArrayBuffer): Promise<ImportedProcurementRo
 
   // Сводная таблица ТЗ-генератора: первый приоритет (надёжная сигнатура с ОКПД2/Прил.№)
   const summaryTableRows = parseDocxSummaryTableRows(content);
-  if (summaryTableRows.length > 0) { console.debug('[DOCX-CLIENT] path=summaryTable', summaryTableRows.length); return summaryTableRows; }
+  if (summaryTableRows.length > 0) return summaryTableRows;
 
   const appendixRows = parseDocxAppendixRows(content);
-  if (appendixRows.length > 0) { console.debug('[DOCX-CLIENT] path=appendixRows', appendixRows.length); return appendixRows; }
+  if (appendixRows.length > 0) return appendixRows;
 
   const appendixParagraphRows = parseDocxAppendixParagraphRows(content);
-  if (appendixParagraphRows.length > 0) { console.debug('[DOCX-CLIENT] path=appendixParagraphRows', appendixParagraphRows.length); return appendixParagraphRows; }
+  if (appendixParagraphRows.length > 0) return appendixParagraphRows;
 
   const appendixXmlRows = parseDocxAppendixXmlRows(content);
-  if (appendixXmlRows.length > 0) { console.debug('[DOCX-CLIENT] path=appendixXmlRows', appendixXmlRows.length, appendixXmlRows.map((r) => r.description?.slice(0, 60))); return appendixXmlRows; }
+  if (appendixXmlRows.length > 0) return appendixXmlRows;
 
   const enumeratedRows = parseDocxEnumeratedRows(content);
-  if (enumeratedRows.length > 0) { console.debug('[DOCX-CLIENT] path=enumeratedRows', enumeratedRows.length); return enumeratedRows; }
+  if (enumeratedRows.length > 0) return enumeratedRows;
 
   const tableRows = parseDocxTableRows(content.blocks);
-  if (tableRows.length > 0) { console.debug('[DOCX-CLIENT] path=tableRows', tableRows.length); return tableRows; }
+  if (tableRows.length > 0) return tableRows;
 
-  const fallbackRows = parseDocxFallbackRows(content);
-  console.debug('[DOCX-CLIENT] path=fallback', fallbackRows.length, fallbackRows.map((r) => r.description?.slice(0, 60)));
-  return fallbackRows;
+  return parseDocxFallbackRows(content);
 }
 
 async function tryServerDocxParse(file: File): Promise<ParsedDocxContent | null> {
@@ -1873,8 +1871,6 @@ export async function parseImportedRows(file: File): Promise<ImportedProcurement
     }
     // Client-side parsing (JSZip + DOMParser): handles more DOCX structures
     const clientRows = await parseDocxRows(buffer);
-    console.debug('[DOCX-IMPORT] serverFallbackRows:', serverFallbackRows.length, serverFallbackRows.map((r) => r.description?.slice(0, 60)));
-    console.debug('[DOCX-IMPORT] clientRows:', clientRows.length, clientRows.map((r) => r.description?.slice(0, 60)));
     // Prefer whichever parser found more positions; server fallback wins only on tie
     if (clientRows.length > serverFallbackRows.length) return clientRows;
     if (serverFallbackRows.length > 0) return serverFallbackRows;

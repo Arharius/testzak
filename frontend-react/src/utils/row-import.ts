@@ -1776,24 +1776,26 @@ async function parseDocxRows(buffer: ArrayBuffer): Promise<ImportedProcurementRo
 
   // Сводная таблица ТЗ-генератора: первый приоритет (надёжная сигнатура с ОКПД2/Прил.№)
   const summaryTableRows = parseDocxSummaryTableRows(content);
-  if (summaryTableRows.length > 0) return summaryTableRows;
+  if (summaryTableRows.length > 0) { console.debug('[DOCX-CLIENT] path=summaryTable', summaryTableRows.length); return summaryTableRows; }
 
   const appendixRows = parseDocxAppendixRows(content);
-  if (appendixRows.length > 0) return appendixRows;
+  if (appendixRows.length > 0) { console.debug('[DOCX-CLIENT] path=appendixRows', appendixRows.length); return appendixRows; }
 
   const appendixParagraphRows = parseDocxAppendixParagraphRows(content);
-  if (appendixParagraphRows.length > 0) return appendixParagraphRows;
+  if (appendixParagraphRows.length > 0) { console.debug('[DOCX-CLIENT] path=appendixParagraphRows', appendixParagraphRows.length); return appendixParagraphRows; }
 
   const appendixXmlRows = parseDocxAppendixXmlRows(content);
-  if (appendixXmlRows.length > 0) return appendixXmlRows;
+  if (appendixXmlRows.length > 0) { console.debug('[DOCX-CLIENT] path=appendixXmlRows', appendixXmlRows.length, appendixXmlRows.map((r) => r.description?.slice(0, 60))); return appendixXmlRows; }
 
   const enumeratedRows = parseDocxEnumeratedRows(content);
-  if (enumeratedRows.length > 0) return enumeratedRows;
+  if (enumeratedRows.length > 0) { console.debug('[DOCX-CLIENT] path=enumeratedRows', enumeratedRows.length); return enumeratedRows; }
 
   const tableRows = parseDocxTableRows(content.blocks);
-  if (tableRows.length > 0) return tableRows;
+  if (tableRows.length > 0) { console.debug('[DOCX-CLIENT] path=tableRows', tableRows.length); return tableRows; }
 
-  return parseDocxFallbackRows(content);
+  const fallbackRows = parseDocxFallbackRows(content);
+  console.debug('[DOCX-CLIENT] path=fallback', fallbackRows.length, fallbackRows.map((r) => r.description?.slice(0, 60)));
+  return fallbackRows;
 }
 
 async function tryServerDocxParse(file: File): Promise<ParsedDocxContent | null> {
@@ -1871,6 +1873,8 @@ export async function parseImportedRows(file: File): Promise<ImportedProcurement
     }
     // Client-side parsing (JSZip + DOMParser): handles more DOCX structures
     const clientRows = await parseDocxRows(buffer);
+    console.debug('[DOCX-IMPORT] serverFallbackRows:', serverFallbackRows.length, serverFallbackRows.map((r) => r.description?.slice(0, 60)));
+    console.debug('[DOCX-IMPORT] clientRows:', clientRows.length, clientRows.map((r) => r.description?.slice(0, 60)));
     // Prefer whichever parser found more positions; server fallback wins only on tie
     if (clientRows.length > serverFallbackRows.length) return clientRows;
     if (serverFallbackRows.length > 0) return serverFallbackRows;

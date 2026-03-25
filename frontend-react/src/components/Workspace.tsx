@@ -30,6 +30,7 @@ import {
   type SpecFromSearch,
   type TZDocumentSummary,
   type TZValidateResponse,
+  searchOkpd2,
 } from '../lib/backendApi';
 import { TZValidationModal } from './TZValidationModal';
 import { TZReviewPanel } from './TZReviewPanel';
@@ -8831,6 +8832,41 @@ ${hint || '- Используй детальные, проверяемые эк�
       const targetIndices = targetRowId
         ? next.map((row, index) => row.id === targetRowId ? index : -1).filter((index) => index >= 0)
         : next.map((row, index) => (row.status === 'done' && row.specs && row.specs.length > 0) ? -1 : index).filter((index) => index >= 0);
+
+      // ── Авто-определение ОКПД2 для строк без кода ───────────────────────────
+      if (useBackend) {
+        const rowsNeedingOkpd2 = targetIndices.filter((idx) => {
+          const row = next[idx];
+          const catalogOkpd2 = lookupCatalog(row.type)?.okpd2;
+          const metaOkpd2 = row.meta?.okpd2_code;
+          const hasCode = !!(metaOkpd2 && metaOkpd2 !== 'XX.XX.XX.XXX') || !!(catalogOkpd2);
+          return !hasCode && !!(row.model.trim() || row.type);
+        });
+        if (rowsNeedingOkpd2.length > 0) {
+          const okpd2Results = await Promise.allSettled(
+            rowsNeedingOkpd2.map((idx) => {
+              const row = next[idx];
+              const query = (row.model.trim() || row.type).slice(0, 120);
+              return searchOkpd2(query, 3);
+            }),
+          );
+          rowsNeedingOkpd2.forEach((idx, i) => {
+            const result = okpd2Results[i];
+            if (result.status === 'fulfilled' && result.value.length > 0) {
+              const best = result.value[0];
+              next[idx] = {
+                ...next[idx],
+                meta: {
+                  ...next[idx].meta,
+                  okpd2_code: best.code,
+                  okpd2_name: best.name,
+                },
+              };
+            }
+          });
+        }
+      }
+
       const totalRowsToProcess = targetIndices.length;
       const hasUniversalRows = targetIndices.some((index) => isUniversalGoodsType(next[index].type));
       const batchSize = totalRowsToProcess >= 240

@@ -117,6 +117,8 @@ try:
         _has_sufficient_exact_model_quality,
         _looks_like_specific_model_query,
         _resolve_exact_model_fallback_specs,
+        search_okpd2_classifikators,
+        get_okpd2_by_code,
     )
     _search_import_source = "package"
 except ImportError:
@@ -127,6 +129,8 @@ except ImportError:
             _has_sufficient_exact_model_quality,
             _looks_like_specific_model_query,
             _resolve_exact_model_fallback_specs,
+            search_okpd2_classifikators,
+            get_okpd2_by_code,
         )
         _search_import_source = "direct"
     except Exception as _search_err:
@@ -137,6 +141,10 @@ except ImportError:
             return []
         async def search_eis_specs(query: str, goods_type: str) -> list:  # type: ignore
             return []
+        def search_okpd2_classifikators(query: str, limit: int = 8) -> list:  # type: ignore
+            return []
+        def get_okpd2_by_code(code: str) -> dict | None:  # type: ignore
+            return None
         def _has_sufficient_exact_model_quality(specs: list) -> bool:  # type: ignore
             return False
         def _looks_like_specific_model_query(query: str) -> bool:  # type: ignore
@@ -1847,14 +1855,26 @@ async def search_specs(
     if user is not None:
         require_active(user, db)
     import time as _time
+    import asyncio as _asyncio
     t0 = _time.time()
     logger.info(f"Internet search: {req.product!r} type={req.goods_type!r}")
     exact_model = _looks_like_specific_model_query(req.product.strip())
+    loop = _asyncio.get_event_loop()
+    # Run specs search and ОКПД2 search in parallel
     try:
-        specs = await search_internet_specs(req.product.strip(), req.goods_type)
+        specs_task = search_internet_specs(req.product.strip(), req.goods_type)
+        okpd2_task = loop.run_in_executor(None, lambda: search_okpd2_classifikators(req.product.strip(), 5))
+        specs, okpd2_results = await _asyncio.gather(specs_task, okpd2_task, return_exceptions=True)
+        if isinstance(specs, Exception):
+            logger.error(f"Internet search EXCEPTION: {specs}", exc_info=True)
+            specs = []
+        if isinstance(okpd2_results, Exception):
+            logger.warning(f"ОКПД2 search EXCEPTION: {okpd2_results}")
+            okpd2_results = []
     except Exception as e:
         logger.error(f"Internet search EXCEPTION: {e}", exc_info=True)
         specs = []
+        okpd2_results = []
     if exact_model and not _has_sufficient_exact_model_quality(specs):
         logger.warning(f"Internet search returned weak exact-model result for {req.product!r}, trying exact-model fallback resolver")
         try:
@@ -1864,8 +1884,8 @@ async def search_specs(
             direct_specs = []
         specs = direct_specs if _has_sufficient_exact_model_quality(direct_specs) else []
     elapsed = _time.time() - t0
-    logger.info(f"Internet search done: {len(specs)} specs in {elapsed:.1f}s")
-    return {"ok": True, "specs": specs, "source": "internet", "elapsed": round(elapsed, 1)}
+    logger.info(f"Internet search done: {len(specs)} specs, {len(okpd2_results)} ОКПД2 in {elapsed:.1f}s")
+    return {"ok": True, "specs": specs, "source": "internet", "elapsed": round(elapsed, 1), "okpd2": okpd2_results or []}
 
 # ── Search: EIS zakupki.gov.ru ─────────────────────────────────
 @app.post("/api/search/eis")
@@ -1891,6 +1911,53 @@ async def search_eis(
     elapsed = _time.time() - t0
     logger.info(f"EIS search done: {len(specs)} specs in {elapsed:.1f}s")
     return {"ok": True, "specs": specs, "source": "eis", "elapsed": round(elapsed, 1)}
+
+# ── ОКПД2 search (classifikators.ru) ───────────────────────────
+class Okpd2SearchRequest(BaseModel):
+    q: str
+    limit: int = 8
+
+@app.post("/api/okpd2/search")
+@limiter.limit("30/minute")
+async def okpd2_search_post(request: Request, req: Okpd2SearchRequest):
+    """Search ОКПД2 codes via classifikators.ru (Bing-indexed)."""
+    q = req.q.strip()
+    if not q or len(q) < 2:
+        raise HTTPException(status_code=400, detail="Укажите запрос (минимум 2 символа)")
+    import asyncio as _asyncio
+    import time as _time
+    t0 = _time.time()
+    loop = _asyncio.get_event_loop()
+    results = await loop.run_in_executor(None, lambda: search_okpd2_classifikators(q, req.limit))
+    return {"ok": True, "results": results, "elapsed": round(_time.time() - t0, 2)}
+
+@app.get("/api/okpd2/search")
+@limiter.limit("30/minute")
+async def okpd2_search_get(request: Request, q: str = Query(""), limit: int = Query(8)):
+    """Search ОКПД2 codes via classifikators.ru (GET version)."""
+    q = q.strip()
+    if not q or len(q) < 2:
+        raise HTTPException(status_code=400, detail="Укажите запрос (минимум 2 символа)")
+    import asyncio as _asyncio
+    import time as _time
+    t0 = _time.time()
+    loop = _asyncio.get_event_loop()
+    results = await loop.run_in_executor(None, lambda: search_okpd2_classifikators(q, limit))
+    return {"ok": True, "results": results, "elapsed": round(_time.time() - t0, 2)}
+
+@app.get("/api/okpd2/code/{code:path}")
+@limiter.limit("30/minute")
+async def okpd2_code_lookup(request: Request, code: str):
+    """Look up an ОКПД2 code on classifikators.ru and return its official name."""
+    code = code.strip()
+    if not re.match(r"^\d{2}", code):
+        raise HTTPException(status_code=400, detail="Некорректный код ОКПД2")
+    import asyncio as _asyncio
+    loop = _asyncio.get_event_loop()
+    result = await loop.run_in_executor(None, lambda: get_okpd2_by_code(code))
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Код ОКПД2 {code} не найден на classifikators.ru")
+    return {"ok": True, "code": result["code"], "name": result["name"]}
 
 # ── Search: debug ──────────────────────────────────────────────
 @app.get("/api/search/debug")

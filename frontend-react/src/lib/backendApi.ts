@@ -397,13 +397,42 @@ export interface SpecFromSearch {
 }
 
 export async function searchInternetSpecs(product: string, goodsType: string): Promise<SpecFromSearch[]> {
-  const result = await apiPost<{ ok: boolean; specs: SpecFromSearch[] }>(
+  const result = await apiPost<{ ok: boolean; specs: SpecFromSearch[]; okpd2?: { code: string; name: string }[] }>(
     '/api/search/specs',
     { product, goods_type: goodsType },
     'optional',
     SEARCH_TIMEOUT_MS,
   );
   return result.specs || [];
+}
+
+export type Okpd2Result = { code: string; name: string };
+
+export async function searchInternetSpecsWithOkpd2(
+  product: string,
+  goodsType: string,
+): Promise<{ specs: SpecFromSearch[]; okpd2: Okpd2Result[] }> {
+  const result = await apiPost<{ ok: boolean; specs: SpecFromSearch[]; okpd2?: Okpd2Result[] }>(
+    '/api/search/specs',
+    { product, goods_type: goodsType },
+    'optional',
+    SEARCH_TIMEOUT_MS,
+  );
+  return { specs: result.specs || [], okpd2: result.okpd2 || [] };
+}
+
+export async function searchOkpd2(query: string, limit = 8): Promise<Okpd2Result[]> {
+  try {
+    const result = await apiPost<{ ok: boolean; results: Okpd2Result[] }>(
+      '/api/okpd2/search',
+      { q: query, limit },
+      'optional',
+      15000,
+    );
+    return result.results || [];
+  } catch {
+    return [];
+  }
 }
 
 // ── EIS search → specs ───────────────────────────────────────────────────────

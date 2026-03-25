@@ -22,6 +22,8 @@ from html.parser import HTMLParser
 from typing import Any
 import ssl
 
+from okpd2_dict import lookup_okpd2_local
+
 logger = logging.getLogger(__name__)
 
 # SSL context — use certifi if available, else unverified (macOS Python issue)
@@ -3472,3 +3474,220 @@ async def search_eis_specs(query: str, goods_type: str = "") -> list[dict]:
     if final_specs:
         _cache_set(cache_key, final_specs)
     return final_specs
+
+
+# ── ОКПД2 search via classifikators.ru ───────────────────────────────────────
+
+_OKPD2_CACHE: dict[str, tuple[float, list[dict]]] = {}
+_OKPD2_CACHE_TTL = 3600  # 1 hour
+
+
+def _okpd2_cache_get(key: str) -> list[dict] | None:
+    entry = _OKPD2_CACHE.get(key)
+    if entry and (time.time() - entry[0]) < _OKPD2_CACHE_TTL:
+        return entry[1]
+    if entry:
+        del _OKPD2_CACHE[key]
+    return None
+
+
+def _okpd2_cache_set(key: str, value: list[dict]):
+    if len(_OKPD2_CACHE) > 500:
+        cutoff = time.time() - _OKPD2_CACHE_TTL
+        for k in [k for k, (ts, _) in _OKPD2_CACHE.items() if ts < cutoff]:
+            del _OKPD2_CACHE[k]
+    _OKPD2_CACHE[key] = (time.time(), value)
+
+
+def _extract_okpd2_from_classifikators_page(code: str) -> str:
+    """Fetch classifikators.ru/okpd/{code} and extract the code's official name."""
+    try:
+        url = f"https://classifikators.ru/okpd/{quote_plus(code)}"
+        html = _fetch_url(url, timeout=8)
+        if not html:
+            return ""
+        # Look for <h1> or <h2> with the code name
+        m = re.search(r"<h1[^>]*>([\s\S]*?)</h1>", html, re.I)
+        if m:
+            name = _strip_tags(unescape(m.group(1))).strip()
+            # Remove the code itself from the name if present
+            name = re.sub(r"^\s*" + re.escape(code) + r"\s*[-–—]?\s*", "", name).strip()
+            if name and len(name) > 3:
+                return name
+        m = re.search(r"<h2[^>]*>([\s\S]*?)</h2>", html, re.I)
+        if m:
+            name = _strip_tags(unescape(m.group(1))).strip()
+            name = re.sub(r"^\s*" + re.escape(code) + r"\s*[-–—]?\s*", "", name).strip()
+            if name and len(name) > 3:
+                return name
+    except Exception as e:
+        logger.debug(f"[okpd2] Failed to fetch page for {code}: {e}")
+    return ""
+
+
+def _parse_okpd2_from_html(html: str, seen_codes: set) -> list[dict]:
+    """Extract ОКПД2 codes and names from classifikators.ru HTML."""
+    results: list[dict] = []
+    # Find all links like /okpd/26.20.11.110
+    for m in re.finditer(r'href=["\'](?:https?://classifikators\.ru)?/okpd/([0-9][0-9A-Za-z.]*)', html, re.I):
+        code = m.group(1).split("#")[0].rstrip("/").strip(".")
+        if not re.match(r"^\d{2}\.", code):
+            continue
+        if code in seen_codes:
+            continue
+        seen_codes.add(code)
+        # Extract name from surrounding text (look for text after the link)
+        start = m.end()
+        end = min(len(html), start + 300)
+        chunk = _strip_tags(unescape(html[start:end])).strip()
+        # Sometimes name is in the link text itself
+        link_end = html.find(">", m.end())
+        link_close = html.find("</a>", link_end) if link_end > 0 else -1
+        name = ""
+        if link_end > 0 and link_close > link_end:
+            name = _strip_tags(unescape(html[link_end + 1:link_close])).strip()
+        if not name or len(name) < 3:
+            name = chunk[:100] if chunk else ""
+        # Remove code from name
+        name = re.sub(r"^\s*" + re.escape(code) + r"\s*[-–—\s]*", "", name).strip()
+        name = name[:150]
+        if name and len(name) > 2:
+            results.append({"code": code, "name": name})
+    return results
+
+
+def search_okpd2_classifikators(query: str, limit: int = 8) -> list[dict]:
+    """
+    Search ОКПД2 codes from classifikators.ru.
+    Strategy:
+    1. Bing HTML search with site:classifikators.ru/okpd
+    2. Fallback: Bing broad search for ОКПД2 codes in text
+    3. Fallback: direct scrape of classifikators.ru search page
+    Returns list of {code, name} dicts.
+    """
+    query = query.strip()
+    if not query:
+        return []
+
+    cache_key = f"okpd2:{query.lower()}"
+    cached = _okpd2_cache_get(cache_key)
+    if cached is not None:
+        logger.info(f"[okpd2] Cache hit for {query!r}: {len(cached)} results")
+        return cached
+
+    logger.info(f"[okpd2] Searching ОКПД2 for: {query!r}")
+
+    okpd2_results: list[dict] = []
+    seen_codes: set[str] = set()
+
+    # ── Strategy 0: local dictionary (fast, no network) ───────────────────────
+    local_results = lookup_okpd2_local(query, limit=limit)
+    if local_results:
+        logger.info(f"[okpd2] Local dict hit: {len(local_results)} codes for {query!r}")
+        _okpd2_cache_set(cache_key, local_results)
+        return local_results
+
+    # ── Strategy 1: Bing HTML with site:classifikators.ru ─────────────────────
+    try:
+        bing_results = _bing_search(f"site:classifikators.ru/okpd {query}", num=10)
+        for r in bing_results:
+            link = r.get("link", "")
+            m = re.search(r"classifikators\.ru/okpd/([0-9][0-9A-Za-z.]*)", link, re.I)
+            if not m:
+                continue
+            code = m.group(1).split("#")[0].rstrip("/").strip(".")
+            if not re.match(r"^\d{2}", code) or code in seen_codes:
+                continue
+            seen_codes.add(code)
+            title = r.get("title", "")
+            snippet = r.get("snippet", "")
+            name = ""
+            if "|" in title:
+                name = title.split("|")[0].strip()
+            elif "—" in title or "-" in title:
+                name = re.split(r"[—\-]", title, 1)[-1].strip()
+            else:
+                name = title.strip()
+            name = re.sub(r"^\s*" + re.escape(code) + r"\s*[-–—\s]*", "", name).strip()
+            if not name and snippet:
+                name = snippet[:120].strip()
+            if name and len(name) > 2:
+                okpd2_results.append({"code": code, "name": name})
+                if len(okpd2_results) >= limit:
+                    break
+    except Exception as e:
+        logger.warning(f"[okpd2] Bing HTML search failed: {e}")
+
+    # ── Strategy 2: Broad Bing search for ОКПД2 codes ─────────────────────────
+    if not okpd2_results:
+        logger.info(f"[okpd2] Trying broad Bing search for: {query!r}")
+        try:
+            broad_results = _bing_search(f"ОКПД2 {query} код закупки", num=8)
+            for r in broad_results:
+                text = r.get("title", "") + " " + r.get("snippet", "")
+                for m in re.finditer(r"\b(\d{2}\.\d{2}(?:\.\d{2}(?:\.\d{3})?)?)\b", text):
+                    code = m.group(1)
+                    if code in seen_codes:
+                        continue
+                    seen_codes.add(code)
+                    start = max(0, m.start() - 5)
+                    end = min(len(text), m.end() + 100)
+                    name = text[start:end].strip()
+                    name = re.sub(r"^\s*" + re.escape(code) + r"\s*[-–—\s]*", "", name).strip()[:120]
+                    if name and len(name) > 2:
+                        okpd2_results.append({"code": code, "name": name})
+                        if len(okpd2_results) >= limit:
+                            break
+                if len(okpd2_results) >= limit:
+                    break
+        except Exception as e:
+            logger.warning(f"[okpd2] Broad Bing search failed: {e}")
+
+    # ── Strategy 3: Direct classifikators.ru page scrape ──────────────────────
+    if not okpd2_results:
+        logger.info(f"[okpd2] Trying direct classifikators.ru scrape for: {query!r}")
+        try:
+            # Fetch classifikators.ru/okpd and look for relevant sections
+            html = _fetch_url("https://classifikators.ru/okpd", timeout=8)
+            if html:
+                parsed = _parse_okpd2_from_html(html, set())
+                # Filter by relevance to query words
+                query_words = set(query.lower().split())
+                for item in parsed:
+                    name_lower = item["name"].lower()
+                    if any(w in name_lower for w in query_words if len(w) > 3):
+                        if item["code"] not in seen_codes:
+                            seen_codes.add(item["code"])
+                            okpd2_results.append(item)
+                            if len(okpd2_results) >= limit:
+                                break
+        except Exception as e:
+            logger.warning(f"[okpd2] Direct scrape failed: {e}")
+
+    logger.info(f"[okpd2] Found {len(okpd2_results)} ОКПД2 codes for {query!r}")
+    _okpd2_cache_set(cache_key, okpd2_results)
+    return okpd2_results
+
+
+def get_okpd2_by_code(code: str) -> dict | None:
+    """
+    Verify an ОКПД2 code exists on classifikators.ru and return its official name.
+    Returns {code, name} or None if not found.
+    """
+    code = code.strip()
+    if not re.match(r"^\d{2}", code):
+        return None
+
+    cache_key = f"okpd2:code:{code}"
+    cached = _okpd2_cache_get(cache_key)
+    if cached is not None:
+        return cached[0] if cached else None
+
+    name = _extract_okpd2_from_classifikators_page(code)
+    if name:
+        result = [{"code": code, "name": name}]
+        _okpd2_cache_set(cache_key, result)
+        return result[0]
+
+    _okpd2_cache_set(cache_key, [])
+    return None

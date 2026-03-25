@@ -71,7 +71,8 @@ const DOCX_TRAILING_QTY_RE = new RegExp(
 );
 const DOCX_IMPORT_STOP_RE = /^(код окпд2(?:\s|$|[.:])|код ктру(?:\s|$|[.:])|наименование характеристики|значение характеристики|единица измерения характеристики|спецификация(?:\s|$|[.:])|требования к|составил:|согласовано:|утверждаю(?:\s|$|[.:])|техническое задание(?:\s|$|[.:]))/i;
 const DOCX_SECTION_HEADING_RE = /^(\d+(?:\.\d+)*\.?\s+|приложение(?:\s|$|[.:])|раздел(?:\s|$|[.:])|глава(?:\s|$|[.:])|составил:|согласовано:|утверждаю(?:\s|$|[.:]))/i;
-const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии(?:\s|$|[.:])|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право|юридическое резюме|национальный режим|основание\s*\/\s*исключение|подтверждающие документы|источник классификации|классификация позиции|паспорт публикации|сводка готовности|итоговый статус|блокирующие замечания|предупреждения и что проверить|справочная таблица|anti-фас|специалист|«[_\s]*»|_{3,})/i;
+const DOCX_BOILERPLATE_RE = /^(содержание|заказчик|исполнитель|поставка|сроки|действия|описание|лицензии(?:\s|$|[.:])|правовая безопасность|общие требования|серверной части|клиентской части|требования(?:\s+к.*)?|место оказания|гарантийные обязательства|обновление(?:\s+или)?\s+техническая поддержка|порядок выпуска|документом, подтверждающим право|юридическое резюме|национальный режим|основание\s*\/\s*исключение|подтверждающие документы|источник классификации|классификация позиции|паспорт публикации|сводка готовности|итоговый статус|блокирующие замечания|предупреждения и что проверить|справочная таблица|anti-фас|специалист|«[_\s]*»|_{3,}|\(должность\)|\(фио\)|\(ф\.?\s*и\.?\s*о\.?\)|к техническому заданию|к договору|к контракту|к тз|перечень оборудования|перечень товаров|перечень позиций|инв\.\s*№|инвентарный\s+номер|местоположение)/i;
+const DOCX_APPROVAL_ANYWHERE_RE = /\bутверждаю\b/i;
 const DOCX_APPENDIX_HEADING_RE = /^приложение(?:\s|$|[.:])/i;
 const DOCX_OKPD2_PREFIX_RE = /^код окпд2(?:\s|$|[.:])/i;
 const DOCX_CLAUSE_PREFIXES = [
@@ -189,6 +190,7 @@ function looksLikeBoilerplateHeading(text: string): boolean {
   if (DOCX_IMPORT_STOP_RE.test(normalized) || DOCX_SECTION_HEADING_RE.test(normalized) || DOCX_BOILERPLATE_RE.test(normalized)) {
     return true;
   }
+  if (DOCX_APPROVAL_ANYWHERE_RE.test(normalized)) return true;
   if (countMeaningfulWords(normalized) <= 1 && !findTrailingQty(normalizeDocxLine(normalized)) && !looksLikeCompactProductName(normalized)) {
     return true;
   }
@@ -1183,7 +1185,11 @@ function extractMergedProductNameFromRows(rows: string[][]): string {
 function extractProductNameFromAppendixHeading(headingText: string): string {
   const match = headingText.match(/приложени[еёeя]\s*[№#]?\s*[\d]+[.:\s—–\-]+(.+)$/iu);
   if (!match) return '';
-  return normalizeCell(match[1]).replace(/[-:;,.]+$/, '').trim();
+  const extracted = normalizeCell(match[1]).replace(/[-:;,.]+$/, '').trim();
+  if (!extracted) return '';
+  const lc = extracted.toLowerCase().replace(/ё/g, 'е');
+  if (/^(к\s+|на\s+основании|к\s+договору|к\s+контракту|к\s+тз\b)/.test(lc)) return '';
+  return extracted;
 }
 
 function stripSectionPrefix(text: string): string {

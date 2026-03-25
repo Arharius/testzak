@@ -7328,7 +7328,10 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       setSplitSourceRows(null);
       setActiveSplitGroupKey(null);
       setSplitPlannerOpen(false);
-      setRows(mappedRows);
+      setRows((prev) => {
+        const existingReal = prev.filter((r) => r.model.trim() !== '' || !!(r.specs?.length));
+        return [...existingReal, ...mappedRows];
+      });
       setCurrentDocId(null);
       setExpandedRowMetaId(null);
       setEditingRowId(null);
@@ -7344,7 +7347,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       const seededRows = mappedRows.filter((row) => row.specs?.length).length;
       const lowConfidenceRows = mappedRows.filter((row) => (row.importInfo?.confidence || 0) < 0.75).length;
       showToast(
-        `✅ Импортировано ${mappedRows.length} позиций${seededRows ? `, seed-спеки: ${seededRows}` : ''}${lowConfidenceRows ? `, проверьте вручную: ${lowConfidenceRows}` : ''}. Текущий черновик заменён.`,
+        `✅ Добавлено ${mappedRows.length} позиций из «${file.name}»${seededRows ? `, seed-спеки: ${seededRows}` : ''}${lowConfidenceRows ? `, проверьте вручную: ${lowConfidenceRows}` : ''}.`,
         true,
       );
     } catch (error) {
@@ -7400,7 +7403,10 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       setSplitSourceRows(null);
       setActiveSplitGroupKey(null);
       setSplitPlannerOpen(false);
-      setRows(mappedRows);
+      setRows((prev) => {
+        const existingReal = prev.filter((r) => r.model.trim() !== '' || !!(r.specs?.length));
+        return [...existingReal, ...mappedRows];
+      });
       setCurrentDocId(null);
       setExpandedRowMetaId(null);
       setEditingRowId(null);
@@ -7415,7 +7421,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       }
       const fileNames = fileArray.map((f) => f.name).join(', ');
       showToast(
-        `✅ Загружено ${fileArray.length} файлов, найдено ${mappedRows.length} позиций: ${fileNames}`,
+        `✅ Добавлено ${mappedRows.length} позиций из ${fileArray.length} файлов: ${fileNames}`,
         true,
       );
     } catch (error) {

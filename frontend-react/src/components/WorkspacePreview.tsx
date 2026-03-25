@@ -28,10 +28,12 @@ type DocumentSectionBundleLike = {
   section4Rows: SectionTableRowLike[];
   section5Rows: SectionTableRowLike[];
   section6Rows: SectionTableRowLike[];
+  section7Rows?: SectionTableRowLike[];
   section3Title: string;
   section4Title: string;
   section5Title: string;
   section6Title: string;
+  section7Title?: string;
 };
 
 type CatalogLike = {
@@ -276,6 +278,13 @@ export function WorkspacePreview({
 
       <div style={{ ...boldStyle, fontSize: 13 }}>{docSections.section6Title}</div>
       {renderSectionTable(docSections.section6Rows)}
+
+      {docSections.section7Rows && docSections.section7Rows.length > 0 && (
+        <>
+          <div style={{ ...boldStyle, fontSize: 13 }}>{docSections.section7Title ?? '7. Перечень нормативных правовых актов'}</div>
+          {renderSectionTable(docSections.section7Rows)}
+        </>
+      )}
 
       {doneRows.map((row, idx) => {
         const goods = lookupCatalog(row.type);

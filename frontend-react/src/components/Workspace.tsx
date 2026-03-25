@@ -7351,6 +7351,78 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       showToast(`❌ Ошибка импорта: ${error instanceof Error ? error.message : 'не удалось разобрать файл'}`, false);
     }
   }, [showToast]);
+
+  const handleImportMultipleFiles = useCallback(async (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+    if (fileArray.length === 1) {
+      void handleImportFile(fileArray[0]);
+      return;
+    }
+    try {
+      showToast(`⏳ Загружаю ${fileArray.length} файлов...`, true);
+      const now = Date.now();
+      const results = await Promise.all(
+        fileArray.map((file) => parseImportedRows(file).catch(() => []))
+      );
+      const allImported = results.flat();
+      if (allImported.length === 0) {
+        showToast(`❌ Ни в одном из ${fileArray.length} файлов не найдено позиций.`, false);
+        return;
+      }
+      const mappedRows = allImported.map((item, idx) => {
+        const type = detectFreeformRowType(item.rawType, item.description, {
+          conservativeGeneral: item.importInfo.sourceFormat === 'docx',
+          okpd2: item.meta?.okpd2_code || item.meta?.okpd2,
+          contextText: item.importInfo.sourceContextText,
+        });
+        const classificationSource = item.importInfo.sourceFormat === 'docx' ? 'docx_import' : 'import';
+        const hasSeedSpecs = !!item.specs?.length;
+        return applyAutoCommercialTerms({
+          id: now + idx,
+          type,
+          typeLocked: false,
+          model: item.description || item.rawType,
+          licenseType: item.licenseType,
+          term: item.term,
+          licenseTypeAuto: false,
+          termAuto: false,
+          qty: item.qty || 1,
+          status: hasSeedSpecs ? 'done' as const : 'idle' as const,
+          specs: item.specs,
+          meta: normalizeResolvedMeta(type, {
+            ...(item.meta || {}),
+            classification_source: classificationSource,
+          }),
+          importInfo: item.importInfo,
+        });
+      });
+      setSplitSourceRows(null);
+      setActiveSplitGroupKey(null);
+      setSplitPlannerOpen(false);
+      setRows(mappedRows);
+      setCurrentDocId(null);
+      setExpandedRowMetaId(null);
+      setEditingRowId(null);
+      setFocusedRowId(null);
+      setTypeSuggestions(null);
+      setRowActionState(null);
+      setAutoDetectedRow(null);
+      setComplianceReport(null);
+      setDocxReady(mappedRows.some((row) => row.status === 'done' && !!row.specs?.length));
+      if (mappedRows.some((row) => isServiceCatalogType(row.type) || row.type === 'otherGoods' || row.type === 'otherService')) {
+        setCatalogMode('general');
+      }
+      const fileNames = fileArray.map((f) => f.name).join(', ');
+      showToast(
+        `✅ Загружено ${fileArray.length} файлов, найдено ${mappedRows.length} позиций: ${fileNames}`,
+        true,
+      );
+    } catch (error) {
+      showToast(`❌ Ошибка импорта: ${error instanceof Error ? error.message : 'не удалось разобрать файлы'}`, false);
+    }
+  }, [handleImportFile, showToast]);
+
   const hasUserApiKey = false; // Client-side API keys disabled — all AI through backend
   const useBackendAi = useBackend;
   const handleRowModelChange = useCallback((row: GoodsRow, event: ChangeEvent<HTMLInputElement>) => {
@@ -10857,10 +10929,11 @@ ${hint || '- Используй детальные, проверяемые эк�
             ref={importFileInputRef}
             type="file"
             accept=".csv,.tsv,.txt,.xlsx,.docx"
+            multiple
             style={{ display: 'none' }}
             onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void handleImportFile(file);
+              const files = event.target.files;
+              if (files && files.length > 0) void handleImportMultipleFiles(files);
               event.currentTarget.value = '';
             }}
           />
@@ -11090,17 +11163,18 @@ ${hint || '- Используй детальные, проверяемые эк�
         </div>
         <div className="workspace-action-grid workspace-action-grid--toolbar">
           <button type="button" onClick={addRow}>+ Добавить позицию</button>
-          <button type="button" onClick={() => importFileInputRef.current?.click()}>📥 Загрузить файл</button>
+          <button type="button" onClick={() => importFileInputRef.current?.click()}>📥 Загрузить файлы</button>
           <button type="button" onClick={() => setEntryDismissed(false)}>◀ Выбор способа</button>
           <button type="button" onClick={resetWorkspaceDraft}>↺ Начать заново</button>
           <input
             ref={importFileInputRef}
             type="file"
             accept=".csv,.tsv,.txt,.xlsx,.docx"
+            multiple
             style={{ display: 'none' }}
             onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void handleImportFile(file);
+              const files = event.target.files;
+              if (files && files.length > 0) void handleImportMultipleFiles(files);
               event.currentTarget.value = '';
             }}
           />

@@ -116,6 +116,24 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
   - Rule-based fallback: handles masculine (-ов/-ев/-ей), feminine (-∅/-ей/-ий), neuter (-∅/-й) endings + adjective declension (-ый→-ых, -ий→-их)
   - Applied in `getProcurementObjectName()` in `Workspace.tsx` for DOCX title page: «Техническое задание на поставку {genitive}»
 
+## Production Security (Implemented)
+- **JWT_SECRET**: Cryptographically-random 96-char hex secret set as env var (no more default fallback warning)
+- **Security Headers Middleware**: `SecurityHeadersMiddleware` added after CORS middleware; sets on every response:
+  - `X-Content-Type-Options: nosniff`
+  - `X-Frame-Options: DENY`
+  - `X-XSS-Protection: 1; mode=block`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
+  - `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- **Rate Limiting**: Slowapi with `200/minute` global default; AI endpoints `3-15/minute`; auth endpoints `5/minute`
+- **File Size Limits**: All upload endpoints enforce 20-50 MB limits before reading file content
+- **Global Error Handler**: All unhandled exceptions return `500` with generic Russian message (no stack traces leaked)
+- **TypeScript**: 0 compilation errors (`noUnusedLocals: true`, `noUnusedParameters: true` both pass)
+
+## Auto-Audit after DOCX Export
+- After each DOCX download, the same blob is auto-submitted to `/api/audit-tz`
+- 9-checkpoint audit: emoji, meta-comments, brands without equivalents, point values, colors, НБ for goods/SW/services, structure
+- Results shown in modal: verdict badge (ГОТОВО К ЕИС / ТРЕБУЕТ ПРАВКИ), pass count (N из 9), full report, download button
+
 ## Development Notes
 - Backend API proxied via Vite dev server at `/api` → Railway backend
 - `VITE_BACKEND_URL` env var controls backend target (defaults to Railway)

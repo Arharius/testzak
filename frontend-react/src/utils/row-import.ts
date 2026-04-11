@@ -1677,7 +1677,7 @@ function extractProductNameFromSpecTable(blocks: DocxBlock[]): { name: string; s
   return null;
 }
 
-function extractEquipmentTableRows(content: ParsedDocxContent): ImportedProcurementRow[] {
+export function extractEquipmentTableRows(content: ParsedDocxContent): ImportedProcurementRow[] {
   const rows: ImportedProcurementRow[] = [];
   for (const tableRows of content.tables) {
     if (tableRows.length < 2) continue;

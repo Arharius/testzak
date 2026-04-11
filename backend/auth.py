@@ -37,6 +37,8 @@ def _safe_int(value: str, default: int) -> int:
 FREE_TZ_LIMIT = max(0, _safe_int(os.getenv("FREE_TZ_LIMIT", "0"), 0))
 TRIAL_DAYS = max(0, _safe_int(os.getenv("TRIAL_DAYS", "14"), 14))
 POST_TRIAL_TZ_LIMIT = max(0, _safe_int(os.getenv("POST_TRIAL_TZ_LIMIT", str(FREE_TZ_LIMIT)), FREE_TZ_LIMIT))
+# Count-based trial: new users get this many free ТЗ before payment required
+TRIAL_TZ_COUNT = max(1, _safe_int(os.getenv("TRIAL_TZ_COUNT", "3"), 3))
 
 def _csv_emails(value: str) -> list[str]:
     return [s.strip().lower() for s in str(value or "").split(",") if s.strip()]
@@ -52,24 +54,22 @@ def is_admin_email(email: str) -> bool:
     return email.lower().strip() in ADMIN_EMAILS
 
 def is_trial_active(user: User) -> bool:
-    """Check if user is within their PRO trial period."""
-    if not user.trial_ends_at:
+    """Trial is active while free user has used fewer than TRIAL_TZ_COUNT ТЗ."""
+    if user.role in {"admin", "pro"}:
         return False
-    trial_end = user.trial_ends_at
-    if hasattr(trial_end, "replace") and trial_end.tzinfo is None:
-        trial_end = trial_end.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) < trial_end
+    return (user.tz_count or 0) < TRIAL_TZ_COUNT
+
+
+def trial_tz_left(user: User) -> int:
+    """Return number of free ТЗ remaining in trial (0 if used up or paid)."""
+    if user.role in {"admin", "pro"}:
+        return 0
+    return max(0, TRIAL_TZ_COUNT - (user.tz_count or 0))
 
 
 def trial_days_left(user: User) -> int:
-    """Return number of days left in trial (0 if expired or no trial)."""
-    if not user.trial_ends_at:
-        return 0
-    trial_end = user.trial_ends_at
-    if hasattr(trial_end, "replace") and trial_end.tzinfo is None:
-        trial_end = trial_end.replace(tzinfo=timezone.utc)
-    delta = trial_end - datetime.now(timezone.utc)
-    return max(0, delta.days + (1 if delta.seconds > 0 else 0))
+    """Legacy: kept for backward compat — returns trial_tz_left."""
+    return trial_tz_left(user)
 
 
 def is_payment_required(user: User) -> bool:
@@ -83,12 +83,10 @@ def payment_required_message(user: User) -> str:
     """Human-readable payment gate reason."""
     if user.role in {"admin", "pro"}:
         return ""
-    if user.trial_ends_at:
-        return (
-            f"Пробный период {TRIAL_DAYS} дней завершён. "
-            "Оформите подписку Pro для продолжения работы."
-        )
-    return "Требуется активная подписка Pro для продолжения работы."
+    return (
+        f"Использовано все {TRIAL_TZ_COUNT} бесплатных ТЗ. "
+        "Выберите тарифный план для продолжения работы."
+    )
 
 
 def sync_user_entitlements(user: User) -> bool:
@@ -107,18 +105,11 @@ def sync_user_entitlements(user: User) -> bool:
             user.tz_limit = -1
             changed = True
     else:
-        # Free user — check if trial is still active
-        if is_trial_active(user):
-            # During trial → unlimited
-            if user.tz_limit != -1:
-                user.tz_limit = -1
-                changed = True
-        else:
-            # Trial expired or absent → hard stop by default, unless explicitly overridden.
-            desired_limit = POST_TRIAL_TZ_LIMIT
-            if user.tz_limit != desired_limit:
-                user.tz_limit = desired_limit
-                changed = True
+        # Free user — set limit to trial count (enforced via tz_count check)
+        desired_limit = TRIAL_TZ_COUNT
+        if user.tz_limit != desired_limit:
+            user.tz_limit = desired_limit
+            changed = True
 
     return changed
 
@@ -181,20 +172,13 @@ def get_or_create_user(email: str, db) -> User:
     user = db.query(User).filter_by(email=email).first()
     if not user:
         role = "admin" if is_admin_email(email) else "free"
-        trial_end = None
-        effective_limit = POST_TRIAL_TZ_LIMIT
-        if role == "admin":
-            effective_limit = -1
-        elif TRIAL_DAYS > 0:
-            # New user gets a PRO trial
-            trial_end = datetime.now(timezone.utc) + timedelta(days=TRIAL_DAYS)
-            effective_limit = -1  # unlimited during trial
+        effective_limit = -1 if role == "admin" else TRIAL_TZ_COUNT
         user = User(
             id=str(uuid.uuid4()),
             email=email,
             role=role,
             tz_limit=effective_limit,
-            trial_ends_at=trial_end,
+            trial_ends_at=None,
         )
         db.add(user)
         db.flush()

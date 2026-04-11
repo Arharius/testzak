@@ -68,6 +68,8 @@ try:
         is_payment_required,
         payment_required_message,
         trial_days_left,
+        trial_tz_left,
+        TRIAL_TZ_COUNT,
         is_admin_email,
         hash_password,
         JWT_SECRET,
@@ -101,6 +103,8 @@ except ImportError:
         is_payment_required,
         payment_required_message,
         trial_days_left,
+        trial_tz_left,
+        TRIAL_TZ_COUNT,
         is_admin_email,
         hash_password,
         JWT_SECRET,
@@ -271,6 +275,8 @@ def _user_response(user: User) -> dict:
         "tz_limit": user.tz_limit,
         "trial_active": is_trial_active(user),
         "trial_days_left": trial_days_left(user),
+        "trial_tz_left": trial_tz_left(user),
+        "trial_tz_total": TRIAL_TZ_COUNT,
         "trial_ends_at": user.trial_ends_at.isoformat() if user.trial_ends_at else None,
         "payment_required": payment_required,
         "access_tier": (
@@ -324,7 +330,7 @@ class SearchEisRequest(BaseModel):
     goods_type: str = ""
 
 class PaymentCreateRequest(BaseModel):
-    plan: str = "pro"     # pro / annual
+    plan: str = "pro"     # starter / pro / annual
     return_url: Optional[str] = None
 
 
@@ -390,13 +396,21 @@ def require_active(user: User, db=None) -> None:
     """Check that user can generate TZ (not over limit)."""
     if user.role == "admin":
         return  # unlimited
-    if is_payment_required(user):
-        raise HTTPException(status_code=402, detail=payment_required_message(user))
     if user.tz_limit == -1:
         return  # explicitly unlimited (pro)
+    if is_payment_required(user):
+        raise HTTPException(status_code=402, detail=payment_required_message(user))
     if user.tz_limit <= 0:
         raise HTTPException(status_code=402, detail=payment_required_message(user))
-    # Check monthly count — reset on new calendar month
+    # For free trial users — lifetime counter, no monthly reset
+    if user.role == "free":
+        if user.tz_count >= user.tz_limit:
+            raise HTTPException(
+                status_code=402,
+                detail=payment_required_message(user),
+            )
+        return
+    # Paid plans — monthly reset on new calendar month
     now = datetime.now(timezone.utc)
     month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
     if hasattr(user, "tz_month_start") and user.tz_month_start:
@@ -404,7 +418,6 @@ def require_active(user: User, db=None) -> None:
         if hasattr(ms, "replace") and ms.tzinfo is None:
             ms = ms.replace(tzinfo=timezone.utc)
         if ms < month_start:
-            # New month — reset counter and persist
             user.tz_count = 0
             user.tz_month_start = month_start
             if db:
@@ -416,7 +429,7 @@ def require_active(user: User, db=None) -> None:
     if user.tz_count >= user.tz_limit:
         raise HTTPException(
             status_code=402,
-            detail=f"Достигнут лимит {user.tz_limit} ТЗ в месяц. Оформите подписку Pro для безлимитного доступа.",
+            detail=f"Достигнут лимит {user.tz_limit} ТЗ в месяц. Выберите тариф с большим лимитом.",
         )
 
 
@@ -1173,15 +1186,29 @@ def _call_ai_streaming(provider: str, model: str, messages: list, temperature: f
 
 # ── ЮKassa helpers ──────────────────────────────────────────────
 PLAN_PRICES = {
-    "pro": {
-        "amount": "29900.00",
+    "starter": {
+        "amount": "1900.00",
         "currency": "RUB",
-        "label": "Pro Business (1 месяц, за компанию)",
+        "label": "Старт — 15 ТЗ",
+        "tz_limit": 15,
+        "days": 30,
+        "role": "starter",
+    },
+    "pro": {
+        "amount": "4900.00",
+        "currency": "RUB",
+        "label": "Базовый — 50 ТЗ",
+        "tz_limit": 50,
+        "days": 30,
+        "role": "pro",
     },
     "annual": {
-        "amount": "299000.00",
+        "amount": "12900.00",
         "currency": "RUB",
-        "label": "Pro Business (12 месяцев, за компанию)",
+        "label": "Команда — безлимит",
+        "tz_limit": -1,
+        "days": 30,
+        "role": "annual",
     },
 }
 
@@ -2040,7 +2067,7 @@ async def search_debug(q: str = "HP ProBook 450 G10"):
 def payment_create(request: Request, req: PaymentCreateRequest, user: User = Depends(get_current_user)):
     plan = req.plan.strip().lower()
     if plan not in PLAN_PRICES:
-        raise HTTPException(status_code=400, detail="Неверный план. Доступно: pro, annual")
+        raise HTTPException(status_code=400, detail="Неверный план. Доступно: starter, pro, annual")
     info = PLAN_PRICES[plan]
     return_url = req.return_url or YOOKASSA_RETURN_URL
     metadata = {"user_email": user.email, "plan": plan}
@@ -2100,12 +2127,13 @@ async def payment_webhook(request: Request, payload: dict, db: Session = Depends
             user = db.query(User).filter_by(email=email).first()
             if user:
                 from datetime import timedelta
-                user.role = "pro"
-                user.tz_limit = -1  # unlimited
-                days = 365 if plan == "annual" else 31
-                user.subscription_until = datetime.now(timezone.utc) + timedelta(days=days)
+                info = PLAN_PRICES.get(plan, PLAN_PRICES["pro"])
+                user.role = info["role"]
+                user.tz_limit = info["tz_limit"]
+                user.tz_count = 0  # reset monthly counter
+                user.subscription_until = datetime.now(timezone.utc) + timedelta(days=info["days"])
                 db.commit()
-                logger.info(f"User {email} upgraded to Pro (plan={plan}, payment={payment_id})")
+                logger.info(f"User {email} upgraded to {info['role']} (plan={plan}, limit={info['tz_limit']}, payment={payment_id})")
 
     return {"ok": True}
 

@@ -103,6 +103,8 @@ export type BackendUser = {
   tz_limit: number;
   trial_active?: boolean;
   trial_days_left?: number;
+  trial_tz_left?: number;
+  trial_tz_total?: number;
   trial_ends_at?: string | null;
   payment_required?: boolean;
   access_tier?: 'admin' | 'pro' | 'trial' | 'payment_required';
@@ -516,7 +518,7 @@ export async function getBackendReadiness(): Promise<BackendReadiness> {
 
 // ── Payment ──────────────────────────────────────────────────────────────────
 
-export async function createPayment(plan: 'pro' | 'annual'): Promise<{
+export async function createPayment(plan: 'starter' | 'pro' | 'annual'): Promise<{
   ok: boolean;
   payment_id: string;
   confirmation_url: string;

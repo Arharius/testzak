@@ -5,14 +5,96 @@ type Props = {
   onClose: () => void;
   currentRole?: string;
   trialActive?: boolean;
-  trialDaysLeft?: number;
+  trialTzLeft?: number;
+  trialTzTotal?: number;
+  tzCount?: number;
 };
 
-export function PricingModal({ onClose, currentRole, trialActive, trialDaysLeft }: Props) {
-  const [loading, setLoading] = useState<'pro' | 'annual' | null>(null);
+const PLANS = [
+  {
+    id: 'starter',
+    badge: 'Старт',
+    price: '1 900',
+    period: '/мес',
+    sub: 'Фрилансер, ИП',
+    limit: '15 ТЗ/мес',
+    features: [
+      '15 технических заданий в месяц',
+      'Генерация по 44-ФЗ и 223-ФЗ',
+      'Экспорт в DOCX (ГОСТ-совместимый)',
+      'История сохранённых ТЗ',
+      'Базовая проверка на ФАС-риски',
+    ],
+    highlight: false,
+    payPlan: 'starter' as const,
+  },
+  {
+    id: 'basic',
+    badge: 'Базовый',
+    price: '4 900',
+    priceSale: '2 450',
+    saleNote: 'для первых 20 клиентов — 3 мес.',
+    period: '/мес',
+    sub: 'Малый бизнес, 1 пользователь',
+    limit: '50 ТЗ/мес',
+    features: [
+      '50 технических заданий в месяц',
+      'Автопоиск характеристик по datasheet',
+      'Исправление загруженных DOCX/XLSX',
+      'Двойной эквивалент (ДЭ-алгоритм)',
+      'Авто-аудит ТЗ по 9 контрольным пунктам',
+      'Поиск по ЕИС zakupki.gov.ru',
+    ],
+    highlight: true,
+    payPlan: 'pro' as const,
+  },
+  {
+    id: 'team',
+    badge: 'Команда',
+    price: '12 900',
+    period: '/мес',
+    sub: 'Отдел закупок, до 5 человек',
+    limit: 'Безлимит',
+    features: [
+      'Безлимитные ТЗ в месяц',
+      'До 5 пользователей в команде',
+      'Все функции тарифа Базовый',
+      'Выгрузка в Word (ГОСТ-совместимый)',
+      'Приоритетная поддержка',
+    ],
+    highlight: false,
+    payPlan: 'annual' as const,
+  },
+  {
+    id: 'enterprise',
+    badge: 'Корпоратив',
+    price: 'от 35 000',
+    period: '/мес',
+    sub: 'Госструктуры, крупный бизнес',
+    limit: 'Безлимит + API',
+    features: [
+      'Безлимитные ТЗ для всей организации',
+      'REST API для интеграции с ЕИС/СЭД',
+      'Выделенный менеджер поддержки',
+      'Обучение сотрудников (онлайн)',
+      'SLA 99.9%, отчёты об использовании',
+    ],
+    highlight: false,
+    payPlan: null,
+  },
+];
+
+export function PricingModal({ onClose, currentRole, trialActive, trialTzLeft, trialTzTotal, tzCount }: Props) {
+  const [loading, setLoading] = useState<string | null>(null);
   const [error, setError] = useState('');
 
-  const handlePay = async (plan: 'pro' | 'annual') => {
+  const isPro = currentRole === 'pro' || currentRole === 'admin';
+  const total = trialTzTotal ?? 3;
+  const used = tzCount ?? 0;
+  const left = trialTzLeft ?? Math.max(0, total - used);
+  const trialExpired = !isPro && !trialActive;
+
+  const handlePay = async (plan: 'starter' | 'pro' | 'annual') => {
     setLoading(plan);
     setError('');
     try {
@@ -20,7 +102,7 @@ export function PricingModal({ onClose, currentRole, trialActive, trialDaysLeft 
       if (res.confirmation_url) {
         window.location.href = res.confirmation_url;
       } else {
-        setError('Не удалось создать платёж. Попробуйте позже.');
+        setError('Не удалось создать платёж. Попробуйте позже или свяжитесь с нами.');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка оплаты');
@@ -29,113 +111,98 @@ export function PricingModal({ onClose, currentRole, trialActive, trialDaysLeft 
     }
   };
 
-  const isPro = currentRole === 'pro' || currentRole === 'admin';
-  const trialExpired = !isPro && !trialActive;
-
   return (
     <div className="pricing-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="pricing-modal">
+      <div className="pricing-modal pricing-modal--wide">
         <button className="pricing-close" onClick={onClose} aria-label="Закрыть">×</button>
 
         <div className="pricing-header">
           <span className="micro-label">Тарифы</span>
-          <h2>Полнофункциональный доступ для компании</h2>
-          {trialActive && trialDaysLeft != null ? (
+          <h2>Выберите план для закупочной работы</h2>
+          {trialActive && left > 0 ? (
             <p className="pricing-trial-note">
-              ⚡ Trial: ещё <strong>{trialDaysLeft}</strong> {trialDaysLeft === 1 ? 'день' : trialDaysLeft < 5 ? 'дня' : 'дней'} полного Pro-доступа
+              Пробный доступ: осталось <strong>{left} из {total}</strong> бесплатных ТЗ — все функции активны
             </p>
           ) : trialExpired ? (
-            <p className="pricing-trial-note">
-              ⏰ Trial завершён. Без оплаты генерация, поиск, экспорт и сохранение отключены.
+            <p className="pricing-trial-note pricing-trial-note--expired">
+              Бесплатные ТЗ использованы. Выберите план для продолжения работы.
             </p>
           ) : (
             <p className="pricing-trial-note">
-              Активный платный план: доступ открыт без ограничений.
+              Активный платный план — доступ открыт.
             </p>
           )}
         </div>
 
-        <div className="pricing-cards">
-          <div className={`pricing-card ${trialActive ? 'current' : ''}`}>
-            <div className="pricing-card-badge">Trial</div>
-            <div className="pricing-card-price">
-              <span className="pricing-amount">0</span>
-              <span className="pricing-currency">₽</span>
-              <span className="pricing-period">/14 дней</span>
-            </div>
-            <ul className="pricing-features">
-              <li>Полный Pro-функционал без ограничений</li>
-              <li>Генерация, поиск, DOCX, PDF, история</li>
-              <li>Подходит для пилота и теста закупщиков</li>
-              <li>После 14 дней нужен платный план</li>
-            </ul>
-            {trialActive ? (
-              <div className="pricing-current-badge">Активен сейчас</div>
-            ) : trialExpired ? (
-              <div className="pricing-current-badge">Завершён</div>
-            ) : null}
-          </div>
+        <div className="pricing-cards pricing-cards--four">
+          {PLANS.map((plan) => (
+            <div
+              key={plan.id}
+              className={`pricing-card${plan.highlight ? ' pricing-card-pro' : ''}${isPro && plan.id === 'basic' ? ' current' : ''}`}
+            >
+              {plan.highlight && <div className="pricing-card-popular">Популярный</div>}
+              <div className="pricing-card-badge">{plan.badge}</div>
 
-          <div className={`pricing-card pricing-card-pro ${isPro ? 'current' : ''}`}>
-            <div className="pricing-card-badge">Pro Business</div>
-            <div className="pricing-card-price">
-              <span className="pricing-amount">29 900</span>
-              <span className="pricing-currency">₽</span>
-              <span className="pricing-period">/мес</span>
-            </div>
-            <div className="pricing-card-subprice">за компанию · до 5 пользователей</div>
-            <ul className="pricing-features">
-              <li>♾️ Безлимитные ТЗ</li>
-              <li>Встроенный AI (без ключа)</li>
-              <li>Поиск по ЕИС</li>
-              <li>Поиск в интернете</li>
-              <li>Экспорт, история, автодоводка, import DOCX/XLSX</li>
-            </ul>
-            {isPro ? (
-              <div className="pricing-current-badge">Текущий план</div>
-            ) : (
-              <button
-                className="pricing-buy-btn"
-                onClick={() => handlePay('pro')}
-                disabled={loading !== null}
-              >
-                {loading === 'pro' ? 'Переход к оплате...' : 'Оформить Pro Business'}
-              </button>
-            )}
-          </div>
+              <div className="pricing-card-price">
+                {plan.priceSale ? (
+                  <>
+                    <span className="pricing-amount pricing-amount--sale">{plan.priceSale}</span>
+                    <span className="pricing-currency">₽</span>
+                    <span className="pricing-period">{plan.period}</span>
+                    <div className="pricing-old-price">{plan.price} ₽/мес</div>
+                  </>
+                ) : (
+                  <>
+                    <span className="pricing-amount">{plan.price}</span>
+                    <span className="pricing-currency">₽</span>
+                    <span className="pricing-period">{plan.period}</span>
+                  </>
+                )}
+              </div>
 
-          <div className="pricing-card pricing-card-annual">
-            <div className="pricing-card-badge">Business Annual</div>
-            <div className="pricing-card-save">2 месяца в подарок</div>
-            <div className="pricing-card-price">
-              <span className="pricing-amount">299 000</span>
-              <span className="pricing-currency">₽</span>
-              <span className="pricing-period">/год</span>
+              <div className="pricing-card-subprice">{plan.sub}</div>
+              <div className="pricing-card-limit">{plan.limit}</div>
+
+              {plan.saleNote && (
+                <div className="pricing-sale-note">{plan.saleNote}</div>
+              )}
+
+              <ul className="pricing-features">
+                {plan.features.map((f, i) => (
+                  <li key={i}>{f}</li>
+                ))}
+              </ul>
+
+              {isPro && plan.id === 'basic' ? (
+                <div className="pricing-current-badge">Текущий план</div>
+              ) : plan.payPlan ? (
+                <button
+                  className={`pricing-buy-btn${plan.highlight ? ' pricing-buy-btn--highlight' : ''}`}
+                  onClick={() => handlePay(plan.payPlan as 'starter' | 'pro' | 'annual')}
+                  disabled={loading !== null}
+                >
+                  {loading === plan.payPlan ? 'Переход к оплате...' : `Выбрать ${plan.badge}`}
+                </button>
+              ) : (
+                <a
+                  className="pricing-buy-btn pricing-buy-btn--outline"
+                  href="mailto:sales@tz-generator.ru?subject=Запрос на Корпоратив"
+                >
+                  Связаться с нами
+                </a>
+              )}
             </div>
-            <div className="pricing-card-subprice">24 917 ₽/мес · за компанию</div>
-            <ul className="pricing-features">
-              <li>♾️ Всё из Pro Business</li>
-              <li>12 месяцев доступа</li>
-              <li>Оптимально для постоянной закупочной команды</li>
-            </ul>
-            {isPro ? (
-              <div className="pricing-current-badge">Текущий план</div>
-            ) : (
-              <button
-                className="pricing-buy-btn pricing-buy-annual"
-                onClick={() => handlePay('annual')}
-                disabled={loading !== null}
-              >
-                {loading === 'annual' ? 'Переход к оплате...' : 'Оформить на год'}
-              </button>
-            )}
-          </div>
+          ))}
         </div>
 
         {error && <div className="pricing-error">{error}</div>}
 
+        <div className="pricing-sale-banner">
+          Первым 20 клиентам — скидка 50% на тариф Базовый на 3 месяца (2 450 ₽/мес вместо 4 900 ₽) при условии отзыва о сервисе
+        </div>
+
         <div className="pricing-footer">
-          <p>Оплата через ЮKassa • Банковские карты, СБП, ЮMoney</p>
+          <p>Оплата через ЮKassa — банковские карты, СБП, ЮMoney</p>
           <p>Доступ активируется автоматически после подтверждения оплаты</p>
         </div>
       </div>

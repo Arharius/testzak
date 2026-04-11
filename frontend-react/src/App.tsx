@@ -393,7 +393,7 @@ export function App() {
         : backendUser.payment_required
           ? 'Оплата нужна'
         : backendUser.trial_active
-          ? `Trial (${backendUser.trial_days_left}д)`
+          ? `Trial (${backendUser.trial_tz_left ?? backendUser.trial_days_left} ТЗ)`
           : 'Trial')
     : '';
 
@@ -430,27 +430,25 @@ export function App() {
       )}
 
       {/* Trial banner — hide for admin */}
-      {backendUser && backendUser.role !== 'admin' && backendUser.trial_active && backendUser.trial_days_left != null && (
+      {backendUser && backendUser.role !== 'admin' && backendUser.trial_active && (
         <div className="trial-banner">
-          <span className="trial-banner-icon">⚡</span>
           <span className="trial-banner-text">
-            PRO-trial: <strong>{backendUser.trial_days_left} {backendUser.trial_days_left === 1 ? 'день' : backendUser.trial_days_left < 5 ? 'дня' : 'дней'}</strong> осталось — полный доступ к генерации, поиску, экспорту и истории
+            Пробный доступ: осталось <strong>{backendUser.trial_tz_left ?? backendUser.trial_days_left} из {backendUser.trial_tz_total ?? 3}</strong> бесплатных ТЗ — все функции активны
           </span>
           <button className="trial-banner-btn" onClick={() => setShowPricing(true)}>
-            Оформить Pro Business
+            Выбрать план
           </button>
         </div>
       )}
 
       {/* Trial expired banner */}
-      {backendUser && backendUser.payment_required && backendUser.trial_ends_at && backendUser.role === 'free' && (
+      {backendUser && backendUser.payment_required && backendUser.role === 'free' && (
         <div className="trial-banner trial-expired">
-          <span className="trial-banner-icon">⏰</span>
           <span className="trial-banner-text">
-            Пробный период завершён. Без оплаты <strong>генерация, поиск, экспорт и сохранение</strong> недоступны.
+            Все бесплатные ТЗ использованы. Выберите план для продолжения работы.
           </span>
           <button className="trial-banner-btn" onClick={() => setShowPricing(true)}>
-            Оформить Pro Business — 29 900 ₽/мес
+            Выбрать тариф — от 1 900 ₽/мес
           </button>
         </div>
       )}
@@ -635,7 +633,9 @@ export function App() {
           onClose={() => setShowPricing(false)}
           currentRole={backendUser.role}
           trialActive={backendUser.trial_active}
-          trialDaysLeft={backendUser.trial_days_left}
+          trialTzLeft={backendUser.trial_tz_left}
+          trialTzTotal={backendUser.trial_tz_total}
+          tzCount={backendUser.tz_count}
         />
       )}
 

@@ -175,9 +175,11 @@ export function WorkspaceRowsTable({
             const rowNeedsAuth = row.status === 'error' && /требуется авторизац/i.test(String(row.error || ''));
             const rowStateClassName = rowActionState?.rowId === row.id
               ? 'rows-table-row is-busy'
-              : focusedRowId === row.id
-                ? 'rows-table-row is-focused'
-                : 'rows-table-row';
+              : row.status === 'loading'
+                ? 'rows-table-row is-generating'
+                : focusedRowId === row.id
+                  ? 'rows-table-row is-focused'
+                  : 'rows-table-row';
 
             return (
               <Fragment key={row.id}>
@@ -306,12 +308,18 @@ export function WorkspaceRowsTable({
                 </td>
                 <td className="row-status-column">
                   <div className="row-status-cell">
+                    {row.status === 'loading' ? (
+                      <div className="row-skeleton-label">
+                        <div className="skeleton skeleton-text" style={{ width: '70%' }} />
+                        <div className="skeleton skeleton-text sm" style={{ width: '45%' }} />
+                      </div>
+                    ) : (
                     <span className={`row-status-label ${row.status === 'done' ? 'ok' : row.status === 'error' ? 'warn' : 'muted'}`}>
                       {row.status === 'idle' && (lookupCatalog(row.type)?.hardTemplate ? '📋 Шаблон готов' : row.importInfo?.sourceFormat === 'docx' && row.specs?.length ? `📄 Импортировано ${row.specs.length} хар-к` : 'Ожидание генерации')}
-                      {row.status === 'loading' && '⏳ AI формирует ТЗ...'}
                       {row.status === 'done' && `✅ Готово · ${row.specs?.length ?? 0} характеристик`}
                       {row.status === 'error' && `❌ ${row.error ?? 'Ошибка'}`}
                     </span>
+                    )}
                     <div className="row-status-actions">
                       {row.status === 'idle' && row.model.trim() && (
                         <button

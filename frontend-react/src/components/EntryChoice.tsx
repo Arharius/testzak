@@ -2,11 +2,12 @@ type Props = {
   onChooseDocx: () => void;
   onChooseManual: () => void;
   onChooseTemplate: () => void;
+  onChooseRepair: () => void;
   lawMode: string;
   onLawModeChange: (mode: '44' | '223') => void;
 };
 
-export function EntryChoice({ onChooseDocx, onChooseManual, onChooseTemplate, lawMode, onLawModeChange }: Props) {
+export function EntryChoice({ onChooseDocx, onChooseManual, onChooseTemplate, onChooseRepair, lawMode, onLawModeChange }: Props) {
   return (
     <div className="entry-choice">
       <div className="entry-choice-top">
@@ -101,6 +102,16 @@ export function EntryChoice({ onChooseDocx, onChooseManual, onChooseTemplate, la
               <path d="M7 4l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
           </div>
+        </button>
+      </div>
+
+      <div className="entry-choice-footer">
+        <button type="button" className="entry-repair-btn" onClick={onChooseRepair}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+            <path d="M11.5 1.5L14.5 4.5L5.5 13.5H2.5V10.5L11.5 1.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M9.5 3.5L12.5 6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+          Исправить готовый DOCX
         </button>
       </div>
     </div>

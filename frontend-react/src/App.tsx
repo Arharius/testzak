@@ -652,7 +652,7 @@ export function App() {
           <div className="hero-copy">
             <div className="hero-spine" aria-hidden="true"></div>
             <span className="hero-chip">44/223-ФЗ • Двойной эквивалент • Проверка • Публикация</span>
-            <h1>Закупочное ТЗ с нулевым FAS‑риском</h1>
+            <h1>Закупочное ТЗ с нулевым ФАС‑риском</h1>
             <p>Генерация, верификация через Web-Truth и автоматическая проверка двойного эквивалента — всё в одном рабочем контуре. ГОСТ-совместимый DOCX без ошибок форматирования.</p>
             <div className="hero-proof">
               <span>Импорт DOCX/XLSX</span>
@@ -675,7 +675,7 @@ export function App() {
               <strong className="hero-metric-accent">Без ошибок</strong>
             </div>
             <div className="hero-metric">
-              <span className="hero-metric-label">FAS-риск</span>
+              <span className="hero-metric-label">ФАС-риск</span>
               <strong className="hero-metric-ok">Нулевой</strong>
             </div>
           </div>
@@ -688,7 +688,7 @@ export function App() {
             <div className="feature-card-icon feature-card-icon--blue">ДЭ</div>
             <div className="feature-card-body">
               <div className="feature-card-title">Двойной эквивалент</div>
-              <div className="feature-card-desc">Алгоритм автоматически выявляет ≥2 конкурирующих производителей, которые соответствуют ТЗ. Устраняет FAS-риск монополизации.</div>
+              <div className="feature-card-desc">Алгоритм автоматически выявляет ≥2 конкурирующих производителей, которые соответствуют ТЗ. Устраняет ФАС-риск монополизации.</div>
             </div>
           </div>
           <div className="feature-card">

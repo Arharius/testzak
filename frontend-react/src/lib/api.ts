@@ -7,7 +7,7 @@ const AUTOMATION_QUEUE_KEY = 'tz_automation_queue_v1';
 const PLATFORM_QUEUE_KEY = 'tz_platform_queue_v1';
 const MAX_QUEUE_ITEMS = 500;
 
-type Provider = 'openrouter' | 'groq' | 'deepseek';
+type Provider = 'openrouter' | 'groq' | 'deepseek' | 'gigachat';
 
 type QueuedAutomationEvent = {
   at: string;
@@ -34,7 +34,8 @@ type PlatformDraftOptions = {
 const API_ENDPOINTS: Record<Provider, string> = {
   openrouter: 'https://openrouter.ai/api/v1/chat/completions',
   groq: 'https://api.groq.com/openai/v1/chat/completions',
-  deepseek: 'https://api.deepseek.com/chat/completions'
+  deepseek: 'https://api.deepseek.com/chat/completions',
+  gigachat: 'gigachat-sdk', // handled via backend SDK, not direct HTTP
 };
 
 function normalizeHeaderValue(name: string, value: string): string {

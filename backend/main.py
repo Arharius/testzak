@@ -161,9 +161,11 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 # ── Env config ─────────────────────────────────────────────────
-DEEPSEEK_API_KEY    = os.getenv("DEEPSEEK_API_KEY", "").strip()
-GROQ_API_KEY        = os.getenv("GROQ_API_KEY", "").strip()
-OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "").strip()
+DEEPSEEK_API_KEY      = os.getenv("DEEPSEEK_API_KEY", "").strip()
+GROQ_API_KEY          = os.getenv("GROQ_API_KEY", "").strip()
+OPENROUTER_API_KEY    = os.getenv("OPENROUTER_API_KEY", "").strip()
+GIGACHAT_CREDENTIALS  = os.getenv("GIGACHAT_CREDENTIALS", "").strip()
+GIGACHAT_MODEL        = os.getenv("GIGACHAT_MODEL", "GigaChat-Pro").strip()
 
 YOOKASSA_SHOP_ID       = os.getenv("YOOKASSA_SHOP_ID", "").strip()
 YOOKASSA_SECRET_KEY    = os.getenv("YOOKASSA_SECRET_KEY", "").strip()
@@ -1080,6 +1082,16 @@ def run_enterprise_autopilot(
 init_integration_db()
 
 # ── AI proxy helpers ────────────────────────────────────────────
+VALID_PROVIDERS = {"deepseek", "groq", "openrouter", "gigachat"}
+
+# Default model names per provider
+PROVIDER_DEFAULT_MODELS: dict[str, str] = {
+    "deepseek":   "deepseek-chat",
+    "groq":       "llama-3.3-70b-versatile",
+    "openrouter": "deepseek/deepseek-chat",
+    "gigachat":   GIGACHAT_MODEL,
+}
+
 def _get_api_key(provider: str) -> str:
     p = provider.strip().lower()
     if p == "deepseek":
@@ -1088,6 +1100,8 @@ def _get_api_key(provider: str) -> str:
         return GROQ_API_KEY
     if p == "openrouter":
         return OPENROUTER_API_KEY
+    if p == "gigachat":
+        return GIGACHAT_CREDENTIALS
     raise HTTPException(status_code=400, detail=f"Неизвестный провайдер: {provider}")
 
 def _get_ai_url(provider: str) -> str:
@@ -1098,9 +1112,61 @@ def _get_ai_url(provider: str) -> str:
         return "https://api.groq.com/openai/v1/chat/completions"
     if p == "openrouter":
         return "https://openrouter.ai/api/v1/chat/completions"
+    if p == "gigachat":
+        return "gigachat-sdk"  # handled separately via SDK
     raise HTTPException(status_code=400, detail=f"Неизвестный провайдер: {provider}")
 
+def _call_gigachat(messages: list, model: str, temperature: float = 0.3, max_tokens: int = 4096) -> dict:
+    """Call GigaChat via official SDK. Returns OpenAI-compatible dict."""
+    if not GIGACHAT_CREDENTIALS:
+        raise HTTPException(status_code=400, detail="GIGACHAT_CREDENTIALS не настроены на сервере")
+    try:
+        from gigachat import GigaChat
+        from gigachat.models import Chat, Messages, MessagesRole
+        role_map = {"system": MessagesRole.SYSTEM, "user": MessagesRole.USER, "assistant": MessagesRole.ASSISTANT}
+        giga_messages = [
+            Messages(role=role_map.get(str(m.get("role", "user")), MessagesRole.USER),
+                     content=str(m.get("content", "")))
+            for m in messages
+        ]
+        with GigaChat(credentials=GIGACHAT_CREDENTIALS,
+                      model=model,
+                      verify_ssl_certs=False,
+                      timeout=AI_TIMEOUT) as giga:
+            response = giga.chat(Chat(
+                messages=giga_messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            ))
+            content = response.choices[0].message.content if response.choices else ""
+            return {"choices": [{"message": {"role": "assistant", "content": content}}]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GigaChat error: {str(e)[:400]}")
+
+def _pick_provider(user=None, fallback_order: list | None = None) -> tuple[str, str]:
+    """Return (provider, model) using user preference → env defaults → fallback chain."""
+    # User explicit preference
+    if user and getattr(user, "llm_provider", None):
+        pref = str(user.llm_provider).strip().lower()
+        if pref in VALID_PROVIDERS and _get_api_key(pref):
+            model = str(user.llm_model or "").strip() or PROVIDER_DEFAULT_MODELS.get(pref, "")
+            return pref, model
+    # Server default chain
+    chain = fallback_order or ["deepseek", "openrouter", "gigachat", "groq"]
+    for p in chain:
+        if _get_api_key(p):
+            return p, PROVIDER_DEFAULT_MODELS[p]
+    raise HTTPException(status_code=503, detail="Ни один AI-провайдер не настроен. Добавьте DEEPSEEK_API_KEY, OPENROUTER_API_KEY или GIGACHAT_CREDENTIALS.")
+
 def _call_ai(provider: str, model: str, messages: list, temperature: float = 0.3, max_tokens: int = 4096) -> dict:
+    p = provider.strip().lower()
+    if p == "gigachat":
+        result = _call_gigachat(messages, model or GIGACHAT_MODEL, temperature, max_tokens)
+        logger.info(f"[LLM] GigaChat/{model} — {len(messages)} msg")
+        return result
+
     api_key = _get_api_key(provider)
     if not api_key:
         raise HTTPException(status_code=400, detail=f"API ключ {provider} не настроен на сервере")
@@ -1116,7 +1182,7 @@ def _call_ai(provider: str, model: str, messages: list, temperature: float = 0.3
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    if provider.strip().lower() == "openrouter":
+    if p == "openrouter":
         headers["HTTP-Referer"] = "https://arharius.github.io/testzak/"
         headers["X-Title"] = "TZ Generator"
 
@@ -1127,10 +1193,10 @@ def _call_ai(provider: str, model: str, messages: list, temperature: float = 0.3
         try:
             with urlopen(req, timeout=AI_TIMEOUT) as resp:
                 raw = resp.read().decode("utf-8", errors="replace")
+                logger.info(f"[LLM] {provider}/{model} — {len(messages)} msg")
                 return json.loads(raw)
         except HTTPError as e:
             if e.code == 429:
-                # Rate limited — wait and retry
                 retry_after = int(e.headers.get("Retry-After", 5 + _attempt * 10))
                 _time.sleep(min(retry_after, 30))
                 continue
@@ -1145,8 +1211,37 @@ def _call_ai(provider: str, model: str, messages: list, temperature: float = 0.3
     raise HTTPException(status_code=502, detail="AI error 429: превышен лимит запросов, повторите позже")
 
 
+def _call_ai_with_gigachat_fallback(provider: str, model: str, messages: list,
+                                    temperature: float = 0.3, max_tokens: int = 4096,
+                                    user=None) -> dict:
+    """Call AI with automatic fallback: user pref → specified provider → alternatives."""
+    try:
+        return _call_ai(provider, model, messages, temperature, max_tokens)
+    except HTTPException as e:
+        if e.status_code in (400, 503) and user:
+            # Try user's preferred provider if different
+            pref_p, pref_m = _pick_provider(user)
+            if pref_p != provider and _get_api_key(pref_p):
+                logger.warning(f"[LLM] {provider} failed, falling back to {pref_p}")
+                return _call_ai(pref_p, pref_m, messages, temperature, max_tokens)
+        raise
+
+
 def _call_ai_streaming(provider: str, model: str, messages: list, temperature: float = 0.3, max_tokens: int = 4096):
-    """Stream AI response token by token. Yields SSE data lines."""
+    """Stream AI response token by token. Yields SSE data lines (JSON chunks)."""
+    p = provider.strip().lower()
+    # GigaChat doesn't have SSE streaming — emulate with single call
+    if p == "gigachat":
+        try:
+            result = _call_gigachat(messages, model or GIGACHAT_MODEL, temperature, max_tokens)
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            chunk = {"choices": [{"delta": {"content": content}, "finish_reason": "stop"}]}
+            yield json.dumps(chunk, ensure_ascii=False)
+            logger.info(f"[LLM] GigaChat/{model} stream (emulated)")
+        except Exception as e:
+            yield json.dumps({"error": f"GigaChat error: {str(e)[:400]}"})
+        return
+
     api_key = _get_api_key(provider)
     if not api_key:
         raise HTTPException(status_code=400, detail=f"API ключ {provider} не настроен на сервере")
@@ -1162,7 +1257,7 @@ def _call_ai_streaming(provider: str, model: str, messages: list, temperature: f
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    if provider.strip().lower() == "openrouter":
+    if p == "openrouter":
         headers["HTTP-Referer"] = "https://arharius.github.io/testzak/"
         headers["X-Title"] = "TZ Generator"
 
@@ -1170,6 +1265,7 @@ def _call_ai_streaming(provider: str, model: str, messages: list, temperature: f
     req = URLRequest(url, data=body_bytes, headers=headers, method="POST")
     try:
         resp = urlopen(req, timeout=AI_TIMEOUT)
+        logger.info(f"[LLM] {provider}/{model} stream started")
         for line in resp:
             decoded = line.decode("utf-8", errors="replace").strip()
             if decoded.startswith("data: "):
@@ -1308,6 +1404,7 @@ def _build_readiness_payload() -> dict[str, Any]:
         "deepseek": bool(DEEPSEEK_API_KEY),
         "groq": bool(GROQ_API_KEY),
         "openrouter": bool(OPENROUTER_API_KEY),
+        "gigachat": bool(GIGACHAT_CREDENTIALS),
     }
     enabled_ai = [name for name, enabled in ai_providers.items() if enabled]
     db_check = _probe_database()
@@ -1422,6 +1519,100 @@ def readiness():
 @app.get("/api/v1/ping")
 def ping():
     return {"ok": True, "message": "pong"}
+
+
+# ── LLM provider settings ──────────────────────────────────────
+class LLMProviderRequest(BaseModel):
+    provider: str
+    model: Optional[str] = None
+
+@app.get("/api/ai-providers")
+def list_ai_providers():
+    """List all available AI providers and their status."""
+    providers = [
+        {
+            "id": "deepseek",
+            "label": "DeepSeek",
+            "description": "Быстрая и мощная китайская LLM. Хорошее качество для технических текстов.",
+            "available": bool(DEEPSEEK_API_KEY),
+            "default_model": "deepseek-chat",
+            "models": ["deepseek-chat", "deepseek-reasoner"],
+            "flag": "🇨🇳",
+        },
+        {
+            "id": "gigachat",
+            "label": "GigaChat (Сбер)",
+            "description": "Российская LLM от Сбера. Отлично понимает российское законодательство и специфику госзакупок.",
+            "available": bool(GIGACHAT_CREDENTIALS),
+            "default_model": GIGACHAT_MODEL,
+            "models": ["GigaChat", "GigaChat-Pro", "GigaChat-Max"],
+            "flag": "🇷🇺",
+        },
+        {
+            "id": "openrouter",
+            "label": "OpenRouter",
+            "description": "Агрегатор моделей: GPT-4o, Claude, Llama и другие через единый API.",
+            "available": bool(OPENROUTER_API_KEY),
+            "default_model": "deepseek/deepseek-chat",
+            "models": ["deepseek/deepseek-chat", "openai/gpt-4o", "anthropic/claude-3.5-sonnet", "meta-llama/llama-3.3-70b-instruct"],
+            "flag": "🌐",
+        },
+        {
+            "id": "groq",
+            "label": "Groq (Llama)",
+            "description": "Сверхбыстрый инференс Llama 3.3 от Groq.",
+            "available": bool(GROQ_API_KEY),
+            "default_model": "llama-3.3-70b-versatile",
+            "models": ["llama-3.3-70b-versatile", "llama-3.1-70b-versatile"],
+            "flag": "⚡",
+        },
+    ]
+    active, _ = _pick_provider()
+    return {"ok": True, "providers": providers, "active_provider": active}
+
+
+@app.get("/api/settings/llm-provider")
+def get_llm_provider(user: User = Depends(get_current_user)):
+    """Get current user's LLM provider preference."""
+    user_pref = getattr(user, "llm_provider", None) or None
+    user_model = getattr(user, "llm_model", None) or None
+    active_p, active_m = _pick_provider(user)
+    return {
+        "ok": True,
+        "provider": user_pref,
+        "model": user_model,
+        "effective_provider": active_p,
+        "effective_model": active_m,
+    }
+
+
+@app.post("/api/settings/llm-provider")
+def set_llm_provider(
+    req: LLMProviderRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Set user's preferred LLM provider."""
+    p = req.provider.strip().lower()
+    if p not in VALID_PROVIDERS and p != "":
+        raise HTTPException(status_code=400, detail=f"Неверный провайдер. Доступно: {', '.join(sorted(VALID_PROVIDERS))}")
+    if p and not _get_api_key(p):
+        raise HTTPException(status_code=400, detail=f"Провайдер {p} не настроен на сервере (нет API-ключа)")
+    db_user = db.query(User).filter_by(email=user.email).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    db_user.llm_provider = p or None
+    db_user.llm_model = (req.model or "").strip() or None
+    db.commit()
+    effective_p, effective_m = _pick_provider(db_user)
+    logger.info(f"[LLM] User {user.email} set provider={p or 'reset'} model={req.model or 'default'}")
+    return {
+        "ok": True,
+        "provider": db_user.llm_provider,
+        "model": db_user.llm_model,
+        "effective_provider": effective_p,
+        "effective_model": effective_m,
+    }
 
 
 # ── Integration queue API ─────────────────────────────────────
@@ -2816,15 +3007,7 @@ def review_tz(req: TZReviewRequest):
     user_prompt = f"Проведи экспертизу следующего текста ТЗ (закупка по {law}):\n\n{tz_excerpt}"
 
     try:
-        provider = "deepseek"
-        model = "deepseek-chat"
-        if not _get_api_key(provider):
-            for fallback_p in ["groq", "openrouter"]:
-                if _get_api_key(fallback_p):
-                    provider = fallback_p
-                    model = "llama-3.1-70b-versatile" if fallback_p == "groq" else "deepseek/deepseek-chat"
-                    break
-
+        provider, model = _pick_provider()
         result = _call_ai(provider, model, [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -3063,17 +3246,7 @@ async def ai_repair_docx_endpoint(
 
     user_prompt = f"Проведи редактуру следующего ТЗ (закупка по {law}):\n\n{tz_excerpt}"
 
-    provider = "deepseek"
-    model = "deepseek-chat"
-    if not _get_api_key(provider):
-        for fallback_p, fallback_m in [("openrouter", "deepseek/deepseek-chat"), ("groq", "llama-3.3-70b-versatile")]:
-            if _get_api_key(fallback_p):
-                provider = fallback_p
-                model = fallback_m
-                break
-
-    if not _get_api_key(provider):
-        raise HTTPException(status_code=503, detail="AI-ключи не настроены. Добавьте DEEPSEEK_API_KEY или OPENROUTER_API_KEY.")
+    provider, model = _pick_provider()
 
     try:
         result = _call_ai(provider, model, [
@@ -3213,17 +3386,7 @@ FAIL: [список пунктов]
 
     user_prompt = f"Проведи аудит следующего ТЗ (закупка по {law}):\n\n{tz_text[:14000]}"
 
-    provider = "deepseek"
-    model = "deepseek-chat"
-    if not _get_api_key(provider):
-        for fallback_p, fallback_m in [("openrouter", "deepseek/deepseek-chat"), ("groq", "llama-3.3-70b-versatile")]:
-            if _get_api_key(fallback_p):
-                provider = fallback_p
-                model = fallback_m
-                break
-
-    if not _get_api_key(provider):
-        raise HTTPException(status_code=503, detail="AI-ключи не настроены")
+    provider, model = _pick_provider()
 
     try:
         result = _call_ai(provider, model, [

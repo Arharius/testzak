@@ -804,6 +804,137 @@ html[data-theme='contrast'] .hero-metric {
 .hero-metric-ok {
   color: var(--green) !important;
 }
+.hero-metric--clickable {
+  cursor: pointer;
+  user-select: none;
+}
+.hero-metric--clickable:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.hero-metric-ai {
+  font-size: 12px !important;
+}
+
+/* ─── LLM Provider Modal ──────────────────────────────────────────── */
+.llm-modal {
+  max-width: 640px !important;
+}
+.llm-active-note {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 6px 0 0;
+}
+.llm-loading {
+  text-align: center;
+  padding: 32px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.llm-providers-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 480px) {
+  .llm-providers-grid { grid-template-columns: 1fr; }
+}
+.llm-provider-card {
+  position: relative;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 14px 14px 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.llm-provider-card:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-accent);
+}
+.llm-provider-card--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  background: var(--accent-soft);
+}
+.llm-provider-card--unavailable {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.llm-provider-flag {
+  font-size: 22px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.llm-provider-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.llm-provider-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+.llm-provider-badge {
+  position: absolute;
+  top: 8px; right: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  letter-spacing: 0.04em;
+}
+.llm-provider-badge--unavail {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.llm-provider-badge--selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.llm-model-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.llm-model-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.llm-model-select {
+  flex: 1;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border-strong);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 6px 10px;
+}
+.llm-saved-note {
+  text-align: center;
+  font-size: 13px;
+  color: var(--green);
+  margin-bottom: 10px;
+  padding: 8px;
+  background: var(--green-soft);
+  border-radius: 8px;
+}
+.llm-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.llm-btn-save { flex: 1; }
+.llm-btn-reset { flex: 0 0 auto; }
 
 .hero-proof {
   display: flex;

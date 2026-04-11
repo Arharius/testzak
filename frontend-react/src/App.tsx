@@ -7,6 +7,7 @@ import { EventLog } from './components/EventLog';
 import { RuntimeStatusPanel } from './components/RuntimeStatusPanel';
 import { Workspace } from './components/Workspace';
 import { PricingModal } from './components/PricingModal';
+import { LLMProviderModal } from './components/LLMProviderModal';
 import {
   flushAutomationQueue,
   flushPlatformQueue,
@@ -28,6 +29,7 @@ import {
   isBackendApiAvailable,
   getBackendHealth,
   getBackendReadiness,
+  getLlmProviderSetting,
 } from './lib/backendApi';
 import {
   appendAutomationLog,
@@ -84,6 +86,9 @@ export function App() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPricing, setShowPricing] = useState(false);
+  const [showLLMModal, setShowLLMModal] = useState(false);
+  const [preferredProvider, setPreferredProvider] = useState<string>('deepseek');
+  const [preferredModel, setPreferredModel] = useState<string>('deepseek-chat');
 
   // ── Handle magic link or direct JWT from URL on load ────────────────────
   useEffect(() => {
@@ -166,6 +171,17 @@ export function App() {
     window.addEventListener('tz:open-pricing', onOpenPricing);
     return () => window.removeEventListener('tz:open-pricing', onOpenPricing);
   }, []);
+
+  // Load user's preferred LLM provider when logged in
+  useEffect(() => {
+    if (!backendUser) return;
+    getLlmProviderSetting()
+      .then(res => {
+        if (res.effective_provider) setPreferredProvider(res.effective_provider);
+        if (res.effective_model) setPreferredModel(res.effective_model);
+      })
+      .catch(() => {});
+  }, [backendUser]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -627,6 +643,18 @@ export function App() {
         </div>
       )}
 
+      {/* LLM provider modal */}
+      {showLLMModal && backendUser && (
+        <LLMProviderModal
+          onClose={() => setShowLLMModal(false)}
+          onSaved={(p, m) => {
+            setPreferredProvider(p);
+            setPreferredModel(m);
+            setShowLLMModal(false);
+          }}
+        />
+      )}
+
       {/* Pricing modal */}
       {showPricing && backendUser && (
         <PricingModal
@@ -678,6 +706,16 @@ export function App() {
               <span className="hero-metric-label">ФАС-риск</span>
               <strong className="hero-metric-ok">Нулевой</strong>
             </div>
+            {backendUser && (
+              <div className="hero-metric hero-metric--clickable" onClick={() => setShowLLMModal(true)} title="Сменить AI-провайдер">
+                <span className="hero-metric-label">AI-провайдер</span>
+                <strong className="hero-metric-accent hero-metric-ai">
+                  {preferredProvider === 'gigachat' ? '🇷🇺 GigaChat' :
+                   preferredProvider === 'openrouter' ? '🌐 OpenRouter' :
+                   preferredProvider === 'groq' ? '⚡ Groq' : '🇨🇳 DeepSeek'}
+                </strong>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -853,6 +891,8 @@ export function App() {
           platformSettings={platformSettings}
           enterpriseSettings={enterpriseSettings}
           backendUser={backendUser}
+          preferredProvider={preferredProvider as 'deepseek' | 'openrouter' | 'groq' | 'gigachat'}
+          preferredModel={preferredModel}
         />
       </div>
 

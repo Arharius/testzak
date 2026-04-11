@@ -517,6 +517,42 @@ export async function getBackendReadiness(): Promise<BackendReadiness> {
   return apiGet('/api/v1/readiness', false, SHORT_TIMEOUT_MS);
 }
 
+// ── LLM provider settings ─────────────────────────────────────────────────────
+
+export type AiProviderInfo = {
+  id: string;
+  label: string;
+  description: string;
+  available: boolean;
+  default_model: string;
+  models: string[];
+  flag: string;
+};
+
+export async function getAiProviders(): Promise<{ ok: boolean; providers: AiProviderInfo[]; active_provider: string }> {
+  return apiGet('/api/ai-providers', false, SHORT_TIMEOUT_MS);
+}
+
+export async function getLlmProviderSetting(): Promise<{
+  ok: boolean;
+  provider: string | null;
+  model: string | null;
+  effective_provider: string;
+  effective_model: string;
+}> {
+  return apiGet('/api/settings/llm-provider', true, SHORT_TIMEOUT_MS);
+}
+
+export async function setLlmProviderSetting(provider: string, model?: string): Promise<{
+  ok: boolean;
+  provider: string | null;
+  model: string | null;
+  effective_provider: string;
+  effective_model: string;
+}> {
+  return apiPost('/api/settings/llm-provider', { provider, model: model || null }, true, SHORT_TIMEOUT_MS);
+}
+
 // ── Payment ──────────────────────────────────────────────────────────────────
 
 export async function createPayment(plan: 'starter' | 'pro' | 'annual'): Promise<{

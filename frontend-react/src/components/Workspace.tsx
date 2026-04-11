@@ -414,7 +414,7 @@ function isUniversalMetaComplete(meta: Record<string, string> = {}): boolean {
 }
 import { buildAntiFasReport, buildAntiFasAutoFixes, sanitizeProcurementSpecs, validateDocumentText, type ComplianceReport, applyComplianceFixes } from '../utils/compliance';
 
-type Provider = 'openrouter' | 'groq' | 'deepseek';
+type Provider = 'openrouter' | 'groq' | 'deepseek' | 'gigachat';
 
 interface GoodsRow {
   id: number;
@@ -7205,6 +7205,8 @@ type Props = {
   automationSettings: AutomationSettings;
   platformSettings: PlatformIntegrationSettings;
   enterpriseSettings: EnterpriseSettings;
+  preferredProvider?: Provider;
+  preferredModel?: string;
   backendUser?: {
     email: string;
     role: string;
@@ -7217,18 +7219,22 @@ type Props = {
   } | null;
 };
 
-export function Workspace({ automationSettings, platformSettings, enterpriseSettings, backendUser }: Props) {
+export function Workspace({ automationSettings, platformSettings, enterpriseSettings, backendUser, preferredProvider, preferredModel }: Props) {
   // Hosted mode: use backend when explicit BACKEND_URL is configured.
   // Local mode keeps previous behavior (requires signed-in user).
   const useBackend = !!(BACKEND_URL || isBackendApiAvailable());
   const hasBackendSession = !!backendUser || isLoggedIn();
   const [lawMode, setLawMode] = useState<LawMode>('44');
   const [catalogMode, setCatalogMode] = useState<CatalogMode>('it');
-  const [provider, _setProvider] = useState<Provider>('deepseek');  // eslint-disable-line @typescript-eslint/no-unused-vars
+  const [provider, setProvider] = useState<Provider>((preferredProvider as Provider) || 'deepseek');
   const [apiKey] = useState(''); // Client-side keys disabled — all AI through backend
-  const [model] = useState('deepseek-chat');
+  const [model, setModel] = useState(preferredModel || 'deepseek-chat');
   const [authPanelOpen, setAuthPanelOpen] = useState<boolean>(() => !useBackend);
-  void _setProvider; // keep setter for future admin panel
+
+  useEffect(() => {
+    if (preferredProvider) setProvider(preferredProvider as Provider);
+    if (preferredModel) setModel(preferredModel);
+  }, [preferredProvider, preferredModel]);
   const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', typeLocked: false, model: '', licenseType: '', term: '', licenseTypeAuto: false, termAuto: false, qty: 1, status: 'idle' }]);
   const [docxReady, setDocxReady] = useState(false);
   const [pendingAutoGenerate, setPendingAutoGenerate] = useState(false);

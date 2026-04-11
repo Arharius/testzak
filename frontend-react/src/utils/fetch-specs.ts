@@ -17,12 +17,13 @@ export type SpecConflict = {
   recommendation: string;
 };
 
-type Provider = 'openrouter' | 'groq' | 'deepseek';
+type Provider = 'openrouter' | 'groq' | 'deepseek' | 'gigachat';
 
 const API_ENDPOINTS: Record<Provider, string> = {
   openrouter: 'https://openrouter.ai/api/v1/chat/completions',
   groq: 'https://api.groq.com/openai/v1/chat/completions',
   deepseek: 'https://api.deepseek.com/chat/completions',
+  gigachat: 'gigachat-sdk',
 };
 
 function extractJsonSpecs(raw: string): { specs: SpecItem[]; conflicts: SpecConflict[] } {

@@ -26,6 +26,8 @@ class User(Base):
     trial_ends_at = Column(DateTime, nullable=True)  # PRO trial end
     subscription_id = Column(String, nullable=True)
     subscription_until = Column(DateTime, nullable=True)
+    llm_provider = Column(String, nullable=True)   # preferred AI provider: gigachat | deepseek | openrouter
+    llm_model = Column(String, nullable=True)       # preferred model name
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_login = Column(DateTime, nullable=True)
 
@@ -139,6 +141,10 @@ def _auto_migrate(target_engine=None, target_database_url=None):
                 conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
             if "trial_ends_at" not in existing:
                 conn.execute(text("ALTER TABLE users ADD COLUMN trial_ends_at TIMESTAMP"))
+            if "llm_provider" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN llm_provider VARCHAR"))
+            if "llm_model" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN llm_model VARCHAR"))
     if "tz_documents" in insp.get_table_names():
         existing = {c["name"] for c in insp.get_columns("tz_documents")}
         with current_engine.begin() as conn:

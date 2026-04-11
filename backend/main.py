@@ -3067,6 +3067,158 @@ async def ai_repair_docx_endpoint(
     )
 
 
+class TZAuditResponse(BaseModel):
+    report: str
+    verdict: str = ""
+    pass_count: int = 0
+    fail_count: int = 0
+    provider_used: str = ""
+
+
+@app.post("/api/audit-tz", response_model=TZAuditResponse)
+async def audit_tz_endpoint(
+    file: UploadFile = FastAPIFile(...),
+    law_mode: str = "44",
+):
+    """Аудит ТЗ по 9 контрольным пунктам согласно требованиям 44-ФЗ/223-ФЗ."""
+    if not file.filename or not file.filename.lower().endswith('.docx'):
+        raise HTTPException(status_code=400, detail="Только .docx файлы поддерживаются")
+
+    contents = await file.read()
+    if len(contents) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 20 МБ)")
+
+    try:
+        import docx as python_docx
+    except ImportError:
+        raise HTTPException(status_code=500, detail="python-docx не установлен на сервере")
+
+    try:
+        doc = python_docx.Document(io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Не удалось открыть DOCX: {str(e)}")
+
+    text_parts: list[str] = []
+    for para in doc.paragraphs:
+        if para.text.strip():
+            text_parts.append(para.text.strip())
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            row_text = " | ".join(c for c in cells if c)
+            if row_text:
+                text_parts.append(row_text)
+
+    tz_text = "\n".join(text_parts)
+    if len(tz_text.strip()) < 100:
+        raise HTTPException(status_code=400, detail="Документ слишком короткий или не содержит текста")
+
+    law = "44-ФЗ" if law_mode == "44" else "223-ФЗ"
+
+    system_prompt = f"""Ты — аудитор технических заданий для госзакупок РФ ({law}).
+
+Получи ТЗ. Проверь по каждому пункту. Выдай только структурированный отчёт.
+
+ПРОВЕРЯЙ:
+
+1. СИМВОЛЫ
+   Есть ли в тексте: ⭐ ★ ✅ ❌ или любые emoji?
+   Результат: PASS / FAIL [что именно найдено]
+
+2. МЕТА-КОММЕНТАРИИ
+   Есть ли фразы: "требуется проверка", "обычно не применяется",
+   "при применимости уточните", "как правило", "рекомендуется"?
+   Результат: PASS / FAIL [цитата]
+
+3. БРЕНДЫ БЕЗ ЭКВИВАЛЕНТА
+   Есть ли названия производителей или товарных знаков
+   без фразы "или эквивалент"?
+   Результат: PASS / FAIL [перечень]
+
+4. ТОЧЕЧНЫЕ ЗНАЧЕНИЯ
+   Есть ли числовые характеристики без ≥ / не менее / диапазона?
+   Результат: PASS / FAIL [перечень]
+
+5. ЦВЕТ
+   Указан ли конкретный цвет с оттенком
+   без функционального обоснования?
+   Результат: PASS / FAIL [цитата]
+
+6. НОРМАТИВНАЯ БАЗА — ТОВАРЫ
+   Если тип закупки "товар/оборудование":
+   Есть ли ПП №1875 от 23.12.2024? PASS / FAIL
+   Есть ли ПП №719 от 17.07.2015? PASS / FAIL
+   Есть ли устаревшие №878 / №616 / №925? PASS / FAIL
+
+7. НОРМАТИВНАЯ БАЗА — ПО
+   Если тип закупки "программное обеспечение":
+   Есть ли ПП №1236 и реестр Минцифры? PASS / FAIL
+
+8. НОРМАТИВНАЯ БАЗА — УСЛУГИ
+   Если тип закупки "услуги":
+   Есть ли ссылка на ПП №1875? (должно быть FAIL = хорошо)
+   Результат: OK если нет / ПРОБЛЕМА если есть
+
+9. СТРУКТУРА
+   Присутствуют ли разделы 1-6 и хотя бы одно Приложение?
+   Результат: PASS / FAIL [что отсутствует]
+
+ИТОГ:
+PASS: [N из 9]
+FAIL: [список пунктов]
+ВЕРДИКТ: ГОТОВО К ЕИС / ТРЕБУЕТ ПРАВКИ"""
+
+    user_prompt = f"Проведи аудит следующего ТЗ (закупка по {law}):\n\n{tz_text[:14000]}"
+
+    provider = "deepseek"
+    model = "deepseek-chat"
+    if not _get_api_key(provider):
+        for fallback_p, fallback_m in [("openrouter", "deepseek/deepseek-chat"), ("groq", "llama-3.3-70b-versatile")]:
+            if _get_api_key(fallback_p):
+                provider = fallback_p
+                model = fallback_m
+                break
+
+    if not _get_api_key(provider):
+        raise HTTPException(status_code=503, detail="AI-ключи не настроены")
+
+    try:
+        result = _call_ai(provider, model, [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ], temperature=0.1, max_tokens=2048)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ошибка AI: {str(e)[:300]}")
+
+    report = result.strip() if isinstance(result, str) else (
+        result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+    )
+
+    import re as _re
+    verdict = ""
+    m_verdict = _re.search(r"ВЕРДИКТ:\s*(ГОТОВО К ЕИС|ТРЕБУЕТ ПРАВКИ)", report)
+    if m_verdict:
+        verdict = m_verdict.group(1)
+
+    pass_count = 0
+    fail_count = 0
+    m_pass = _re.search(r"PASS:\s*(\d+)\s*из\s*9", report)
+    if m_pass:
+        pass_count = int(m_pass.group(1))
+        fail_count = 9 - pass_count
+    else:
+        pass_count = len(_re.findall(r"\bPASS\b", report))
+        fail_count = len(_re.findall(r"\bFAIL\b", report))
+
+    return TZAuditResponse(
+        report=report,
+        verdict=verdict,
+        pass_count=pass_count,
+        fail_count=fail_count,
+        provider_used=f"{provider}/{model}",
+    )
+
+
 _STATIC_DIR = _Path(__file__).resolve().parent / "static"
 
 if _STATIC_DIR.is_dir():

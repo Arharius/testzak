@@ -7239,6 +7239,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [entryDismissed, setEntryDismissed] = useState(false);
   const [repairResult, setRepairResult] = useState<{ protocol: string; fixed_text: string; violation_count: number; provider_used: string } | null>(null);
   const [repairLoading, setRepairLoading] = useState(false);
+  const [auditResult, setAuditResult] = useState<{ report: string; verdict: string; pass_count: number; fail_count: number } | null>(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [showAuditModal, setShowAuditModal] = useState(false);
   const [deResult, setDeResult] = useState<DoubleEquivResult | null>(null);
   const [deConflicts, setDeConflicts] = useState<SpecConflict[]>([]);
   const [deLoading, setDeLoading] = useState(false);
@@ -10588,8 +10591,31 @@ ${hint || '- Используй детальные, проверяемые эк�
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
       console.log('[DOCX] Download triggered');
-      showToast('DOCX файл скачивается...', true);
+      showToast('DOCX скачивается. Запускаем аудит ТЗ...', true);
       appendAutomationLog({ at: new Date().toISOString(), event: 'react.export_docx', ok: true });
+
+      // Автоматический аудит ТЗ после экспорта
+      setAuditLoading(true);
+      setAuditResult(null);
+      (async () => {
+        try {
+          const auditForm = new FormData();
+          auditForm.append('file', new File([finalBlob], 'tz.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+          auditForm.append('law_mode', lawMode);
+          const auditResp = await fetch('/api/audit-tz', { method: 'POST', body: auditForm });
+          if (auditResp.ok) {
+            const auditData = await auditResp.json() as { report: string; verdict: string; pass_count: number; fail_count: number };
+            setAuditResult(auditData);
+            setShowAuditModal(true);
+          } else {
+            console.warn('[Audit] /api/audit-tz returned', auditResp.status);
+          }
+        } catch (e) {
+          console.warn('[Audit] Аудит недоступен:', e);
+        } finally {
+          setAuditLoading(false);
+        }
+      })();
     };
 
     try {
@@ -11846,6 +11872,65 @@ ${hint || '- Используй детальные, проверяемые эк�
                     }}
                   >
                     Скачать исправленный текст
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+      {(auditLoading || showAuditModal) && (
+        <div className="tz-review-overlay" onClick={(e) => { if (e.target === e.currentTarget && !auditLoading) setShowAuditModal(false); }}>
+          <div className="audit-result-panel">
+            <div className="audit-result-header">
+              {auditLoading ? (
+                <h3 className="audit-result-title">Аудит ТЗ — проверяем документ…</h3>
+              ) : auditResult ? (
+                <div className="audit-result-header-inner">
+                  <h3 className="audit-result-title">
+                    Аудит ТЗ — {auditResult.pass_count} из 9 пунктов пройдено
+                  </h3>
+                  <span className={`audit-verdict-badge ${auditResult.verdict === 'ГОТОВО К ЕИС' ? 'audit-verdict--ok' : 'audit-verdict--fail'}`}>
+                    {auditResult.verdict || 'Результат получен'}
+                  </span>
+                </div>
+              ) : null}
+              {!auditLoading && (
+                <button type="button" className="modal-close-btn" onClick={() => setShowAuditModal(false)}>✕</button>
+              )}
+            </div>
+
+            {auditLoading ? (
+              <div className="repair-result-loading">
+                <div className="repair-skeleton" />
+                <div className="repair-skeleton repair-skeleton--short" />
+                <div className="repair-skeleton" />
+                <div className="repair-skeleton repair-skeleton--short" />
+                <div className="repair-skeleton" />
+              </div>
+            ) : auditResult && (
+              <>
+                <div className="audit-result-body">
+                  <pre className="audit-report-text">{auditResult.report}</pre>
+                </div>
+                <div className="repair-result-footer">
+                  <button
+                    type="button"
+                    className="repair-download-btn"
+                    onClick={() => {
+                      const blob = new Blob([auditResult.report], { type: 'text/plain;charset=utf-8' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `Аудит_ТЗ_${new Date().toISOString().slice(0,10)}.txt`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                  >
+                    Скачать отчёт аудита
+                  </button>
+                  <button type="button" className="de-close-btn" onClick={() => setShowAuditModal(false)}>
+                    Закрыть
                   </button>
                 </div>
               </>

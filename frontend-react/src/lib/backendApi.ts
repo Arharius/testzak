@@ -7,10 +7,11 @@ import { GOODS_CATALOG } from '../data/goods-catalog';
  * - same-origin API on Netlify via /api/* proxy redirects
  */
 
-const CURRENT_BACKEND_URL = 'https://archibald123-tz-generator-backend.hf.space';
+const CURRENT_BACKEND_URL = 'https://tz-generator.onrender.com';
 const DEPRECATED_BACKEND_URLS = new Set([
   'https://backend-production-3b942.up.railway.app',
   'https://backend-production-f736.up.railway.app',
+  'https://archibald123-tz-generator-backend.hf.space',
 ]);
 
 function normalizeBackendUrl(value: string): string {

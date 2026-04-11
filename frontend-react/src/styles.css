@@ -5699,3 +5699,117 @@ html[data-theme='contrast'] .has-tooltip::after {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* ── Repair Result Modal ─────────────────────────────── */
+.repair-result-panel {
+  width: min(860px, 94vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-strong);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.45);
+  animation: fadeIn 0.2s ease;
+}
+
+.repair-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--panel-border);
+  background: var(--surface);
+}
+
+.repair-result-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.repair-result-loading {
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.repair-skeleton {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.05) 25%,
+    rgba(255,255,255,0.12) 50%,
+    rgba(255,255,255,0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.repair-skeleton--short {
+  width: 55%;
+}
+
+.repair-result-protocol,
+.repair-result-fixed {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--panel-border);
+  overflow-y: auto;
+  max-height: 280px;
+}
+
+.repair-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 10px;
+}
+
+.repair-protocol-text,
+.repair-fixed-text {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.repair-result-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: var(--surface);
+}
+
+.repair-provider-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.repair-download-btn {
+  padding: 10px 20px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.repair-download-btn:hover {
+  opacity: 0.85;
+}

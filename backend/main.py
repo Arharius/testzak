@@ -2888,6 +2888,185 @@ def validate_tz(req: TZValidateRequest, db: Session = Depends(get_db)):
     )
 
 
+class AIRepairDocxResponse(BaseModel):
+    protocol: str
+    fixed_text: str
+    violation_count: int
+    provider_used: str = ""
+
+
+@app.post("/api/ai-repair-docx", response_model=AIRepairDocxResponse)
+async def ai_repair_docx_endpoint(
+    file: UploadFile = FastAPIFile(...),
+    law_mode: str = "44",
+):
+    """AI-редактор ТЗ: находит нарушения в загруженном DOCX и возвращает протокол + исправленный текст."""
+    if not file.filename or not file.filename.lower().endswith('.docx'):
+        raise HTTPException(status_code=400, detail="Только .docx файлы поддерживаются")
+
+    contents = await file.read()
+    if len(contents) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 20 МБ)")
+
+    try:
+        import docx as python_docx
+    except ImportError:
+        raise HTTPException(status_code=500, detail="python-docx не установлен на сервере")
+
+    try:
+        doc = python_docx.Document(io.BytesIO(contents))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Не удалось открыть DOCX: {str(e)}")
+
+    # Извлекаем текст из документа
+    text_parts: list[str] = []
+    for para in doc.paragraphs:
+        if para.text.strip():
+            text_parts.append(para.text.strip())
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text.strip() for cell in row.cells]
+            row_text = " | ".join(c for c in cells if c)
+            if row_text:
+                text_parts.append(row_text)
+
+    tz_text = "\n".join(text_parts)
+    if len(tz_text.strip()) < 100:
+        raise HTTPException(status_code=400, detail="Документ слишком короткий или не содержит текста")
+
+    law = "44-ФЗ" if law_mode == "44" else "223-ФЗ"
+    tz_excerpt = tz_text[:16000]
+
+    system_prompt = f"""Ты — редактор технических заданий для государственных закупок РФ ({law}).
+Пользователь загружает готовое ТЗ. Твоя задача — найти все нарушения и выдать исправленный документ, сохранив структуру и форматирование оригинала.
+
+ШАГ 1 — АНАЛИЗ: НАЙДИ ВСЕ НАРУШЕНИЯ
+
+Прочитай документ целиком. Найди и выпиши список нарушений по категориям:
+
+[БРЕНД БЕЗ ЭКВИВАЛЕНТА]
+— Товарный знак или название производителя без фразы «или эквивалент»
+— Пример: "Рутокен ЭЦП 3.0" без блока критериев эквивалентности
+
+[ОГРАНИЧЕНИЕ КОНКУРЕНЦИИ]
+— Цвет с конкретным оттенком без функционального обоснования
+— Точечное значение вместо диапазона ("частота: 1500 об/мин" вместо "не менее 1500 об/мин")
+— Характеристика, существующая только у одного производителя
+
+[УСТАРЕВШИЕ НОРМЫ]
+— Ссылки на ПП №878, ПП №616, ПП №925 — заменить на ПП №1875 от 23.12.2024
+— Иные устаревшие постановления
+
+[НЕПРАВИЛЬНОЕ ПРИМЕНЕНИЕ НОРМАТИВКИ]
+— ПП №1875 указан в ТЗ на услуги (не применяется)
+— ПП №1236 (реестр Минцифры) не указан для закупки ПО
+— ПП №719 отсутствует при ссылке на ПП №1875 для промтоваров
+
+[МЕТА-КОММЕНТАРИИ В ТЕКСТЕ]
+— Любые фразы-оговорки: "требуется проверка", "обычно не применяется", "при применимости уточните", "как правило"
+
+[СИМВОЛЫ И АРТЕФАКТЫ]
+— Emoji и специальные символы: ⭐ ★ ✅ ❌ 🔴
+— Артефакты интерфейса: "ручной ввод", "своя услуга"
+
+[ОТСУТСТВУЮЩИЕ ОБЯЗАТЕЛЬНЫЕ ПУНКТЫ]
+— Нет подтверждения производства (ПП №1875 + ПП №719) для промтоваров
+— Нет блока гарантии
+— Нет порядка приёмки
+
+ШАГ 2 — ИСПРАВЛЕНИЯ: ПРАВИЛА ЗАМЕНЫ
+
+БРЕНД → ЭКВИВАЛЕНТ:
+"USB-токен Рутокен ЭЦП 3.0" → "USB-токен криптографический или эквивалент, соответствующий следующим критериям: — поддержка алгоритмов ГОСТ Р 34.10-2012, ГОСТ Р 34.11-2012 — объём защищённой памяти: ≥ 64 КБ — интерфейс: USB Type-A — сертификат ФСБ России"
+
+ЦВЕТ:
+"Цвет: чёрный с оранжевыми элементами" → "Цвет: тёмных тонов"
+
+ТОЧЕЧНЫЕ ЗНАЧЕНИЯ:
+"Объём памяти: 16 ГБ" → "Объём памяти: ≥ 16 ГБ"
+
+УСТАРЕВШИЕ ПОСТАНОВЛЕНИЯ:
+"ПП РФ №878" или "ПП РФ №616" или "ПП РФ №925" → "ПП РФ от 23.12.2024 № 1875 и ПП РФ от 17.07.2015 № 719"
+
+МЕТА-КОММЕНТАРИИ: удалить полностью — оставить только итоговый вывод.
+СИМВОЛЫ: emoji → удалить, "⭐ Своя услуга (ручной ввод)" → "[Наименование услуги]"
+
+СЕРВИСНЫЕ ПОЛЯ ПП №1875:
+Для услуг: пункты про национальный режим — удалить полностью
+Для товаров: "Товар должен соответствовать ПП РФ от 23.12.2024 № 1875 и ПП РФ от 17.07.2015 № 719"
+
+ЧТО НЕ ТРОГАТЬ:
+— Структуру и порядок разделов — не менять
+— Значения технических параметров — только форму записи (точечное → диапазон)
+— ГОСТ-ссылки и сертификационные требования — сохранять
+— Не добавлять характеристики которых не было в оригинале
+— Пустые поля (___) — оставить пустыми
+
+ШАГ 3 — ВЫДАЧА РЕЗУЛЬТАТА
+
+Выдай строго в следующем формате (не отступай от него):
+
+---ПРОТОКОЛ ИСПРАВЛЕНИЙ---
+Найдено нарушений: [N]
+
+1. [Раздел/Пункт] — [тип нарушения] — исправлено
+2. [Раздел/Пункт] — [тип нарушения] — исправлено
+
+---ИСПРАВЛЕННОЕ ТЗ---
+[Полный текст документа с исправлениями]
+
+Структура и нумерация разделов оригинала — сохранены.
+Незатронутые разделы — без изменений."""
+
+    user_prompt = f"Проведи редактуру следующего ТЗ (закупка по {law}):\n\n{tz_excerpt}"
+
+    provider = "deepseek"
+    model = "deepseek-chat"
+    if not _get_api_key(provider):
+        for fallback_p, fallback_m in [("openrouter", "deepseek/deepseek-chat"), ("groq", "llama-3.3-70b-versatile")]:
+            if _get_api_key(fallback_p):
+                provider = fallback_p
+                model = fallback_m
+                break
+
+    if not _get_api_key(provider):
+        raise HTTPException(status_code=503, detail="AI-ключи не настроены. Добавьте DEEPSEEK_API_KEY или OPENROUTER_API_KEY.")
+
+    try:
+        result = _call_ai(provider, model, [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ], temperature=0.1, max_tokens=8192)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ошибка AI: {str(e)[:300]}")
+
+    # Парсим ответ
+    protocol_text = ""
+    fixed_text = ""
+    violation_count = 0
+
+    if "---ПРОТОКОЛ ИСПРАВЛЕНИЙ---" in result and "---ИСПРАВЛЕННОЕ ТЗ---" in result:
+        parts = result.split("---ИСПРАВЛЕННОЕ ТЗ---", 1)
+        protocol_part = parts[0].replace("---ПРОТОКОЛ ИСПРАВЛЕНИЙ---", "").strip()
+        fixed_text = parts[1].strip()
+        protocol_text = protocol_part
+
+        import re as _re
+        m = _re.search(r"Найдено нарушений:\s*(\d+)", protocol_text)
+        if m:
+            violation_count = int(m.group(1))
+    else:
+        protocol_text = "Протокол не распознан"
+        fixed_text = result.strip()
+
+    return AIRepairDocxResponse(
+        protocol=protocol_text,
+        fixed_text=fixed_text,
+        violation_count=violation_count,
+        provider_used=f"{provider}/{model}",
+    )
+
+
 _STATIC_DIR = _Path(__file__).resolve().parent / "static"
 
 if _STATIC_DIR.is_dir():

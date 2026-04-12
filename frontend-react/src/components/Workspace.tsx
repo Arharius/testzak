@@ -7404,6 +7404,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   }, [preferredProvider, preferredModel]);
   const [rows, setRows] = useState<GoodsRow[]>([{ id: 1, type: 'pc', typeLocked: false, model: '', licenseType: '', term: '', licenseTypeAuto: false, termAuto: false, qty: 1, status: 'idle' }]);
   const [docxReady, setDocxReady] = useState(false);
+  const [qaAutoRunKey, setQaAutoRunKey] = useState(0);
   const [pendingAutoGenerate, setPendingAutoGenerate] = useState(false);
   const [complianceReport, setComplianceReport] = useState<ComplianceReport | null>(null);
   const [showReviewPanel, setShowReviewPanel] = useState(false);
@@ -7736,9 +7737,12 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     setRows((prev) =>
       prev.map((item) => {
         if (item.id !== row.id) return item;
-        const updatedMeta = item.meta?.name_needs_review
-          ? { ...item.meta, name_needs_review: undefined }
-          : item.meta;
+        let updatedMeta = item.meta;
+        if (item.meta?.name_needs_review) {
+          const { name_needs_review: _removed, ...rest } = item.meta as Record<string, string | undefined>;
+          void _removed;
+          updatedMeta = rest as Record<string, string>;
+        }
         return applyAutoCommercialTerms({ ...item, model: value, type: detected, meta: updatedMeta });
       }),
     );
@@ -9630,6 +9634,9 @@ ${hint || '- Используй детальные, проверяемые эк�
         });
 
         setDocxReady(doneRows.length > 0);
+        if (doneRows.length > 0) {
+          setQaAutoRunKey((k) => k + 1);
+        }
         if (doneRows.length > 0 && (useBackendAi || apiKey.trim())) {
           void runDeCheck(next);
         }
@@ -11952,6 +11959,7 @@ ${hint || '- Используй детальные, проверяемые эк�
             exportReadinessTitle={exportReadinessTitle}
             exportsBlockedByReadiness={exportsBlockedByReadiness}
             buildTzText={buildTzTextForReview}
+            qaAutoRunKey={qaAutoRunKey}
             onExportPackage={() => exportPackage()}
             onExportDocx={() => { void exportDocx(); }}
             onExportPdf={exportPdf}

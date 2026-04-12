@@ -1,10 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { QACheckResponse, QAAutofixResponse, QAIssue } from '../lib/backendApi';
 import { qaCheck, qaAutofix } from '../lib/backendApi';
 
 type QaAuditBlockProps = {
   buildText: () => string;
   onTextFixed?: (fixedText: string) => void;
+  autoRunKey?: number;
 };
 
 function ScoreRing({ score }: { score: number }) {
@@ -78,7 +79,7 @@ function AutofixResult({ result }: { result: QAAutofixResponse }) {
   );
 }
 
-export function QaAuditBlock({ buildText, onTextFixed }: QaAuditBlockProps) {
+export function QaAuditBlock({ buildText, onTextFixed, autoRunKey }: QaAuditBlockProps) {
   const [loading, setLoading] = useState(false);
   const [autofixLoading, setAutofixLoading] = useState(false);
   const [result, setResult] = useState<QACheckResponse | null>(null);
@@ -86,6 +87,8 @@ export function QaAuditBlock({ buildText, onTextFixed }: QaAuditBlockProps) {
   const [autofixApplied, setAutofixApplied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentText, setCurrentText] = useState('');
+
+  const prevAutoRunKeyRef = useRef<number | undefined>(undefined);
 
   const runCheck = useCallback(async (text?: string) => {
     const tzText = text ?? buildText();
@@ -107,6 +110,13 @@ export function QaAuditBlock({ buildText, onTextFixed }: QaAuditBlockProps) {
       setLoading(false);
     }
   }, [buildText]);
+
+  useEffect(() => {
+    if (autoRunKey !== undefined && autoRunKey !== prevAutoRunKeyRef.current && autoRunKey > 0) {
+      prevAutoRunKeyRef.current = autoRunKey;
+      void runCheck();
+    }
+  }, [autoRunKey, runCheck]);
 
   const runAutofix = useCallback(async () => {
     if (!currentText.trim()) return;

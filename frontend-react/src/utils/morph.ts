@@ -178,3 +178,69 @@ export function toGenitive(name: string): string {
   if (GENITIVE_DICT[key]) return GENITIVE_DICT[key];
   return declinePhraseGenPlural(name.trim());
 }
+
+const SINGULAR_DICT: Record<string, string> = Object.fromEntries(
+  Object.entries(GENITIVE_DICT).map(([singular, plural]) => [plural.toLowerCase(), singular])
+);
+
+function _singularizeWord(word: string): string {
+  const w = word.trim().toLowerCase();
+  if (!w) return word;
+  if (/ов$/.test(w) && w.length > 3) {
+    const base = w.slice(0, -2);
+    if (/[жчшщ]$/.test(base)) return base + '';
+    if (/ц$/.test(base)) return base.slice(0, -1) + 'ец';
+    return base;
+  }
+  if (/ей$/.test(w) && w.length > 3) {
+    const base = w.slice(0, -2);
+    if (base.endsWith('тел')) return base + 'ь';
+    if (/[жчшщ]$/.test(base)) return base;
+    return base + 'ь';
+  }
+  if (/ев$/.test(w) && w.length > 3) return w.slice(0, -2);
+  if (/ий$/.test(w) && w.length > 3) return w.slice(0, -2) + 'ие';
+  if (/ых$/.test(w)) return w.slice(0, -2) + 'ый';
+  if (/их$/.test(w)) return w.slice(0, -2) + 'ий';
+  return word;
+}
+
+function _restoreCase(original: string, result: string): string {
+  if (original.length === 0 || result.length === 0) return result;
+  if (/^[А-ЯЁ][а-яё]/.test(original)) {
+    return result.charAt(0).toUpperCase() + result.slice(1);
+  }
+  if (/^[А-ЯЁ]+$/.test(original)) return result.toUpperCase();
+  return result;
+}
+
+export function toNominativeSingular(name: string): string {
+  if (!name || !name.trim()) return name;
+  const key = name.toLowerCase().trim();
+
+  if (SINGULAR_DICT[key]) {
+    const singular = SINGULAR_DICT[key];
+    return _restoreCase(name.trim(), singular);
+  }
+
+  const parenthetical = key.match(/^(.+?)(\s*\(.+\)\s*)$/);
+  const mainPart = parenthetical ? parenthetical[1].trim() : key;
+  const suffix = parenthetical ? parenthetical[2] : '';
+  const mainOriginal = parenthetical ? name.trim().slice(0, parenthetical[1].length) : name.trim();
+
+  const words = mainPart.split(/\s+/);
+  if (words.length === 0) return name;
+
+  const singularized = words.map((w, i) => {
+    if (i === words.length - 1) {
+      const result = _singularizeWord(w);
+      return result;
+    }
+    if (/ых$/.test(w)) return w.slice(0, -2) + 'ый';
+    if (/их$/.test(w)) return w.slice(0, -2) + 'ий';
+    return w;
+  });
+
+  const result = singularized.join(' ') + suffix;
+  return _restoreCase(mainOriginal, result);
+}

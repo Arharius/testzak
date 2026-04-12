@@ -1070,3 +1070,13 @@ export async function deleteGeneration(id: number): Promise<{ ok: boolean }> {
   if (!resp.ok) throw new Error(`Delete failed: ${resp.status}`);
   return resp.json() as Promise<{ ok: boolean }>;
 }
+
+export async function submitPilotFeedback(answers: Record<string, string>): Promise<{ ok: boolean }> {
+  const url = buildApiUrl('/api/pilot/feedback');
+  const token = getStoredToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ answers }) });
+  if (!resp.ok) throw new Error(`Pilot feedback failed: ${resp.status}`);
+  return resp.json() as Promise<{ ok: boolean }>;
+}

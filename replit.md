@@ -136,9 +136,10 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **TypeScript**: 0 compilation errors (`noUnusedLocals: true`, `noUnusedParameters: true` both pass)
 
 ## QA Audit System
-- **`POST /api/qa-check`**: 8 validation checks (brand_name, exact_value, emoji, meta_comment, subjective_color, no_ktru, no_warranty, no_country). Score = 100 − errors×15 − warnings×5, passed if score ≥ 80.
+- **`POST /api/qa-check`**: 9 validation checks: brand_name, exact_value, emoji, meta_comment, subjective_color, no_ktru, no_warranty, no_country, **old_law** (ПП №878/616/925 = -15 penalty). Score = 100 − errors×15 − warnings×5, passed if score ≥ 80.
 - **`POST /api/qa-autofix`**: Auto-fixes emoji removal, adds «не менее» to bare numeric values, simplifies subjective colours, fixes typography. Returns `auto_fixed` list and `manual_required` list for brands/meta-comments.
-- **`QaAuditBlock.tsx`**: Sidecar component shown after `docxReady`, between publication readiness card and export buttons. Run check → see score ring + issue list → optionally run autofix → score updates in place.
+- **`QaAuditBlock.tsx`**: Sidecar component shown after `docxReady`. Supports `autoRunKey` prop — when incremented, auto-runs the check without user interaction.
+- **Auto-run after generation**: `Workspace.tsx` increments `qaAutoRunKey` after generation completes (`doneRows.length > 0`) → QA check runs automatically.
 - Integrated via `buildTzTextForReview` function from `Workspace.tsx` → passed as `buildTzText` prop through `WorkspaceSidePanels`.
 
 ## Generations History
@@ -179,6 +180,33 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **`WorkspaceRowsTable.tsx`** UI:
   - Model input: yellow border + yellow bg (`#fef3c7`-like) + tooltip "Уточните наименование" when `meta.name_needs_review === 'true'`; clears after user edits
   - ОКПД2 area: shows "🔍 Найти ОКПД2" inline button when ОКПД2 not set and model is non-empty; calls `onSearchOkpd2` prop (optional)
+
+## Team Management & Pilot Plan (Block 8+9)
+- **`pilot` plan**: Added to `PLAN_TZ_LIMITS` (unlimited ТЗ, 90 days). `TEAM_MEMBER_LIMITS` exported from `auth.py` (team/pilot=5, corp=None).
+- **`org_id`** and **`org_role`** fields added to `User` model (auto-migrated).
+- **`trial_started_at`** field added to `User` model (auto-migrated).
+- **`POST /api/team/invite`**: Owner (team/pilot/corp/admin plan) can invite users by email. Checks member limits, creates user if not exists, sets org_id/org_role.
+- **`GET /api/team/members`**: Returns list of all members in the owner's organization.
+- **`DELETE /api/team/members/{user_id}`**: Removes a member from the organization.
+- **`PATCH /api/admin/users/{user_id}/plan`**: Admin sets a user's plan (trial/start/base/team/pilot/corp/admin) with optional duration override.
+- **Pilot Feedback**: `PilotFeedback` table (id, user_id, created_at, answers JSON).
+  - **`POST /api/pilot/feedback`**: Submit feedback (auth required).
+  - **`GET /api/admin/pilot-feedback`**: Admin view of all submissions.
+  - **`PilotFeedbackModal.tsx`**: 5-question form (scale, text, choice). Auto-shows for pilot users every 14 days (biweekly).
+
+## Error Logging (Block 12)
+- **`ErrorLog` table**: (id, timestamp, user_id, endpoint, error_type, message, traceback). Auto-created.
+- **Global exception handler updated**: All 500 errors now logged to `error_log` table in addition to logger.
+- **YooKassa IP whitelist**: Webhook at `POST /api/payment/webhook` validates `X-Forwarded-For`/client IP against official YooKassa CIDR ranges (185.71.76.0/27, 185.71.77.0/27, 77.75.153.0/25, /32 hosts). Override with `YOOKASSA_IP_CHECK=0` env var for testing.
+- **DOCX upload MIME validation**: `POST /api/parse-docx` validates content-type and enforces 10MB max (was 50MB).
+
+## Payment Success Page (Block 11)
+- **`PaymentSuccessPage.tsx`**: Full-page success screen with ✅ icon, activation confirmation, and "Перейти в рабочую область" button.
+- **Route**: `/payment/success` — handled in `App.tsx` via `currentPage === 'payment-success'` state with URL sync.
+
+## Product Name Singularization (Block 1.2)
+- **`toNominativeSingular(name)`** added to `morph.ts`: Reverses genitive plural → nominative singular using `SINGULAR_DICT` (reverse of `GENITIVE_DICT`) plus regex rules for common Russian endings (-ов→∅, -ей→ь, -ев→∅, -ий→ие).
+- Applied in `makeImportedRow()` in `row-import.ts` to normalize `rawType` (e.g. мониторов→монитор, клавиатуры→клавиатура).
 
 ## Development Notes
 - Backend API proxied via Vite dev server at `/api` → Railway backend

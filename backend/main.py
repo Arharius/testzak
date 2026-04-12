@@ -56,6 +56,8 @@ try:
         TZValidateLog,
         Generation,
         EmailLog,
+        PilotFeedback,
+        ErrorLog,
     )
     from .auth import (  # type: ignore
         send_magic_link,
@@ -80,6 +82,7 @@ try:
         check_access,
         _get_effective_plan,
         PLAN_TZ_LIMITS,
+        TEAM_MEMBER_LIMITS,
     )
 except ImportError:
     from database import (
@@ -96,6 +99,8 @@ except ImportError:
         TZValidateLog,
         Generation,
         EmailLog,
+        PilotFeedback,
+        ErrorLog,
     )
     from auth import (
         send_magic_link,
@@ -120,6 +125,7 @@ except ImportError:
         check_access,
         _get_effective_plan,
         PLAN_TZ_LIMITS,
+        TEAM_MEMBER_LIMITS,
     )
 
 # ── Search module ──────────────────────────────────────────────
@@ -359,7 +365,25 @@ app.add_middleware(SecurityHeadersMiddleware)
 # ── Global error handler ──────────────────────────────────────
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    import traceback as _tb
+    tb_str = _tb.format_exc()
     logger.error(f"Unhandled error: {type(exc).__name__}: {exc}", exc_info=True)
+    # Log to ErrorLog table (non-blocking)
+    try:
+        db = SessionLocal()
+        try:
+            log_entry = ErrorLog(
+                endpoint=str(request.url.path),
+                error_type=type(exc).__name__,
+                message=str(exc)[:2000],
+                traceback=tb_str[:5000],
+            )
+            db.add(log_entry)
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        pass
     return JSONResponse(
         status_code=500,
         content={"detail": "Внутренняя ошибка сервера. Попробуйте позже."},
@@ -2536,8 +2560,47 @@ def payment_create(request: Request, req: PaymentCreateRequest, user: User = Dep
         "status": payment.get("status", ""),
     }
 
+_YOOKASSA_CIDRS: list[tuple[int, int, int]] = []
+def _parse_yookassa_cidrs():
+    import ipaddress
+    _nets = [
+        "185.71.76.0/27",
+        "185.71.77.0/27",
+        "77.75.153.0/25",
+        "77.75.156.11/32",
+        "77.75.156.35/32",
+    ]
+    result = []
+    for n in _nets:
+        net = ipaddress.ip_network(n, strict=False)
+        result.append((int(net.network_address), int(net.broadcast_address), net.version))
+    return result
+_YOOKASSA_CIDRS = _parse_yookassa_cidrs()
+
+def _is_yookassa_ip(ip_str: str) -> bool:
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        ip_int = int(ip)
+        for start, end, ver in _YOOKASSA_CIDRS:
+            if ip.version == ver and start <= ip_int <= end:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 @app.post("/api/payment/webhook")
 async def payment_webhook(request: Request, payload: dict, db: Session = Depends(get_db)):
+    # Block 12: Check source IP is from YooKassa (when not in dev mode)
+    if os.getenv("YOOKASSA_IP_CHECK", "1") != "0":
+        client_host = request.client.host if request.client else ""
+        forwarded_for = request.headers.get("x-forwarded-for", "")
+        real_ip = (forwarded_for.split(",")[0].strip() if forwarded_for else client_host)
+        if real_ip and not _is_yookassa_ip(real_ip):
+            logger.warning(f"Webhook rejected: IP {real_ip} not in YooKassa allowlist")
+            raise HTTPException(status_code=403, detail="Forbidden: IP not allowed")
+
     # Verify webhook: check notification secret header (YooKassa sends it as body field or header)
     if YOOKASSA_WEBHOOK_SECRET:
         secret_from_payload = str(payload.get("webhook_secret", "")).strip()
@@ -3006,9 +3069,18 @@ async def parse_docx_endpoint(file: UploadFile = FastAPIFile(...)):
     if not file.filename or not file.filename.lower().endswith('.docx'):
         raise HTTPException(status_code=400, detail="Только .docx файлы поддерживаются")
 
+    ALLOWED_MIME = {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/zip",
+        "application/octet-stream",
+    }
+    content_type = (file.content_type or "").split(";")[0].strip().lower()
+    if content_type and content_type not in ALLOWED_MIME:
+        raise HTTPException(status_code=415, detail=f"Неподдерживаемый тип файла: {content_type}. Загружайте только .docx")
+
     contents = await file.read()
-    if len(contents) > 50 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 50 МБ)")
+    if len(contents) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Файл слишком большой (макс. 10 МБ)")
 
     try:
         import docx as python_docx
@@ -4182,6 +4254,20 @@ def _qa_check_text(text: str) -> QACheckResponse:
                 suggestion="Укажите требования к стране происхождения (ПП №1875)",
             ))
 
+    # Block 3: Check for outdated legislation references (ПП №878, №616, №925 — отменены)
+    _old_law_pattern = _re.compile(
+        r'(?:постановление|ПП)\s*(?:Правительства\s*(?:РФ|России))?\s*(?:от\s*[0-9]{2}\.[0-9]{2}\.[0-9]{4}\s*)?'
+        r'№\s*(?:878|616|925)\b',
+        _re.IGNORECASE,
+    )
+    if _old_law_pattern.search(text):
+        issues.append(QAIssue(
+            level="error",
+            code="old_law",
+            message="Ссылка на отменённое ПП №878 / №616 / №925",
+            suggestion="Замените на актуальное ПП №1875 от 10.07.2019 (реестр российской радиоэлектроники)",
+        ))
+
     error_count = sum(1 for i in issues if i.level == "error")
     warning_count = sum(1 for i in issues if i.level == "warning")
     score = max(0, 100 - error_count * 15 - warning_count * 5)
@@ -4297,6 +4383,195 @@ async def qa_autofix_endpoint(body: QAAutofixRequest):
         manual_required=manual_required,
         qa=qa_result,
     )
+
+
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║                    TEAM MANAGEMENT ENDPOINTS                         ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+class TeamInviteRequest(BaseModel):
+    email: str
+    org_role: str = "member"
+
+
+@app.post("/api/team/invite")
+def team_invite(
+    req: TeamInviteRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Invite a user to the organization. Owner only. Requires team/pilot/corp plan."""
+    plan = _get_effective_plan(user)
+    if plan not in ("team", "pilot", "corp", "admin"):
+        raise HTTPException(status_code=403, detail="Командный доступ доступен только на тарифах Команда, Пилот и Корпоратив")
+    if getattr(user, "org_role", "member") not in ("owner", "admin") and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Только владелец организации может приглашать участников")
+
+    invite_email = req.email.lower().strip()
+    if not invite_email:
+        raise HTTPException(status_code=400, detail="Не указан email")
+
+    member_limit = TEAM_MEMBER_LIMITS.get(plan)
+    if member_limit is not None:
+        current_count = db.query(User).filter(User.org_id == user.id).count()
+        if current_count >= member_limit:
+            raise HTTPException(status_code=400, detail=f"Достигнут лимит участников ({member_limit}) для тарифа")
+
+    invited = db.query(User).filter(User.email == invite_email).first()
+    if not invited:
+        from datetime import timedelta
+        invited, _ = get_or_create_user(db, invite_email)
+    invited.org_id = user.id
+    invited.org_role = req.org_role if req.org_role in ("member", "owner") else "member"
+    db.commit()
+
+    return {"ok": True, "email": invite_email, "org_id": user.id, "org_role": invited.org_role}
+
+
+@app.get("/api/team/members")
+def get_team_members(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List all members of the user's organization."""
+    plan = _get_effective_plan(user)
+    if plan not in ("team", "pilot", "corp", "admin"):
+        raise HTTPException(status_code=403, detail="Командный доступ недоступен для вашего тарифа")
+    members = db.query(User).filter(User.org_id == user.id).all()
+    return {
+        "members": [
+            {
+                "id": m.id,
+                "email": m.email,
+                "org_role": m.org_role,
+                "plan": _get_effective_plan(m),
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in members
+        ]
+    }
+
+
+@app.delete("/api/team/members/{member_user_id}")
+def remove_team_member(
+    member_user_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Remove a member from the organization. Owner only."""
+    if getattr(user, "org_role", "member") not in ("owner",) and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Только владелец может удалять участников")
+    member = db.query(User).filter(User.id == member_user_id, User.org_id == user.id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Участник не найден")
+    member.org_id = None
+    member.org_role = "member"
+    db.commit()
+    return {"ok": True}
+
+
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║                    PILOT FEEDBACK ENDPOINTS                          ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+class PilotFeedbackRequest(BaseModel):
+    answers: dict
+
+
+@app.post("/api/pilot/feedback")
+def submit_pilot_feedback(
+    req: PilotFeedbackRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Submit biweekly pilot program feedback."""
+    fb = PilotFeedback(
+        user_id=user.id,
+        answers=json.dumps(req.answers, ensure_ascii=False),
+    )
+    db.add(fb)
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/admin/pilot-feedback")
+def get_pilot_feedback(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: get all pilot feedback submissions."""
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Только для администраторов")
+    rows = db.query(PilotFeedback).order_by(PilotFeedback.created_at.desc()).limit(500).all()
+    return {
+        "feedback": [
+            {
+                "id": r.id,
+                "user_id": r.user_id,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "answers": json.loads(r.answers) if r.answers else {},
+            }
+            for r in rows
+        ]
+    }
+
+
+# ╔══════════════════════════════════════════════════════════════════════╗
+# ║                    ADMIN USER MANAGEMENT                             ║
+# ╚══════════════════════════════════════════════════════════════════════╝
+
+PLAN_ROLES = {
+    "trial": "free",
+    "start": "pro",
+    "base": "pro",
+    "team": "pro",
+    "pilot": "pro",
+    "corp": "pro",
+    "admin": "admin",
+}
+
+PLAN_DAYS = {
+    "trial": 0,
+    "start": 30,
+    "base": 30,
+    "team": 30,
+    "pilot": 90,
+    "corp": 365,
+    "admin": 0,
+}
+
+class AdminSetPlanRequest(BaseModel):
+    plan: str
+    days: Optional[int] = None
+
+
+@app.patch("/api/admin/users/{user_id}/plan")
+def admin_set_user_plan(
+    user_id: str,
+    req: AdminSetPlanRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: change a user's plan."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Только для администраторов")
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    plan = req.plan.lower().strip()
+    if plan not in PLAN_TZ_LIMITS:
+        raise HTTPException(status_code=400, detail=f"Неизвестный тариф: {plan}")
+    lim = PLAN_TZ_LIMITS[plan]
+    target.plan = plan
+    target.role = PLAN_ROLES.get(plan, "pro")
+    target.tz_limit = lim if lim is not None else -1
+    target.tz_count = 0
+    from datetime import timedelta
+    days = req.days if req.days is not None else PLAN_DAYS.get(plan, 30)
+    if days > 0:
+        target.subscription_until = datetime.now(timezone.utc) + timedelta(days=days)
+    db.commit()
+    return {"ok": True, "user_id": user_id, "plan": plan, "days": days}
 
 
 _STATIC_DIR = _Path(__file__).resolve().parent / "static"

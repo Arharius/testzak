@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import type { SpecItem } from './spec-processor';
+import { toNominativeSingular } from './morph';
 
 export type ImportedRowConfidenceLabel = 'high' | 'medium' | 'low';
 export type ImportedRowSourceKind = 'table' | 'appendix' | 'enumerated' | 'fallback' | 'delimited';
@@ -599,8 +600,9 @@ function makeImportedRow(params: {
   if (params.meta?.okpd2_code) {
     notes.push(`Из исходного файла извлечен ОКПД2: ${params.meta.okpd2_code}.`);
   }
+  const rawTypeNorm = normalizeCell(params.rawType || description);
   return {
-    rawType: normalizeCell(params.rawType || description),
+    rawType: toNominativeSingular(rawTypeNorm),
     description,
     licenseType: normalizeCell(params.licenseType),
     term: normalizeCell(params.term),

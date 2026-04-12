@@ -17,6 +17,7 @@ type WorkspaceSidePanelsProps = {
   exportReadinessTitle: string;
   exportsBlockedByReadiness: boolean;
   buildTzText: () => string;
+  qaAutoRunKey?: number;
   onExportPackage: () => void;
   onExportDocx: () => void;
   onExportPdf: () => void;
@@ -42,6 +43,7 @@ export function WorkspaceSidePanels({
   exportReadinessTitle,
   exportsBlockedByReadiness,
   buildTzText,
+  qaAutoRunKey,
   onExportPackage,
   onExportDocx,
   onExportPdf,
@@ -96,7 +98,7 @@ export function WorkspaceSidePanels({
           <span className="workspace-side-meta">{readyRowsCount > 0 ? `${readyRowsCount} готово` : 'нет готовых позиций'}</span>
         </div>
         {docxReady && (
-          <QaAuditBlock buildText={buildTzText} />
+          <QaAuditBlock buildText={buildTzText} autoRunKey={qaAutoRunKey} />
         )}
         <div className="workspace-action-grid workspace-action-grid--compact" style={{ marginTop: 12 }}>
           <button type="button" onClick={onExportPackage} title={exportReadinessTitle}>📦 Экспорт JSON</button>

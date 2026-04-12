@@ -12,6 +12,9 @@ import { TrialBanner } from './components/TrialBanner';
 import { PricingPage } from './components/PricingPage';
 import { HistoryPage } from './components/HistoryPage';
 import { OnboardingModal } from './components/OnboardingModal';
+import { PaymentSuccessPage } from './components/PaymentSuccessPage';
+import { PilotFeedbackModal } from './components/PilotFeedbackModal';
+import { submitPilotFeedback } from './lib/backendApi';
 import {
   flushAutomationQueue,
   flushPlatformQueue,
@@ -90,19 +93,40 @@ export function App() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPricing, setShowPricing] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'main' | 'pricing' | 'history'>(() => {
+  const [currentPage, setCurrentPage] = useState<'main' | 'pricing' | 'history' | 'payment-success'>(() => {
     const path = window.location.pathname;
     if (path === '/pricing') return 'pricing';
+    if (path === '/payment/success') return 'payment-success';
     return 'main';
   });
   const [showLLMModal, setShowLLMModal] = useState(false);
   const [preferredProvider, setPreferredProvider] = useState<string>('deepseek');
   const [preferredModel, setPreferredModel] = useState<string>('deepseek-chat');
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showPilotFeedback, setShowPilotFeedback] = useState(false);
+
+  // ── Biweekly pilot feedback prompt ───────────────────────────────────────
+  useEffect(() => {
+    if (!backendUser) return;
+    const plan: string = (backendUser as { plan?: string }).plan ?? '';
+    if (plan !== 'pilot') return;
+    const STORAGE_KEY = 'pilot_feedback_last_shown';
+    const last = parseInt(localStorage.getItem(STORAGE_KEY) ?? '0', 10);
+    const TWO_WEEKS_MS = 14 * 24 * 60 * 60 * 1000;
+    if (Date.now() - last > TWO_WEEKS_MS) {
+      const timer = setTimeout(() => {
+        setShowPilotFeedback(true);
+        localStorage.setItem(STORAGE_KEY, String(Date.now()));
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [backendUser]);
 
   // ── Sync URL with currentPage ────────────────────────────────────────────
   useEffect(() => {
-    const path = currentPage === 'pricing' ? '/pricing' : '/';
+    let path = '/';
+    if (currentPage === 'pricing') path = '/pricing';
+    else if (currentPage === 'payment-success') path = '/payment/success';
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path);
     }
@@ -492,6 +516,17 @@ export function App() {
     );
   }
 
+  if (currentPage === 'payment-success') {
+    return (
+      <PaymentSuccessPage
+        onGoHome={() => {
+          setCurrentPage('main');
+          window.history.pushState({}, '', '/');
+        }}
+      />
+    );
+  }
+
   if (currentPage === 'history') {
     return (
       <main className="layout sovereign-layout">
@@ -543,7 +578,7 @@ export function App() {
                   Создать ТЗ
                 </button>
                 <button
-                  className={`top-nav-link ${currentPage === 'history' ? 'top-nav-link--active' : ''}`}
+                  className={`top-nav-link ${(currentPage as string) === 'history' ? 'top-nav-link--active' : ''}`}
                   onClick={() => setCurrentPage('history')}
                 >
                   Мои ТЗ
@@ -552,7 +587,7 @@ export function App() {
             )}
             {(!backendUser || backendUser.role !== 'admin') && (
               <button
-                className={`top-nav-link ${currentPage === 'pricing' ? 'top-nav-link--active' : ''}`}
+                className={`top-nav-link ${(currentPage as string) === 'pricing' ? 'top-nav-link--active' : ''}`}
                 onClick={() => setCurrentPage('pricing')}
               >
                 Тарифы
@@ -1101,6 +1136,16 @@ export function App() {
 
       {showOnboarding && (
         <OnboardingModal onClose={() => setShowOnboarding(false)} />
+      )}
+
+      {showPilotFeedback && backendUser && (
+        <PilotFeedbackModal
+          onClose={() => setShowPilotFeedback(false)}
+          onSubmit={async (answers) => {
+            await submitPilotFeedback(answers);
+            setShowPilotFeedback(false);
+          }}
+        />
       )}
     </main>
   );

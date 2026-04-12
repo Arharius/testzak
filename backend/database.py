@@ -17,18 +17,21 @@ class User(Base):
     __tablename__ = "users"
     id = Column(String, primary_key=True)
     email = Column(String, unique=True, index=True)
-    username = Column(String, unique=True, nullable=True, index=True)  # for login/password auth
-    password_hash = Column(String, nullable=True)  # PBKDF2-SHA256 hash
-    role = Column(String, default="free")  # free (trial / payment required) | pro | admin
-    plan = Column(String, default="trial")  # trial | start | base | team | corp
+    username = Column(String, unique=True, nullable=True, index=True)
+    password_hash = Column(String, nullable=True)
+    role = Column(String, default="free")  # free | pro | admin
+    plan = Column(String, default="trial")  # trial | start | base | team | pilot | corp
     tz_count = Column(Integer, default=0)
-    tz_limit = Column(Integer, default=0)  # post-trial default = 0, pro/admin = -1 (unlimited)
-    tz_month_start = Column(DateTime, nullable=True)  # track monthly reset
-    trial_ends_at = Column(DateTime, nullable=True)  # trial expiry date (created_at + 14 days)
+    tz_limit = Column(Integer, default=0)
+    tz_month_start = Column(DateTime, nullable=True)
+    trial_ends_at = Column(DateTime, nullable=True)
+    trial_started_at = Column(DateTime, nullable=True)  # when trial started
     subscription_id = Column(String, nullable=True)
     subscription_until = Column(DateTime, nullable=True)
-    llm_provider = Column(String, nullable=True)   # preferred AI provider: gigachat | deepseek | openrouter
-    llm_model = Column(String, nullable=True)       # preferred model name
+    org_id = Column(String, nullable=True, index=True)  # FK to owner user.id for team plans
+    org_role = Column(String, nullable=True, default="member")  # owner | member
+    llm_provider = Column(String, nullable=True)
+    llm_model = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_login = Column(DateTime, nullable=True)
 
@@ -123,9 +126,28 @@ class TZValidateLog(Base):
     can_export     = Column(Boolean)
     critical_count = Column(Integer, default=0)
     moderate_count = Column(Integer, default=0)
-    critical_json  = Column(Text, nullable=True)  # JSON list of {phrase, field}
-    moderate_json  = Column(Text, nullable=True)  # JSON list of {phrase, field}
-    category       = Column(String, nullable=True) # первый row.field из запроса
+    critical_json  = Column(Text, nullable=True)
+    moderate_json  = Column(Text, nullable=True)
+    category       = Column(String, nullable=True)
+
+
+class PilotFeedback(Base):
+    __tablename__ = "pilot_feedback"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    user_id    = Column(String, nullable=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    answers    = Column(Text, nullable=True)  # JSON
+
+
+class ErrorLog(Base):
+    __tablename__ = "error_log"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    user_id    = Column(String, nullable=True, index=True)
+    endpoint   = Column(String, nullable=True)
+    error_type = Column(String, nullable=True)
+    message    = Column(Text, nullable=True)
+    traceback  = Column(Text, nullable=True)
 
 
 def get_db():
@@ -171,6 +193,12 @@ def _auto_migrate(target_engine=None, target_database_url=None):
                 conn.execute(text("ALTER TABLE users ADD COLUMN llm_model VARCHAR"))
             if "plan" not in existing:
                 conn.execute(text("ALTER TABLE users ADD COLUMN plan VARCHAR DEFAULT 'trial'"))
+            if "trial_started_at" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN trial_started_at TIMESTAMP"))
+            if "org_id" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN org_id VARCHAR"))
+            if "org_role" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN org_role VARCHAR DEFAULT 'member'"))
     if "tz_documents" in insp.get_table_names():
         existing = {c["name"] for c in insp.get_columns("tz_documents")}
         with current_engine.begin() as conn:

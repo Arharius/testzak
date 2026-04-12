@@ -45,8 +45,15 @@ PLAN_TZ_LIMITS: dict[str, int | None] = {
     "start": 15,
     "base": 50,
     "team": None,
+    "pilot": None,  # unlimited, 90 days
     "corp": None,
     "admin": None,
+}
+
+TEAM_MEMBER_LIMITS: dict[str, int | None] = {
+    "team": 5,
+    "pilot": 5,
+    "corp": None,
 }
 
 def _get_effective_plan(user: "User") -> str:

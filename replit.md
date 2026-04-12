@@ -181,6 +181,19 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
   - Model input: yellow border + yellow bg (`#fef3c7`-like) + tooltip "Уточните наименование" when `meta.name_needs_review === 'true'`; clears after user edits
   - ОКПД2 area: shows "🔍 Найти ОКПД2" inline button when ОКПД2 not set and model is non-empty; calls `onSearchOkpd2` prop (optional)
 
+## Admin Users Management Page
+- **`GET /api/admin/users`**: Lists all users, supports `?search=email&plan=trial` filters. Returns up to 500 users ordered by creation date. Admin role required.
+- **`PATCH /api/admin/users/{user_id}/plan`**: Sets user plan + subscription_until. Handles all plans including `pilot` (always 90 days). Returns full user dict via `_user_to_admin_dict()`. Sends email notification on non-trial plan change.
+- **`AdminUsersPage.tsx`**: Full admin table at `/admin` route (accessible via ⚙️ Администрирование in user dropdown, admin-only).
+  - Search bar with 400ms debounce + plan filter dropdown
+  - Table: Email, Тариф (color-coded), Активен до, Зарегистрирован, Последний вход, Действия
+  - Plan badge colors: trial=серый, pilot=фиолетовый, start=зелёный, base=синий, team=оранжевый, corp=золотой
+  - [Тариф ▾] dropdown → 6 options (Пилот 90 дней bold, Старт/Базовый/Команда/Корп 1 мес, Сбросить в триал)
+  - Confirm modal: shows plan name, user email, computed expiry date before applying
+  - Row highlights green on successful plan change (2s flash), updates in-place without reload
+  - Dark theme (sapphire) fully supported
+- **Duplicate PATCH removed**: Cleaned up duplicate `/api/admin/users/{user_id}/plan` endpoint that was added at end of main.py
+
 ## Team Management & Pilot Plan (Block 8+9)
 - **`pilot` plan**: Added to `PLAN_TZ_LIMITS` (unlimited ТЗ, 90 days). `TEAM_MEMBER_LIMITS` exported from `auth.py` (team/pilot=5, corp=None).
 - **`org_id`** and **`org_role`** fields added to `User` model (auto-migrated).

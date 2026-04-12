@@ -2169,6 +2169,43 @@ class UpdatePlanRequest(BaseModel):
     months: int = 1
 
 
+def _user_to_admin_dict(u: User) -> dict:
+    """Serialize a User row for the admin API."""
+    sub_until = u.subscription_until
+    trial_ends = u.trial_ends_at or u.trial_started_at
+    return {
+        "id": u.id,
+        "email": u.email,
+        "name": u.username or "",
+        "plan": u.plan or "trial",
+        "role": u.role or "free",
+        "trial_tz_used": u.tz_count or 0,
+        "trial_expires_at": trial_ends.isoformat() if trial_ends else None,
+        "subscription_expires_at": sub_until.isoformat() if sub_until else None,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+        "last_login": u.last_login.isoformat() if u.last_login else None,
+    }
+
+
+@app.get("/api/admin/users")
+def admin_list_users(
+    search: str = "",
+    plan: str = "",
+    admin: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: list all users with optional search/plan filter."""
+    if admin.role != "admin":
+        raise HTTPException(status_code=403, detail="Требуются права администратора")
+    q = db.query(User)
+    if search:
+        q = q.filter(User.email.ilike(f"%{search}%"))
+    if plan:
+        q = q.filter(User.plan == plan.lower())
+    users = q.order_by(User.created_at.desc()).limit(500).all()
+    return [_user_to_admin_dict(u) for u in users]
+
+
 @app.patch("/api/admin/users/{user_id}/plan")
 def admin_update_user_plan(
     user_id: str,
@@ -2190,7 +2227,13 @@ def admin_update_user_plan(
     if plan == "trial":
         target.role = "free"
         target.tz_limit = TRIAL_TZ_COUNT
+        target.tz_count = 0
         target.subscription_until = None
+    elif plan == "pilot":
+        target.role = "pro"
+        target.tz_limit = -1
+        target.tz_count = 0
+        target.subscription_until = now + timedelta(days=90)
     elif plan in ("start", "base"):
         target.role = "pro"
         target.tz_limit = PLAN_TZ_LIMITS[plan]
@@ -2214,7 +2257,7 @@ def admin_update_user_plan(
             },
             user_id=target.id,
         )
-    return {"ok": True, "user_id": user_id, "plan": plan, "subscription_until": target.subscription_until.isoformat() if target.subscription_until else None}
+    return _user_to_admin_dict(target)
 
 
 # ── Универсальность описания (brand-avoidance) ────────────────
@@ -4539,39 +4582,6 @@ PLAN_DAYS = {
     "corp": 365,
     "admin": 0,
 }
-
-class AdminSetPlanRequest(BaseModel):
-    plan: str
-    days: Optional[int] = None
-
-
-@app.patch("/api/admin/users/{user_id}/plan")
-def admin_set_user_plan(
-    user_id: str,
-    req: AdminSetPlanRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Admin: change a user's plan."""
-    if current_user.role != "admin":
-        raise HTTPException(status_code=403, detail="Только для администраторов")
-    target = db.query(User).filter(User.id == user_id).first()
-    if not target:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    plan = req.plan.lower().strip()
-    if plan not in PLAN_TZ_LIMITS:
-        raise HTTPException(status_code=400, detail=f"Неизвестный тариф: {plan}")
-    lim = PLAN_TZ_LIMITS[plan]
-    target.plan = plan
-    target.role = PLAN_ROLES.get(plan, "pro")
-    target.tz_limit = lim if lim is not None else -1
-    target.tz_count = 0
-    from datetime import timedelta
-    days = req.days if req.days is not None else PLAN_DAYS.get(plan, 30)
-    if days > 0:
-        target.subscription_until = datetime.now(timezone.utc) + timedelta(days=days)
-    db.commit()
-    return {"ok": True, "user_id": user_id, "plan": plan, "days": days}
 
 
 _STATIC_DIR = _Path(__file__).resolve().parent / "static"

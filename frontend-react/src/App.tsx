@@ -14,6 +14,7 @@ import { HistoryPage } from './components/HistoryPage';
 import { OnboardingModal } from './components/OnboardingModal';
 import { PaymentSuccessPage } from './components/PaymentSuccessPage';
 import { PilotFeedbackModal } from './components/PilotFeedbackModal';
+import AdminUsersPage from './components/AdminUsersPage';
 import { submitPilotFeedback } from './lib/backendApi';
 import {
   flushAutomationQueue,
@@ -93,7 +94,7 @@ export function App() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPricing, setShowPricing] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'main' | 'pricing' | 'history' | 'payment-success'>(() => {
+  const [currentPage, setCurrentPage] = useState<'main' | 'pricing' | 'history' | 'payment-success' | 'admin'>(() => {
     const path = window.location.pathname;
     if (path === '/pricing') return 'pricing';
     if (path === '/payment/success') return 'payment-success';
@@ -527,6 +528,36 @@ export function App() {
     );
   }
 
+  if (currentPage === 'admin') {
+    if (!backendUser || backendUser.role !== 'admin') {
+      setCurrentPage('main');
+      return null;
+    }
+    return (
+      <main className="layout sovereign-layout">
+        <div className="bg-layer" aria-hidden="true">
+          <span className="noise"></span>
+          <span className="orb orb-1"></span>
+          <span className="orb orb-2"></span>
+        </div>
+        <nav className="top-nav" style={{ marginBottom: 0 }}>
+          <div className="top-nav-inner">
+            <button className="top-nav-logo" onClick={() => setCurrentPage('main')} aria-label="На главную">
+              <span className="top-nav-logo-icon" aria-hidden="true">📋</span>
+              <span className="top-nav-logo-text">ТЗ-генератор</span>
+            </button>
+            <div className="top-nav-links">
+              <button className="top-nav-link" onClick={() => setCurrentPage('main')}>Создать ТЗ</button>
+              <button className="top-nav-link top-nav-link--active">Администрирование</button>
+            </div>
+            <div className="top-nav-user" />
+          </div>
+        </nav>
+        <AdminUsersPage />
+      </main>
+    );
+  }
+
   if (currentPage === 'history') {
     return (
       <main className="layout sovereign-layout">
@@ -624,6 +655,18 @@ export function App() {
                   >
                     История ТЗ
                   </button>
+                  {backendUser.role === 'admin' && (
+                    <>
+                      <div className="user-menu-divider" />
+                      <button
+                        className="user-menu-item"
+                        style={{ color: '#7c3aed', fontWeight: 600 }}
+                        onClick={() => setCurrentPage('admin')}
+                      >
+                        ⚙️ Администрирование
+                      </button>
+                    </>
+                  )}
                   <div className="user-menu-divider" />
                   <button
                     className="user-menu-item user-menu-item--theme"

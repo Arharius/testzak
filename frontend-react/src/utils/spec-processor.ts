@@ -179,22 +179,46 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
       /^по\s+треб\w*\s+(заказчика|поставщика|производителя|потребителя)/i,
       /^по\s+усмотрению\s+\w+/i,
       /^на\s+усмотрение\s+\w+/i,
-      /^(согласно|в\s+соответствии\s+с?)\s+(технической?\s+документацией|требованиями?\s+заказчика|документацией\s+производителя)/i,
-      /^уточняется?\s+(при\s+поставке|заказчиком|в\s+ходе|по\s+договору)/i,
+      /^(согласно|в\s+соответствии\s+с?)\s+(технической?\s+документацией|требованиями?\s+заказчика|документацией\s+производителя|документации)/i,
+      /^согласно\s+документации/i,
+      /^уточняется?\s+(при\s+поставке|заказчиком|в\s+ходе|по\s+договору|в\s+наименовании)/i,
       /^определяется?\s+(производителем|поставщиком|заказчиком)/i,
       /^не\s+хуже\s+аналогов?/i,
       /^по\s+типу\s+товара/i,
       /^при\s+необходимости/i,
+      /^зависит\s+от\s+(модели|конфигурации|комплектации)/i,
+      /^в\s+соответствии\s+с\s+моделью/i,
+      /^по\s+запросу/i,
     ];
     const isVague = VAGUE_PATTERNS.some((p) => p.test(value.trim()));
     if (isVague) {
-      // Auto-fix known parameters; otherwise flag as warning
+      // Auto-fix по известным параметрам; иначе — предупреждение
       if (/архитектур/i.test(nameLower)) {
         value = 'x86-64';
         (item as SpecItem)._fixed = true;
       } else if (/частот/i.test(nameLower) && /процессор|cpu|ядр/i.test(groupLower + nameLower)) {
         value = 'не менее 2,4 ГГц';
         unit = 'ГГц';
+        (item as SpecItem)._fixed = true;
+      } else if (/объ[её]м|[её]мкост/i.test(nameLower) && /память|озу|ram|оперативн/i.test(groupLower + nameLower)) {
+        value = 'не менее 8 ГБ';
+        unit = 'ГБ';
+        (item as SpecItem)._fixed = true;
+      } else if (/объ[её]м|[её]мкост/i.test(nameLower) && /накопитель|диск|hdd|ssd|nvme|stor/i.test(groupLower + nameLower)) {
+        value = 'не менее 256 ГБ';
+        unit = 'ГБ';
+        (item as SpecItem)._fixed = true;
+      } else if (/кол-во ядер|количество ядер|число ядер/i.test(nameLower)) {
+        value = 'не менее 4';
+        unit = 'шт';
+        (item as SpecItem)._fixed = true;
+      } else if (/кол-во потоков|количество потоков/i.test(nameLower)) {
+        value = 'не менее 8';
+        unit = 'шт';
+        (item as SpecItem)._fixed = true;
+      } else if (/гарантия/i.test(nameLower)) {
+        value = 'не менее 12 месяцев';
+        unit = 'мес';
         (item as SpecItem)._fixed = true;
       } else {
         (item as SpecItem)._warning = (item._warning ? item._warning + '; ' : '') +

@@ -51,11 +51,12 @@ PLAN_TZ_LIMITS: dict[str, int | None] = {
 
 def _get_effective_plan(user: "User") -> str:
     """Derive the effective plan string from user fields."""
+    # Admin role always wins — stored plan is irrelevant for access decisions
+    if user.role == "admin":
+        return "admin"
     stored = getattr(user, "plan", None)
     if stored and stored in PLAN_TZ_LIMITS:
         return stored
-    if user.role == "admin":
-        return "admin"
     if user.role == "free":
         return "trial"
     lim = getattr(user, "tz_limit", -1)
@@ -71,6 +72,8 @@ def _get_effective_plan(user: "User") -> str:
 def check_access(user: "User", db=None) -> dict:
     """Full access check — returns {"allowed": bool, ...}.
     Call after require_active if you need structured error details."""
+    if user.role == "admin":
+        return {"allowed": True, "plan": "admin", "reason": None, "remaining": None}
     now = datetime.now(timezone.utc)
     plan = _get_effective_plan(user)
 

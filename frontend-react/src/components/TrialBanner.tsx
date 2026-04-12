@@ -35,7 +35,7 @@ export function TrialBanner({ onGoToPricing, refreshTick }: Props) {
     return 'Бесплатные ТЗ закончились · Выберите тариф';
   };
 
-  if (plan === 'trial' && access.allowed) {
+  if (plan === 'trial' && access.allowed && access.plan !== 'admin') {
     return (
       <div className="trial-banner trial-banner-v2">
         <div className="trial-banner-v2__left">
@@ -56,7 +56,7 @@ export function TrialBanner({ onGoToPricing, refreshTick }: Props) {
     );
   }
 
-  if (plan === 'trial' && !access.allowed && access.reason === 'trial_limit') {
+  if (plan === 'trial' && !access.allowed && access.reason === 'trial_limit' && access.plan !== 'admin') {
     return (
       <div className="trial-banner trial-banner-v2 trial-banner-v2--expired">
         <span className="trial-banner-v2__text">
@@ -69,7 +69,7 @@ export function TrialBanner({ onGoToPricing, refreshTick }: Props) {
     );
   }
 
-  if (plan === 'trial' && !access.allowed && access.reason === 'trial_expired') {
+  if (plan === 'trial' && !access.allowed && access.reason === 'trial_expired' && access.plan !== 'admin') {
     return (
       <div className="trial-banner trial-banner-v2 trial-banner-v2--expired">
         <span className="trial-banner-v2__text">

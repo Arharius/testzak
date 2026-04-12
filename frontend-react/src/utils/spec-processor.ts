@@ -27,12 +27,53 @@ function stripBrandWords(raw: string): { text: string; changed: boolean } {
   return { text, changed: text !== source };
 }
 
+// Паттерны мета-инструкций ИИ, которые не должны попасть в финальный документ
+const META_INSTRUCTION_PATTERNS = [
+  /^(удалить|убрать|исключить|delete|remove)\b/i,
+  /уже\s+указано\s+выше/i,
+  /дублирование\s+устранено/i,
+  /\[указать\s+конкретный\s+срок/i,
+  /\[необходимо\s+указать/i,
+  /^данная\s+позиция\s+(является|представляет)/i,
+];
+
+// Имена характеристик, которые ИИ иногда генерирует как мета-строки и надо удалять
+const META_NAME_PATTERNS = [
+  /^ТОРП$/i,
+  /^требование\s+о\s+товарах\s+российского/i,
+];
+
+// Паттерны незакрытых плейсхолдеров, оставленных ИИ
+const PLACEHOLDER_PATTERNS = [
+  /\[указать[^\]]*\]/i,
+  /\[уточнить[^\]]*\]/i,
+  /\[вписать[^\]]*\]/i,
+  /\[заполнить[^\]]*\]/i,
+  /\[insert[^\]]*\]/i,
+];
+
 export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
-  return specs.map((item) => {
+  return specs.flatMap((item) => {
     let name = String(item.name ?? '');
     let group = String(item.group ?? '');
     let value = String(item.value ?? '');
     let unit  = String(item.unit  ?? '');
+
+    // 0a. Удаляем строки, у которых ИМЯ характеристики — мета-строка (ТОРП и т.п.)
+    if (META_NAME_PATTERNS.some((p) => p.test(name.trim()))) {
+      return [];
+    }
+
+    // 0b. Удаляем строки, у которых ЗНАЧЕНИЕ — мета-инструкция ИИ
+    if (META_INSTRUCTION_PATTERNS.some((p) => p.test(value.trim()))) {
+      return [];
+    }
+
+    // 0c. Плейсхолдеры вида [указать...] — добавляем предупреждение
+    if (PLACEHOLDER_PATTERNS.some((p) => p.test(value.trim()))) {
+      (item as SpecItem)._warning =
+        'Значение не заполнено — плейсхолдер ИИ: укажите конкретный параметр вручную.';
+    }
 
     const nameStripped = stripBrandWords(name);
     const groupStripped = stripBrandWords(group);
@@ -184,11 +225,15 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
       /^уточняется?\s+(при\s+поставке|заказчиком|в\s+ходе|по\s+договору|в\s+наименовании)/i,
       /^определяется?\s+(производителем|поставщиком|заказчиком)/i,
       /^не\s+хуже\s+аналогов?/i,
-      /^по\s+типу\s+товара/i,
+      /^по\s+типу\s+(товара|устройства|оборудования)/i,
       /^при\s+необходимости/i,
       /^зависит\s+от\s+(модели|конфигурации|комплектации)/i,
       /^в\s+соответствии\s+с\s+моделью/i,
       /^по\s+запросу/i,
+      /по\s+спецификации\s+производителя/i,
+      /^по\s+модели\s+поставки/i,
+      /по\s+составу\s+производителя/i,
+      /^на\s+усмотрение\s+производителя/i,
     ];
     const isVague = VAGUE_PATTERNS.some((p) => p.test(value.trim()));
     if (isVague) {

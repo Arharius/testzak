@@ -2105,7 +2105,7 @@ const TYPE_HINTS: Array<{ tokens: string[]; type: string }> = [
   { tokens: ['внешний hdd','внешний жёсткий','внешний жесткий','портативный hdd','portable hdd','ext hdd'], type: 'extHdd' },
   { tokens: ['карта памяти','microsd','micro sd','sdxc','sdhc','memory card','sd карта'], type: 'memoryCard' },
   { tokens: ['кардридер','card reader','считыватель карт памяти','кард ридер'], type: 'cardReader' },
-  { tokens: ['оптический привод','dvd привод','bd привод','blu-ray привод','optical drive','dvd-rw привод','cd привод','внешний привод'], type: 'opticalDrive' },
+  { tokens: ['оптический привод','dvd привод','bd привод','blu-ray привод','optical drive','dvd-rw привод','cd привод','внешний привод','привод dvd','привод cd','привод blu','привод оптич','привод для дисков','привод cd/dvd','привод cd dvd'], type: 'opticalDrive' },
 
   // ── Кабели и коннекторы дополнительные ──
   { tokens: ['коннектор rj-45','коннектор rj45','разъём rj45','штекер rj45','rj-45 plug','8p8c'], type: 'rj45Connector' },

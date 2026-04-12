@@ -129,7 +129,7 @@ const DOCX_STRONG_IT_CONTEXT_TOKENS = [
   'процессор', 'клавиатур', 'мышь', 'гарнитур', 'веб камера', 'usb', 'hdmi', 'dvd', 'cd r',
   'cd rw', 'оптическ', 'твердотельн', 'схд', 'ибп', 'nas', 'san', 'витая пара', 'rj45',
   'rj 45', '8p8c', 'акустическ', 'колонки', 'видеоадаптер', 'displayport', 'dp', 'vga',
-  'переходник hdmi', 'переходник dp', 'внешний привод', 'кабель адаптер видео',
+  'переходник hdmi', 'переходник dp', 'внешний привод', 'привод dvd', 'привод cd', 'привод blu', 'привод оптич', 'dvd привод', 'cd привод', 'кабель адаптер видео',
   'тестер', 'мультиметр', 'накопитель', 'флеш', 'флэш', 'токен', 'рутокен', 'jacarta',
   'веб-камера', 'вебкамера', 'камера', 'коннектор', 'патч корд', 'патч-корд',
   'шредер', 'уничтожител', 'ламинатор', 'переплетчик', 'брошюровщик',
@@ -340,15 +340,9 @@ function detectTypeByImportedOkpd2(description: string, okpd2?: string): string 
   if (/(акустическ|колонк|speakers|звуков)/.test(normalized) && /^26\.40\.32\./.test(code)) {
     return 'speakers';
   }
-  if (/(оптическ|dvd|cd|bd|blu ray|blu-ray|привод)/.test(normalized) && /^26\.20\.40\.140$/.test(code)) {
-    return 'opticalDrive';
-  }
-  if (/(накопител|storage|drive)/.test(normalized) && /^26\.20\.40\.120$/.test(code)) {
-    return 'extSsd';
-  }
-  if (/(накопител|storage|drive)/.test(normalized) && /^26\.20\.40\.110$/.test(code)) {
-    return 'extHdd';
-  }
+  if (/^26\.20\.40\.140$/.test(code)) return 'opticalDrive';
+  if (/^26\.20\.40\.120$/.test(code)) return 'extSsd';
+  if (/^26\.20\.40\.110$/.test(code)) return 'extHdd';
   if (/(набор инструментов|tool set|toolkit|набор отверток|ремонтный набор|монтажный набор|сервисный набор)/.test(normalized)
     && /^(25\.73|27\.33)/.test(code)) {
     return 'toolSet';

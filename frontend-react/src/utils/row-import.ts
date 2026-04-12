@@ -1040,6 +1040,15 @@ function mapRows(
       const qty = qtyParsed.qty;
       const okpd2 = extractOkpd2Code(row[fallbackMap.okpd2 ?? -1] || '');
       if ((!rawType && !description) || shouldRejectImportText(description || rawType)) return null;
+      const mappedIndices = new Set([
+        fallbackMap.type, fallbackMap.description, fallbackMap.licenseType,
+        fallbackMap.term, fallbackMap.qty, fallbackMap.okpd2,
+      ].filter((i): i is number => i !== undefined));
+      const rowContextText = row
+        .filter((_, i) => !mappedIndices.has(i))
+        .map((cell) => normalizeCell(cell || ''))
+        .filter((cell) => cell.length > 2 && !/^\d+([,.]?\d+)?$/.test(cell))
+        .join(' ') || undefined;
       return makeImportedRow({
         rawType: rawType || description,
         description,
@@ -1050,6 +1059,7 @@ function mapRows(
         sourceFormat,
         sourceKind,
         sourceText: row.join(' | '),
+        sourceContextText: rowContextText,
         meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
         notes: hasHeader ? [] : ['Файл не содержал явной шапки колонок, строки распознаны по порядку столбцов.'],
       });

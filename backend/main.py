@@ -2297,11 +2297,8 @@ def _check_universality(text: str) -> dict:
 @app.post("/api/ai/generate")
 @limiter.limit("20/minute")
 def ai_generate(request: Request, req: AIGenerateRequest, user: Optional[User] = Depends(get_optional_user), db: Session = Depends(get_db)):
-    # Allow anonymous AI access when INTEGRATION_ALLOW_ANON is enabled
-    if user is None:
-        if not INTEGRATION_ALLOW_ANON:
-            raise HTTPException(status_code=401, detail="Требуется авторизация")
-    else:
+    # Trial (anonymous) users have access to all AI features
+    if user is not None:
         require_active(user, db)
     # Инъекция brand-avoidance в system-prompt
     messages = list(req.messages)
@@ -2326,10 +2323,8 @@ def ai_generate(request: Request, req: AIGenerateRequest, user: Optional[User] =
 @limiter.limit("20/minute")
 def ai_generate_stream(request: Request, req: AIGenerateRequest, user: Optional[User] = Depends(get_optional_user), db: Session = Depends(get_db)):
     """Streaming AI generation — keeps connection alive, avoids Railway 60s timeout."""
-    if user is None:
-        if not INTEGRATION_ALLOW_ANON:
-            raise HTTPException(status_code=401, detail="Требуется авторизация")
-    else:
+    # Trial (anonymous) users have access to all AI features
+    if user is not None:
         require_active(user, db)
 
     # Инъекция brand-avoidance в system-prompt для стриминга
@@ -2382,12 +2377,10 @@ class AIKeyRequest(BaseModel):
 @app.post("/api/ai/key")
 @limiter.limit("30/minute")
 def ai_get_key(request: Request, req: AIKeyRequest, user: Optional[User] = Depends(get_optional_user), db: Session = Depends(get_db)):
-    """Return server-side API key for authorized users to make direct streaming calls from browser.
+    """Return server-side API key for trial/authorized users to make direct streaming calls from browser.
     This avoids Railway's 60s HTTP timeout by letting the browser stream directly from AI provider."""
-    if user is None:
-        if not INTEGRATION_ALLOW_ANON:
-            raise HTTPException(status_code=401, detail="Требуется авторизация")
-    else:
+    # Trial (anonymous) users have access to all AI features
+    if user is not None:
         require_active(user, db)
     api_key = _get_api_key(req.provider)
     url = _get_ai_url(req.provider)

@@ -29,6 +29,8 @@ export default defineConfig(({ mode }) => {
       target: backendTarget,
       changeOrigin: true,
       secure: isHttpsTarget,
+      timeout: 200000,
+      proxyTimeout: 200000,
     },
     '/health': {
       target: backendTarget,

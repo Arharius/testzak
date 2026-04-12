@@ -317,6 +317,11 @@ async function _generateWithDirectStream(
   }
 
   // Step 2: Stream directly from browser to AI provider
+  // GigaChat uses server-side SDK — cannot be called directly from browser
+  if (!keyResp.url || keyResp.url === 'gigachat-sdk') {
+    throw new Error('Provider requires server-side proxy');
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error('Превышено время ожидания сервера')), DEFAULT_TIMEOUT_MS);
 

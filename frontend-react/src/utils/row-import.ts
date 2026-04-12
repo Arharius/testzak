@@ -209,6 +209,19 @@ function shouldRejectImportText(text: string): boolean {
   return looksLikeBoilerplateHeading(text) || looksLikeClauseFragment(text);
 }
 
+/**
+ * Разбивает строку, содержащую несколько наименований товаров, склеенных без пробела.
+ * Например: "Системный блок мини пк rdwМонитор RDW 27" →
+ *   ["Системный блок мини пк rdw", "Монитор RDW 27"]
+ */
+const PRODUCT_TYPE_SPLIT_RE = /(?<=[а-яёa-z0-9])(?=(?:Системный\s+блок|Монитор|Ноутбук|Компьютер|Сервер|Принтер|МФУ|Сканер|Коммутатор|Маршрутизатор|Моноблок|Планшет|Проектор|Гарнитура|Клавиатура|Мышь|Накопитель|Источник|Блок\s+питания|Источник\s+питания|Межсетевой|Шкаф|Стойка)\b)/i;
+
+function splitConcatenatedProductNames(line: string): string[] {
+  const parts = line.split(PRODUCT_TYPE_SPLIT_RE);
+  const result = parts.map((p) => p.trim()).filter((p) => p.length >= 3);
+  return result.length > 1 ? result : [line];
+}
+
 function chooseDelimiter(sample: string): string {
   const candidates = [';', '\t', ','];
   const firstLines = sample.split(/\r?\n/).slice(0, 6).join('\n');
@@ -1783,12 +1796,16 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
   for (const line of allLines) {
     const parts = line.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
     for (const part of parts) {
-      const lineRow = buildImportedRowFromText(part, 'fallback', {
-        allowWithoutQty: true,
-        meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
-        notes: ['Позиция извлечена из текстового содержимого документа.'],
-      });
-      if (lineRow) plainLineRows.push(lineRow);
+      // Разбиваем строку на части если в ней несколько наименований склеены без пробела
+      const subParts = splitConcatenatedProductNames(part);
+      for (const sub of subParts) {
+        const lineRow = buildImportedRowFromText(sub, 'fallback', {
+          allowWithoutQty: true,
+          meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
+          notes: ['Позиция извлечена из текстового содержимого документа.'],
+        });
+        if (lineRow) plainLineRows.push(lineRow);
+      }
     }
   }
   if (plainLineRows.length > 0) return dedupeImportedRows(plainLineRows);

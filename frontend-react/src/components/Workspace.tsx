@@ -5945,6 +5945,83 @@ function canBatchRow(row: GoodsRow): boolean {
   );
 }
 
+// ── Стандартные слова в наименовании товара (не бренды) ───────────────────────
+const KNOWN_PRODUCT_WORDS_WS = new Set([
+  'системный','блок','ноутбук','монитор','сервер','моноблок','компьютер','рабочая','станция',
+  'клавиатура','мышь','гарнитура','принтер','мфу','сканер','коммутатор','маршрутизатор',
+  'точка','доступа','накопитель','кабель','адаптер','патч','корд','лицензия','подписка',
+  'поддержка','техподдержка','программное','обеспечение','операционная','система','комплект',
+  'оборудование','товар','изделие','устройство','мини','пк','нетбук','планшет','проектор',
+  'system','unit','desktop','pc','mini','computer','server','monitor','printer','scanner',
+  'switch','router','access','point','storage','ssd','hdd','software','license','support',
+  'subscription','pro','plus','gen','tower','slim','ultra','max','lite','air','home',
+  'office','business','enterprise','standard','advanced','professional','new','series',
+  'version','edition','full','nano','rack','blade','usff','sff','atx','matx','itx',
+]);
+const KNOWN_BRANDS_WS = new Set([
+  'msi','asus','acer','dell','hp','hewlett','lenovo','huawei','xiaomi','apple',
+  'graviton','гравитон','aquarius','аквариус','iru','айру','yadro','gigabyte',
+  'asrock','supermicro','hpe','ibm','cisco','juniper','mikrotik','samsung',
+  'kingston','apc','epson','xerox','kyocera','pantum','ricoh','canon','brother',
+  'intel','amd','nvidia','astra','рупост','rupost','termidesk','ald','brest',
+  'tp','link','zyxel','keenetic','tplink','seagate','western','digital','wd',
+  'toshiba','hitachi','lg','sony','benq','viewsonic','iiyama','nec','philips',
+  'eaton','ippon','powercom','bixolon','zebra','honeywell','advantech','moxa',
+]);
+
+/**
+ * Извлекает подсказки из «голого» наименования товара (без спецификаций).
+ * Используется для улучшения промпта когда пользователь ввёл только название.
+ */
+function parseProductNameHints(model: string, type: string): string[] {
+  const hints: string[] = [];
+  const normalized = String(model || '')
+    .toLowerCase().replace(/ё/g, 'е')
+    .replace(/[^a-zа-я0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  const tokens = normalized.split(' ').filter(Boolean);
+
+  // Обнаружение неизвестного бренда/модели: чисто-буквенный токен 2–6 символов,
+  // которого нет ни в словаре типовых слов, ни в известных брендах
+  const unknownBrandCandidates = tokens.filter(t =>
+    /^[a-zа-я]{2,6}$/.test(t) &&
+    !KNOWN_PRODUCT_WORDS_WS.has(t) &&
+    !KNOWN_BRANDS_WS.has(t)
+  );
+  if (unknownBrandCandidates.length > 0) {
+    hints.push(
+      `В наименовании присутствует токен «${unknownBrandCandidates.map(t => t.toUpperCase()).join(', ')}» — вероятно, неизвестный бренд или обозначение модели. ИГНОРИРУЙ его: характеристики формируй исключительно исходя из типа товара и типовых требований, а НЕ из этого названия.`
+    );
+  }
+
+  // Диагональ монитора/дисплея: число 17–100 в наименовании
+  const isMonitorContext = type === 'monitor' || /монитор|дисплей/i.test(model);
+  if (isMonitorContext) {
+    const diagToken = tokens.find(t =>
+      /^\d{2,3}([.,]\d)?$/.test(t) &&
+      +t.replace(',', '.') >= 17 &&
+      +t.replace(',', '.') <= 100
+    );
+    if (diagToken) {
+      hints.push(
+        `Диагональ экрана: не менее ${diagToken} дюймов (указана в наименовании — обязательно отразить в поле «Диагональ экрана»).`
+      );
+    }
+  }
+
+  // Мини-ПК форм-фактор
+  if (/мини[\s-]?пк|mini[\s-]?pc|мини[\s-]?компьютер/i.test(model)) {
+    hints.push(`Форм-фактор: компактный мини-ПК (USFF / Mini-ITX или аналог) — корпус малых габаритов.`);
+  }
+
+  // Стоечный сервер (Ux в названии)
+  const uMatch = model.match(/\b([1-4])[uу]\b/i);
+  if (uMatch && (type === 'server' || /сервер/i.test(model))) {
+    hints.push(`Форм-фактор: ${uMatch[1]}U (стоечный, высота ${uMatch[1]}U).`);
+  }
+
+  return hints;
+}
+
 function buildBatchPrompt(rows: GoodsRow[], lawMode: LawMode): string {
   const law = lawMode === '223' ? '223-ФЗ' : '44-ФЗ';
   const items = rows.map((row, idx) => {
@@ -6274,12 +6351,18 @@ ${organizationBlock}
   const minSpecs = getMinimumSpecCount(row, resolvedCommercial);
   const law175Example = getResolvedLaw175Meta(row.type, { nac_regime: getUnifiedNacRegime(row.type), ktru_code: ktru });
 
+  // Подсказки из «голого» наименования (неизвестный бренд, диагональ, форм-фактор)
+  const nameHints = parseProductNameHints(row.model, row.type);
+  const nameHintsBlock = nameHints.length > 0
+    ? `\nПОДСКАЗКИ ИЗ НАИМЕНОВАНИЯ (обязательно учесть при генерации):\n${nameHints.map(h => `• ${h}`).join('\n')}\n`
+    : '';
+
   return {
     system: systemPrompt,
     user: `Сформируй технические характеристики для закупки по ${law}.
 
 Тип товара: ${goodsName}
-Модель/описание (для ориентира — НЕ копировать марку/модель в ответ): ${row.model}
+Модель/описание (для ориентира — НЕ копировать марку/модель в ответ): ${row.model}${nameHintsBlock}
 Количество: ${row.qty} шт.
 ${explicitCommercialTermsBlock ? `Коммерческие параметры из заявки:\n${explicitCommercialTermsBlock}\n- Отрази эти параметры в итоговых характеристиках без изменения их смысла.\n` : ''}
 ${importedBlock}

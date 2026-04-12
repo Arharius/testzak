@@ -7169,9 +7169,20 @@ async function buildDocx(
         hCell('Единица измерения', { w: DOCX_SPEC_COL.unit }),
       ],
     }));
-    // Row 2+: groups and data
-    let curGroup = '';
+    // Row 2+: groups and data (stable-sort by group to prevent duplicate group headers)
+    const groupOrder: string[] = [];
+    const seenForOrder = new Set<string>();
     for (const spec of specs) {
+      const g = spec.group ?? '';
+      if (g && !seenForOrder.has(g)) { seenForOrder.add(g); groupOrder.push(g); }
+    }
+    const sortedSpecs = [...specs].sort((a, b) => {
+      const ga = groupOrder.indexOf(a.group ?? '');
+      const gb = groupOrder.indexOf(b.group ?? '');
+      return ga - gb;
+    });
+    let curGroup = '';
+    for (const spec of sortedSpecs) {
       if (spec.group && spec.group !== curGroup) {
         curGroup = spec.group;
         rows.push(specGroupRow3(curGroup));

@@ -126,8 +126,10 @@ function isConcreteValue(value: string): boolean {
   if (/\b(uefi|secure[\s-]?boot|efi|bios|tpm|amd[\s-]?vi|intel[\s-]?vt|smm|acpi|pxe|wake[\s-]?on[\s-]?lan|wol)\b/i.test(normalized)) return true;
   // Форм-факторы корпусов, плат, накопителей
   if (/\b(mini[\s-]?itx|micro[\s-]?atx|e[\s-]?atx|flex[\s-]?atx|atx|itx|matx|eatx|sff|uatx|dtx|nuc|tower|desktop|slim|ultra[\s-]?slim|rack[\s-]?mount|1u|2u|4u|rackmount)\b/i.test(normalized)) return true;
-  // Классы энергоэффективности
+  // Классы энергоэффективности — 80+ Plus и российская/EU шкала A/A+/A++/A+++
   if (/\b(80[\s+]+plus|gold|silver|bronze|platinum|titanium|energy[\s-]?star|erp)\b/i.test(normalized)) return true;
+  if (/^не\s+ниже\s+[Aa][+]*$/.test(normalized.trim())) return true;
+  if (/^(класс\s+)?[Aa][+]*$/.test(normalized.trim())) return true;
   return false;
 }
 

@@ -89,10 +89,33 @@ export function App() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPricing, setShowPricing] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'main' | 'pricing' | 'history'>('main');
+  const [currentPage, setCurrentPage] = useState<'main' | 'pricing' | 'history'>(() => {
+    const path = window.location.pathname;
+    if (path === '/pricing') return 'pricing';
+    return 'main';
+  });
   const [showLLMModal, setShowLLMModal] = useState(false);
   const [preferredProvider, setPreferredProvider] = useState<string>('deepseek');
   const [preferredModel, setPreferredModel] = useState<string>('deepseek-chat');
+
+  // ── Sync URL with currentPage ────────────────────────────────────────────
+  useEffect(() => {
+    const path = currentPage === 'pricing' ? '/pricing' : '/';
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
+  }, [currentPage]);
+
+  // ── Handle browser back/forward ─────────────────────────────────────────
+  useEffect(() => {
+    const handler = () => {
+      const path = window.location.pathname;
+      if (path === '/pricing') setCurrentPage('pricing');
+      else setCurrentPage('main');
+    };
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, []);
 
   // ── Handle magic link or direct JWT from URL on load ────────────────────
   useEffect(() => {
@@ -442,14 +465,15 @@ export function App() {
 
   if (currentPage === 'pricing') {
     return (
-      <main className="layout sovereign-layout">
-        <div className="bg-layer" aria-hidden="true">
-          <span className="noise"></span>
-          <span className="orb orb-1"></span>
-          <span className="orb orb-2"></span>
-        </div>
-        <PricingPage onBack={() => setCurrentPage('main')} />
-      </main>
+      <div style={{ minHeight: '100vh', background: '#fff', color: '#111' }}>
+        <PricingPage
+          onBack={() => setCurrentPage('main')}
+          onRegister={(_plan) => {
+            setCurrentPage('main');
+            setTimeout(() => setShowLogin(true), 100);
+          }}
+        />
+      </div>
     );
   }
 
@@ -524,6 +548,13 @@ export function App() {
                 <span className="auth-dot muted" aria-hidden="true"></span>
                 Войдите для Pro-функций
               </span>
+              <button
+                onClick={() => setCurrentPage('pricing')}
+                className="auth-ghost-btn"
+                style={{ padding: '4px 12px', fontSize: '12px' }}
+              >
+                Тарифы
+              </button>
               <button
                 onClick={() => setShowLogin((x) => !x)}
                 className="auth-primary-btn"

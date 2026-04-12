@@ -1231,6 +1231,8 @@ function stripSectionPrefix(text: string): string {
 function findProductNameInAppendixSection(blocks: DocxBlock[], fromIdx: number, toIdx: number): string {
   for (let j = fromIdx; j < toIdx; j += 1) {
     const b = blocks[j];
+    // Stop at the first table — paragraphs after a spec table are signatures/metadata
+    if (b.kind === 'table') break;
     if (b.kind !== 'paragraph') continue;
     const text = normalizeCell(b.text || '');
     if (!text || DOCX_OKPD2_PREFIX_RE.test(text)) continue;
@@ -1372,6 +1374,15 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
           .replace(/[.;,]+$/, '')
           .trim();
         if (headerCell) notes.push('Название позиции взято из раздела «Наименование объекта поставки».');
+      }
+      // Fallback: попытка извлечь из «Наименование услуг:» / «закупку X» / заголовка документа
+      if (!headerCell || headerCell.length < 2 || shouldRejectImportText(headerCell)) {
+        const extracted = extractDocxProductName(content.paragraphs, blocks);
+        if (extracted.name.length >= 3 && !shouldRejectImportText(extracted.name)) {
+          headerCell = extracted.name;
+          notes.push('Название позиции извлечено из заголовка/назначения документа.');
+          if (extracted.needsReview) notes.push('Наименование требует ручной проверки.');
+        }
       }
       if (!headerCell || headerCell.length < 2 || shouldRejectImportText(headerCell)) continue;
       const specs = parseSpecTable(specTable.rows);
@@ -1629,8 +1640,8 @@ const NAME_STRIP_RE = /\b(?:закупки?|поставки?|приобрете
  */
 function cleanProductName(raw: string): string {
   let s = raw.trim();
-  // Убрать ведущий «на закупку/поставку/приобретение»
-  s = s.replace(/^(?:на\s+)?(?:закупку?\s+|поставку?\s+|приобретение\s+)/iu, '');
+  // Убрать ведущий «на закупку/поставку/приобретение» (все формы: закупка, закупки, закупку)
+  s = s.replace(/^(?:на\s+)?(?:закупк[уаи]?\s+|поставк[уаи]?\s+|приобретени[ея]?\s+)/iu, '');
   // Убрать хвосты «в интересах …» / «для нужд …»
   s = s.replace(/\s+в\s+интересах\b.*/iu, '').replace(/\s+для\s+нужд\b.*/iu, '');
   // Убрать оставшиеся стоп-слова
@@ -1806,6 +1817,7 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
   const allLines = extractAllDocumentLines(content);
   const serviceName =
     findParagraphValue(allLines, /наименование оказываемых услуг/i) ||
+    findParagraphValue(allLines, /наименование\s+услуг/i) ||
     allLines.find((line) => /^на оказание услуг(?:\s|$)/i.test(normalizeCell(line))) ||
     '';
   const requirementContext = collectRequirementContext(

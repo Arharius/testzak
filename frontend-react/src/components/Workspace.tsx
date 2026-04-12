@@ -7295,7 +7295,6 @@ async function buildDocx(
     for (const row of sectionArr) {
       const { text: fixedValue, fixes } = applyComplianceFixes(row.value);
       if (fixes.length > 0) {
-        console.log(`[ФАС Compliance] Секция ${row.label}: исправлено ${fixes.length} нарушений в тексте шаблона`);
         row.value = fixedValue;
       }
     }
@@ -7312,9 +7311,7 @@ async function buildDocx(
       console.warn(`  ${v.logMessage}: ${v.reason}`);
     }
   }
-  for (const p of docValidation.passed) {
-    console.log(p.logMessage);
-  }
+  // docValidation.passed items logged implicitly via audit
 
   const doc = new Document({
     styles: { default: { document: { run: { font: FONT, size: FONT_SIZE } } } },
@@ -10765,9 +10762,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       showToast(`⚠️ Перед публикацией проверьте: ${buildReadinessIssuePreview(readinessGate.warnings)}`, false);
     }
     const doExport = async () => {
-      console.log('[DOCX] Starting buildDocx...');
       const blob = await buildDocx(rows, lawMode, readinessGate, enterpriseSettings.benchmarking, platformSettings);
-      console.log('[DOCX] Blob built, size:', blob.size);
 
       let finalBlob = blob;
       try {
@@ -10775,9 +10770,7 @@ ${hint || '- Используй детальные, проверяемые эк�
         formData.append('file', new File([blob], 'tz.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
         const resp = await fetch('/api/fix-docx', { method: 'POST', body: formData });
         if (resp.ok) {
-          const fixCount = resp.headers.get('X-Compliance-Fixes') || '0';
           finalBlob = await resp.blob();
-          console.log(`[DOCX] Backend compliance post-processing: ${fixCount} fixes applied, size: ${finalBlob.size}`);
         } else {
           console.warn('[DOCX] Backend fix-docx failed, using original blob');
         }
@@ -10798,7 +10791,6 @@ ${hint || '- Используй детальные, проверяемые эк�
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
-      console.log('[DOCX] Download triggered');
       showToast('DOCX скачивается. Запускаем аудит ТЗ...', true);
       appendAutomationLog({ at: new Date().toISOString(), event: 'react.export_docx', ok: true });
 
@@ -11649,7 +11641,6 @@ ${hint || '- Используй детальные, проверяемые эк�
               type="button"
               className="workspace-review-btn"
               onClick={() => {
-                console.log('[TZ Review] Opening review panel, tzText length:', buildTzTextForReview().length);
                 setShowReviewPanel(true);
               }}
             >

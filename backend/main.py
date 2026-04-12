@@ -154,9 +154,9 @@ except ImportError:
         )
         _search_import_source = "direct"
     except Exception as _search_err:
-        import traceback
-        print(f"WARNING: search module import failed: {_search_err}")
-        traceback.print_exc()
+        import traceback as _traceback
+        logger.warning(f"search module import failed: {_search_err}")
+        logger.debug(_traceback.format_exc())
         async def search_internet_specs(product: str, goods_type: str) -> list:  # type: ignore
             return []
         async def search_eis_specs(query: str, goods_type: str) -> list:  # type: ignore
@@ -2519,7 +2519,7 @@ async def okpd2_code_lookup(request: Request, code: str):
 
 # ── Search: debug ──────────────────────────────────────────────
 @app.get("/api/search/debug")
-async def search_debug(q: str = "HP ProBook 450 G10"):
+async def search_debug(q: str = "HP ProBook 450 G10", admin: User = Depends(get_current_user)):
     """Debug endpoint to test search pipeline from Railway."""
     import asyncio
     try:

@@ -266,7 +266,6 @@ export function applyComplianceFixes(text: string): { text: string; fixes: Compl
         newText: result,
         logMessage: rule.logMessage,
       });
-      console.log(rule.logMessage);
     }
   }
 

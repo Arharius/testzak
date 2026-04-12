@@ -9,5 +9,5 @@ psycopg2-binary==2.9.10
 slowapi==0.1.9
 alembic==1.14.1
 aiofiles==24.1.0
-python-docx>=1.0.0
-gigachat>=0.2.0
+python-docx==1.2.0
+gigachat==0.2.0

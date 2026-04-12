@@ -16,6 +16,10 @@ tests/e2e_artifacts/
 tests/autodetect_report.*
 backups/
 .deploy/
+uploads/
+generated/
+/tmp/
+*.log
 
 # Local Netlify folder
 .netlify

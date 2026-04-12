@@ -834,6 +834,7 @@ export function App() {
         <span className="orb orb-4"></span>
       </div>
 
+      {!backendUser && (<>
       <header className="hero sovereign-hero section-fade section-delay-0">
         <div className="hero-grid">
           <div className="hero-copy">
@@ -1032,6 +1033,7 @@ export function App() {
           </div>
         </div>
       </section>
+      </>)}
 
       {backendUser?.role === 'admin' && (
       <details className="app-disclosure section-fade section-delay-3" open>

@@ -31,8 +31,14 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
-function IssueRow({ issue }: { issue: QAIssue }) {
+const QUICK_FIX_TEMPLATES: Record<string, string> = {
+  no_warranty: '\nГарантийный срок: не менее 12 (двенадцати) месяцев с момента поставки.',
+  no_country: '\nСтрана происхождения товара: указывается в соответствии с декларацией производителя.',
+};
+
+function IssueRow({ issue, onFix }: { issue: QAIssue; onFix?: () => void }) {
   const isError = issue.level === 'error';
+  const hasQuickFix = issue.code in QUICK_FIX_TEMPLATES;
   return (
     <div
       style={{
@@ -52,6 +58,26 @@ function IssueRow({ issue }: { issue: QAIssue }) {
       <div style={{ paddingLeft: 18, fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
         → {issue.suggestion}
       </div>
+      {hasQuickFix && onFix && (
+        <div style={{ paddingLeft: 18, marginTop: 2 }}>
+          <button
+            type="button"
+            onClick={onFix}
+            style={{
+              fontSize: 11,
+              padding: '2px 8px',
+              borderRadius: 4,
+              border: '1px solid #3b82f6',
+              background: '#eff6ff',
+              color: '#1d4ed8',
+              cursor: 'pointer',
+              fontWeight: 500,
+            }}
+          >
+            + Добавить
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -199,8 +225,30 @@ export function QaAuditBlock({ buildText, onTextFixed, autoRunKey }: QaAuditBloc
 
           {hasIssues && (
             <div style={{ marginBottom: 10 }}>
-              {errors.map((issue, i) => <IssueRow key={`e${i}`} issue={issue} />)}
-              {warnings.map((issue, i) => <IssueRow key={`w${i}`} issue={issue} />)}
+              {errors.map((issue, i) => (
+                <IssueRow
+                  key={`e${i}`}
+                  issue={issue}
+                  onFix={issue.code in QUICK_FIX_TEMPLATES ? () => {
+                    const tpl = QUICK_FIX_TEMPLATES[issue.code];
+                    const newText = currentText + tpl;
+                    setCurrentText(newText);
+                    onTextFixed?.(newText);
+                  } : undefined}
+                />
+              ))}
+              {warnings.map((issue, i) => (
+                <IssueRow
+                  key={`w${i}`}
+                  issue={issue}
+                  onFix={issue.code in QUICK_FIX_TEMPLATES ? () => {
+                    const tpl = QUICK_FIX_TEMPLATES[issue.code];
+                    const newText = currentText + tpl;
+                    setCurrentText(newText);
+                    onTextFixed?.(newText);
+                  } : undefined}
+                />
+              ))}
             </div>
           )}
 

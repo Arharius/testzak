@@ -58,40 +58,6 @@ export function WorkspaceSidePanels({
       <div className="workspace-side-card">
         <div className="workspace-side-head">
           <div>
-            <div className="micro-label">Step 2</div>
-            <strong>Публикационная готовность</strong>
-          </div>
-          <span className={`workspace-status-badge workspace-status-badge--${publicationStatusTone}`}>
-            {publicationStatusLabel}
-          </span>
-        </div>
-        <div className="workspace-side-copy">{publicationLeadText}</div>
-        <div className="workspace-metric-grid">
-          <div className="workspace-metric-card">
-            <span>Готово</span>
-            <strong>{readyRowsCount}</strong>
-          </div>
-          <div className="workspace-metric-card is-block">
-            <span>Block</span>
-            <strong>{readinessGate.blockers.length}</strong>
-          </div>
-          <div className="workspace-metric-card is-warn">
-            <span>Warn</span>
-            <strong>{readinessGate.warnings.length}</strong>
-          </div>
-          <div className="workspace-metric-card">
-            <span>Ручная вериф.</span>
-            <strong>{readinessGate.legal.manualReview}</strong>
-          </div>
-        </div>
-        <div className="workspace-side-note">
-          Автодоводка вынесена в верхнюю полосу. Здесь только итоговый срез перед экспортом, а массовые safe-fix и детализация остаются в контрольных блоках ниже.
-        </div>
-      </div>
-
-      <div className="workspace-side-card">
-        <div className="workspace-side-head">
-          <div>
             <div className="micro-label">Step 3</div>
             <strong>Экспорт и история</strong>
           </div>
@@ -101,7 +67,6 @@ export function WorkspaceSidePanels({
           <QaAuditBlock buildText={buildTzText} autoRunKey={qaAutoRunKey} />
         )}
         <div className="workspace-action-grid workspace-action-grid--compact" style={{ marginTop: 12 }}>
-          <button type="button" onClick={onExportPackage} title={exportReadinessTitle}>📦 Экспорт JSON</button>
           <button
             type="button"
             onClick={onExportDocx}

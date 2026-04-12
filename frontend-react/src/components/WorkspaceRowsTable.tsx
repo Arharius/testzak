@@ -289,6 +289,8 @@ export function WorkspaceRowsTable({
                 <td>
                   {(() => {
                     const options = getLicenseTypeOptions(row);
+                    const isSoftwareOrService = options.length > 0 || isServiceCatalogType(row.type);
+                    if (!isSoftwareOrService) return <span style={{ color: '#94a3b8' }}>—</span>;
                     if (options.length > 0) {
                       return (
                         <select
@@ -313,11 +315,17 @@ export function WorkspaceRowsTable({
                   })()}
                 </td>
                 <td>
-                  <input
-                    value={row.term}
-                    placeholder={getTermPlaceholder(row)}
-                    onChange={(event) => onChangeRowTerm(row.id, event.target.value)}
-                  />
+                  {(() => {
+                    const isSoftwareOrService = getLicenseTypeOptions(row).length > 0 || isServiceCatalogType(row.type);
+                    if (!isSoftwareOrService) return <span style={{ color: '#94a3b8' }}>—</span>;
+                    return (
+                      <input
+                        value={row.term}
+                        placeholder={getTermPlaceholder(row)}
+                        onChange={(event) => onChangeRowTerm(row.id, event.target.value)}
+                      />
+                    );
+                  })()}
                 </td>
                 <td className="qty-cell">
                   <input

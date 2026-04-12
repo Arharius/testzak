@@ -154,6 +154,9 @@ ${specSummary}
     return { status, vendors, widened, message, score };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (/авторизац|401|войдит|login/i.test(msg)) {
+      return { status: 'warn', vendors: [], widened: [], message: 'Войдите в систему для проверки эквивалентов', score: 0 };
+    }
     return { status: 'warn', vendors: [], widened: [], message: `Ошибка проверки: ${msg}`, score: 0 };
   }
 }

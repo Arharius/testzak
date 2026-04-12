@@ -321,7 +321,7 @@ export function WorkspaceReadinessSection({
                     <div className="compliance-item" key={`${issue.rowId}-${idx}`}>
                       <span className={`compliance-sev ${issue.severity}`}>{issue.severity}</span>
                       <div className="compliance-copy">
-                        <span>Строка #{issue.rowId}, «{issue.specName || 'характеристика'}»: {issue.reason}</span>
+                        <span>«{issue.specName || 'характеристика'}»: {issue.reason}</span>
                         <span className="muted">Что сделать: {issue.recommendation}</span>
                       </div>
                     </div>

@@ -1,0 +1,216 @@
+Добавь в приложение систему тарифов, триального периода и счётчика.
+
+СТЕК: FastAPI + SQLAlchemy + PostgreSQL + React фронтенд
+
+═══════════════════════════════════════════════════════
+1. МОДЕЛЬ ДАННЫХ
+═══════════════════════════════════════════════════════
+
+Добавь в таблицу users поля:
+
+plan: str = "trial"          # trial | start | base | team | corp
+trial_tz_used: int = 0       # сколько ТЗ использовано в триале
+trial_started_at: datetime   # когда начался триал (= дата регистрации)
+trial_expires_at: datetime   # trial_started_at + 14 дней
+subscription_expires_at: datetime | None = None
+tz_used_this_month: int = 0  # счётчик ТЗ за текущий месяц
+tz_reset_at: datetime        # дата последнего сброса счётчика
+
+ЛИМИТЫ ПО ПЛАНАМ:
+TRIAL:  3 ТЗ total, 14 дней, все функции разблокированы
+START:  15 ТЗ/мес
+BASE:   50 ТЗ/мес
+TEAM:   безлимит, до 5 пользователей
+CORP:   безлимит, API доступ
+
+═══════════════════════════════════════════════════════
+2. БИЗНЕС-ЛОГИКА — ПРОВЕРКА ДОСТУПА
+═══════════════════════════════════════════════════════
+
+Создай функцию check_access(user) -> dict:
+
+def check_access(user):
+    now = datetime.utcnow()
+    
+    # Триал истёк по времени
+    if user.plan == "trial" and now > user.trial_expires_at:
+        return {
+            "allowed": False,
+            "reason": "trial_expired",
+            "message": "Триальный период завершён (14 дней)"
+        }
+    
+    # Триал истёк по количеству
+    if user.plan == "trial" and user.trial_tz_used >= 3:
+        return {
+            "allowed": False, 
+            "reason": "trial_limit",
+            "message": "Использовано 3/3 бесплатных ТЗ"
+        }
+    
+    # Подписка истекла
+    if user.plan != "trial":
+        if not user.subscription_expires_at or now > user.subscription_expires_at:
+            return {
+                "allowed": False,
+                "reason": "subscription_expired",
+                "message": "Подписка истекла"
+            }
+    
+    # Месячный лимит (для START и BASE)
+    limits = {"start": 15, "base": 50}
+    if user.plan in limits:
+        # Сброс счётчика если новый месяц
+        if user.tz_reset_at.month != now.month:
+            user.tz_used_this_month = 0
+            user.tz_reset_at = now
+        
+        if user.tz_used_this_month >= limits[user.plan]:
+            return {
+                "allowed": False,
+                "reason": "monthly_limit",
+                "message": f"Лимит {limits[user.plan]} ТЗ/мес исчерпан"
+            }
+    
+    # Доступ разрешён — вернуть остаток
+    remaining = None
+    if user.plan == "trial":
+        remaining = {
+            "tz_left": 3 - user.trial_tz_used,
+            "days_left": (user.trial_expires_at - now).days
+        }
+    
+    return {"allowed": True, "remaining": remaining}
+
+После каждой успешной генерации ТЗ:
+- user.trial_tz_used += 1  (если триал)
+- user.tz_used_this_month += 1  (если платный план)
+
+═══════════════════════════════════════════════════════
+3. API ENDPOINTS
+═══════════════════════════════════════════════════════
+
+GET /api/user/status
+Возвращает:
+{
+  "plan": "trial",
+  "trial_tz_used": 1,
+  "trial_tz_total": 3,
+  "trial_days_left": 12,
+  "trial_expires_at": "2026-04-25",
+  "tz_used_this_month": 0,
+  "tz_limit_month": null,
+  "subscription_expires_at": null,
+  "features": {
+    "upload_docx": true,
+    "fix_docx": true,
+    "auto_search": true,
+    "gigachat": true,
+    "api_access": false
+  }
+}
+
+POST /api/generate  (существующий endpoint)
+Добавь в начало:
+  access = check_access(current_user)
+  if not access["allowed"]:
+      raise HTTPException(402, detail=access)
+
+GET /api/pricing
+Возвращает список тарифов (статические данные):
+{
+  "plans": [
+    {
+      "id": "trial",
+      "name": "Пробный",
+      "price": 0,
+      "period": null,
+      "tz_limit": 3,
+      "tz_period": "всего",
+      "days": 14,
+      "features": ["все функции", "3 ТЗ бесплатно", "14 дней"]
+    },
+    {
+      "id": "start",
+      "name": "Старт",
+      "price": 1900,
+      "period": "мес",
+      "tz_limit": 15,
+      "tz_period": "мес",
+      "features": ["15 ТЗ/мес", "загрузка файлов", "исправление ТЗ"]
+    },
+    {
+      "id": "base",
+      "name": "Базовый",
+      "price": 4900,
+      "period": "мес",
+      "tz_limit": 50,
+      "tz_period": "мес",
+      "features": ["50 ТЗ/мес", "автопоиск характеристик", "GigaChat"]
+    },
+    {
+      "id": "team",
+      "name": "Команда",
+      "price": 12900,
+      "period": "мес",
+      "tz_limit": null,
+      "tz_period": null,
+      "features": ["безлимит", "до 5 пользователей", "все функции"]
+    },
+    {
+      "id": "corp",
+      "name": "Корпоратив",
+      "price": 35000,
+      "period": "мес",
+      "tz_limit": null,
+      "tz_period": null,
+      "features": ["безлимит", "API доступ", "выделенная поддержка"]
+    }
+  ]
+}
+
+═══════════════════════════════════════════════════════
+4. ФРОНТЕНД — СЧЁТЧИК ТРИАЛА
+═══════════════════════════════════════════════════════
+
+Добавь баннер вверху страницы (показывать только на триале):
+
+КОМПОНЕНТ TrialBanner:
+Если plan === "trial" И allowed === true:
+  Показать: 
+  "Пробный период: осталось [X] из 3 ТЗ · [N] дней"
+  Прогресс-бар: заполнен на (trial_tz_used / 3 * 100)%
+  Кнопка: "Выбрать тариф →"
+
+Если reason === "trial_limit":
+  Показать красный баннер:
+  "Вы использовали все 3 бесплатных ТЗ"
+  Кнопка: "Продолжить работу — от 1 900₽/мес"
+  Заблокировать кнопку "Сгенерировать"
+
+Если reason === "trial_expired":
+  Показать красный баннер:
+  "Пробный период завершён (14 дней)"
+  Кнопка: "Выбрать тариф"
+  Заблокировать кнопку "Сгенерировать"
+
+═══════════════════════════════════════════════════════
+5. СТРАНИЦА ТАРИФОВ /pricing
+═══════════════════════════════════════════════════════
+
+Создай страницу с карточками тарифов.
+Текущий план пользователя — выделить рамкой.
+Кнопка под каждым тарифом:
+  - Текущий план: "Ваш тариф" (disabled)
+  - Выше текущего: "Перейти"
+  - Ниже текущего: "Downgrade"
+
+Кнопка "Перейти" → открывает модальное окно:
+"Для оплаты свяжитесь с нами: @andrei_sh_tech"
+(пока нет платёжной системы — ручная активация)
+
+ВАЖНО: не интегрировать платёжную систему сейчас.
+Просто показать контакт для оплаты.
+После оплаты — admin endpoint для смены плана:
+PATCH /api/admin/users/{user_id}/plan
+Body: {"plan": "base", "months": 1}

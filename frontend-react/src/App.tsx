@@ -11,6 +11,7 @@ import { LLMProviderModal } from './components/LLMProviderModal';
 import { TrialBanner } from './components/TrialBanner';
 import { PricingPage } from './components/PricingPage';
 import { HistoryPage } from './components/HistoryPage';
+import { OnboardingModal } from './components/OnboardingModal';
 import {
   flushAutomationQueue,
   flushPlatformQueue,
@@ -71,9 +72,9 @@ export function App() {
   const [theme, setTheme] = useState<UiTheme>(() => {
     try {
       const stored = window.localStorage.getItem('tz_ui_theme');
-      return stored === 'contrast' ? 'contrast' : 'sapphire';
+      return stored === 'sapphire' ? 'sapphire' : 'contrast';
     } catch {
-      return 'sapphire';
+      return 'contrast';
     }
   });
 
@@ -97,6 +98,7 @@ export function App() {
   const [showLLMModal, setShowLLMModal] = useState(false);
   const [preferredProvider, setPreferredProvider] = useState<string>('deepseek');
   const [preferredModel, setPreferredModel] = useState<string>('deepseek-chat');
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // ── Sync URL with currentPage ────────────────────────────────────────────
   useEffect(() => {
@@ -209,6 +211,19 @@ export function App() {
       })
       .catch(() => {});
   }, [backendUser]);
+
+  useEffect(() => {
+    if (!backendUser) return;
+    try {
+      const done = localStorage.getItem('tz_onboarding_done');
+      if (!done) {
+        const settings = getPlatformSettings();
+        if (!settings.orgName && !settings.customerInn) {
+          setShowOnboarding(true);
+        }
+      }
+    } catch { /* ignore */ }
+  }, [backendUser?.email]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -507,86 +522,100 @@ export function App() {
         />
       )}
 
-      {/* Auth bar — top right */}
-      {backendAvailable && (
-        <div className="auth-rail">
-          {backendUser ? (
-            <>
-              <span className="auth-identity">
-                <span className="auth-dot" aria-hidden="true"></span>
-                {backendUser.email}
-              </span>
-              <span className={`auth-badge ${backendUser.role === 'admin' ? 'admin' : backendUser.role === 'pro' ? 'pro' : backendUser.trial_active ? 'trial' : 'free'}`}>
-                {backendTierLabel}
-              </span>
-              {backendUser.role !== 'admin' && (
+      <nav className="top-nav">
+        <div className="top-nav-inner">
+          <button
+            className="top-nav-logo"
+            onClick={() => setCurrentPage('main')}
+            aria-label="На главную"
+          >
+            <span className="top-nav-logo-icon" aria-hidden="true">📋</span>
+            <span className="top-nav-logo-text">ТЗ-генератор</span>
+          </button>
+
+          <div className="top-nav-links">
+            {backendUser && (
+              <>
                 <button
-                  onClick={() => setCurrentPage('pricing')}
-                  className="auth-primary-btn"
-                  style={{ padding: '4px 12px', fontSize: '12px' }}
+                  className={`top-nav-link ${currentPage === 'main' ? 'top-nav-link--active' : ''}`}
+                  onClick={() => setCurrentPage('main')}
                 >
-                  Тарифы
+                  Создать ТЗ
                 </button>
-              )}
+                <button
+                  className={`top-nav-link ${currentPage === 'history' ? 'top-nav-link--active' : ''}`}
+                  onClick={() => setCurrentPage('history')}
+                >
+                  Мои ТЗ
+                </button>
+              </>
+            )}
+            {(!backendUser || backendUser.role !== 'admin') && (
               <button
-                onClick={() => setCurrentPage('history')}
-                className="auth-ghost-btn"
-                style={{ padding: '4px 12px', fontSize: '12px' }}
-              >
-                📋 История
-              </button>
-              <button
-                onClick={handleLogout}
-                className="auth-ghost-btn"
-              >
-                Выйти
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="auth-identity">
-                <span className="auth-dot muted" aria-hidden="true"></span>
-                Войдите для Pro-функций
-              </span>
-              <button
+                className={`top-nav-link ${currentPage === 'pricing' ? 'top-nav-link--active' : ''}`}
                 onClick={() => setCurrentPage('pricing')}
-                className="auth-ghost-btn"
-                style={{ padding: '4px 12px', fontSize: '12px' }}
               >
                 Тарифы
               </button>
+            )}
+          </div>
+
+          <div className="top-nav-user">
+            {backendUser ? (
+              <details className="user-menu">
+                <summary className="user-menu-summary">
+                  <span className="user-menu-name">
+                    {backendUser.email.includes('@') ? backendUser.email.split('@')[0] : backendUser.email}
+                  </span>
+                  <span className={`user-menu-badge ${backendUser.role === 'admin' ? 'admin' : backendUser.trial_active ? 'trial' : 'pro'}`}>
+                    {backendTierLabel}
+                  </span>
+                  <span className="user-menu-arrow" aria-hidden="true">▾</span>
+                </summary>
+                <div className="user-menu-dropdown">
+                  <div className="user-menu-item user-menu-item--info">
+                    {backendUser.email}
+                  </div>
+                  <div className="user-menu-divider" />
+                  <button
+                    className="user-menu-item"
+                    onClick={() => setShowLLMModal(true)}
+                  >
+                    AI-провайдер
+                  </button>
+                  <button
+                    className="user-menu-item"
+                    onClick={() => setCurrentPage('history')}
+                  >
+                    История ТЗ
+                  </button>
+                  <div className="user-menu-divider" />
+                  <button
+                    className="user-menu-item user-menu-item--theme"
+                    onClick={() => setTheme(theme === 'contrast' ? 'sapphire' : 'contrast')}
+                  >
+                    {theme === 'contrast' ? '🌙 Тёмная тема' : '☀️ Светлая тема'}
+                  </button>
+                  <div className="user-menu-divider" />
+                  <button
+                    className="user-menu-item user-menu-item--danger"
+                    onClick={handleLogout}
+                  >
+                    Выйти
+                  </button>
+                </div>
+              </details>
+            ) : (
               <button
+                className="top-nav-btn top-nav-btn--primary"
                 onClick={() => setShowLogin((x) => !x)}
-                className="auth-primary-btn"
               >
                 {showLogin ? 'Закрыть' : 'Войти'}
               </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
-      )}
-
-      <div className="theme-rail" role="group" aria-label="Переключение темы">
-        <span className="theme-rail-label">Тема</span>
-        <button
-          type="button"
-          className={`theme-btn ${theme === 'sapphire' ? 'is-active' : ''}`}
-          onClick={() => setTheme('sapphire')}
-          aria-pressed={theme === 'sapphire'}
-          title="Темная тема"
-        >
-          Темная
-        </button>
-        <button
-          type="button"
-          className={`theme-btn ${theme === 'contrast' ? 'is-active' : ''}`}
-          onClick={() => setTheme('contrast')}
-          aria-pressed={theme === 'contrast'}
-          title="Светлая тема"
-        >
-          Светлая
-        </button>
-      </div>
+      </nav>
 
       {/* Login panel */}
       {showLogin && !backendUser && backendAvailable && (
@@ -731,43 +760,57 @@ export function App() {
         <div className="hero-grid">
           <div className="hero-copy">
             <div className="hero-spine" aria-hidden="true"></div>
-            <span className="hero-chip">44/223-ФЗ • Двойной эквивалент • Проверка • Публикация</span>
-            <h1>Закупочное ТЗ с нулевым ФАС‑риском</h1>
-            <p>Генерация, верификация через Web-Truth и автоматическая проверка двойного эквивалента — всё в одном рабочем контуре. ГОСТ-совместимый DOCX без ошибок форматирования.</p>
+            <span className="hero-chip">44-ФЗ · 223-ФЗ · ПП №1875 · Проверка ФАС</span>
+            <h1>Техническое задание за&nbsp;3&nbsp;минуты</h1>
+            <p>Укажите товар или загрузите список — система сформирует готовый DOCX с характеристиками, проверит конкуренцию и устранит ФАС-риски.</p>
             <div className="hero-proof">
-              <span>Импорт DOCX/XLSX</span>
-              <span>Двойной эквивалент</span>
-              <span>ПП1875 и анти-ФАС</span>
-              <span>ГОСТ DOCX</span>
+              <span>Импорт DOCX / XLSX</span>
+              <span>Проверка конкуренции</span>
+              <span>Проверка характеристик</span>
+              <span>Готовый документ</span>
             </div>
+            {!backendUser && (
+              <div className="hero-cta-row">
+                <button
+                  className="hero-cta-btn"
+                  onClick={() => setShowLogin((x) => !x)}
+                >
+                  Попробовать бесплатно →
+                </button>
+                <span className="hero-cta-note">3 ТЗ без оплаты · Регистрация не нужна</span>
+              </div>
+            )}
+            {backendUser && (
+              <div className="hero-cta-row">
+                <button
+                  className="hero-cta-btn hero-cta-btn--secondary"
+                  onClick={() => setShowLLMModal(true)}
+                  title="Сменить AI-провайдер"
+                >
+                  AI: {preferredProvider === 'gigachat' ? 'GigaChat' :
+                       preferredProvider === 'openrouter' ? 'OpenRouter' :
+                       preferredProvider === 'groq' ? 'Groq' : 'DeepSeek'}
+                </button>
+              </div>
+            )}
           </div>
           <div className="hero-metrics">
             <div className="hero-metric">
-              <span className="hero-metric-label">режим</span>
-              <strong>{backendAvailable ? 'Гибридный' : 'Локальный'}</strong>
+              <span className="hero-metric-label">Закон</span>
+              <strong>44-ФЗ / 223-ФЗ</strong>
             </div>
             <div className="hero-metric">
-              <span className="hero-metric-label">ДЭ-алгоритм</span>
-              <strong className="hero-metric-accent">Активен</strong>
+              <span className="hero-metric-label">Проверка конкуренции</span>
+              <strong className="hero-metric-accent">Активна</strong>
             </div>
             <div className="hero-metric">
-              <span className="hero-metric-label">ГОСТ DOCX</span>
-              <strong className="hero-metric-accent">Без ошибок</strong>
+              <span className="hero-metric-label">Формат</span>
+              <strong className="hero-metric-accent">DOCX / PDF</strong>
             </div>
             <div className="hero-metric">
               <span className="hero-metric-label">ФАС-риск</span>
               <strong className="hero-metric-ok">Нулевой</strong>
             </div>
-            {backendUser && (
-              <div className="hero-metric hero-metric--clickable" onClick={() => setShowLLMModal(true)} title="Сменить AI-провайдер">
-                <span className="hero-metric-label">AI-провайдер</span>
-                <strong className="hero-metric-accent hero-metric-ai">
-                  {preferredProvider === 'gigachat' ? '🇷🇺 GigaChat' :
-                   preferredProvider === 'openrouter' ? '🌐 OpenRouter' :
-                   preferredProvider === 'groq' ? '⚡ Groq' : '🇨🇳 DeepSeek'}
-                </strong>
-              </div>
-            )}
           </div>
         </div>
       </header>
@@ -775,24 +818,24 @@ export function App() {
       <section className="feature-showcase section-fade section-delay-1" aria-label="Ключевые возможности">
         <div className="feature-showcase-grid">
           <div className="feature-card">
-            <div className="feature-card-icon feature-card-icon--blue">ДЭ</div>
+            <div className="feature-card-icon feature-card-icon--blue">⚖️</div>
             <div className="feature-card-body">
-              <div className="feature-card-title">Двойной эквивалент</div>
-              <div className="feature-card-desc">Алгоритм автоматически выявляет ≥2 конкурирующих производителей, которые соответствуют ТЗ. Устраняет ФАС-риск монополизации.</div>
+              <div className="feature-card-title">Проверка конкуренции</div>
+              <div className="feature-card-desc">Алгоритм автоматически проверяет, что ТЗ не ограничивает конкуренцию — находит ≥2 производителей, соответствующих требованиям.</div>
             </div>
           </div>
           <div className="feature-card">
-            <div className="feature-card-icon feature-card-icon--indigo">WT</div>
+            <div className="feature-card-icon feature-card-icon--indigo">🔎</div>
             <div className="feature-card-body">
-              <div className="feature-card-title">Web-Truth верификация</div>
-              <div className="feature-card-desc">Сравнивает характеристики из документа с официальными datasheet производителей. Конфликты выделяются с юридически безопасной рекомендацией.</div>
+              <div className="feature-card-title">Проверка характеристик</div>
+              <div className="feature-card-desc">Система сверяет технические параметры с официальными данными производителей и отмечает расхождения для устранения ФАС-рисков.</div>
             </div>
           </div>
           <div className="feature-card">
-            <div className="feature-card-icon feature-card-icon--green">DOC</div>
+            <div className="feature-card-icon feature-card-icon--green">📄</div>
             <div className="feature-card-body">
-              <div className="feature-card-title">ГОСТ-совместимый DOCX</div>
-              <div className="feature-card-desc">Только измеримые параметры в финальном документе. Ширины колонок в DXA, без КТРУ/ОКПД2 в тексте, без артефактов форматирования.</div>
+              <div className="feature-card-title">Готовый документ</div>
+              <div className="feature-card-desc">На выходе — DOCX и PDF, готовые к размещению в ЕИС. Только измеримые параметры, корректное форматирование, все разделы по закону.</div>
             </div>
           </div>
         </div>
@@ -827,35 +870,35 @@ export function App() {
         <div className="how-it-works-head">
           <div className="micro-label">Процесс</div>
           <h2 className="how-it-works-title">Как это работает</h2>
-          <p className="how-it-works-sub">Четыре шага от пустого листа до готового юридически чистого DOCX</p>
+          <p className="how-it-works-sub">Четыре шага от пустого листа до готового документа</p>
         </div>
         <div className="how-steps-grid">
           <div className="how-step">
             <div className="how-step-num">01</div>
             <div className="how-step-body">
-              <div className="how-step-title">Загрузите или введите позиции</div>
-              <div className="how-step-desc">Импортируйте DOCX/XLSX с перечнем позиций или добавьте их вручную из каталога ИТ-оборудования и ПО.</div>
+              <div className="how-step-title">Добавьте товары или загрузите список</div>
+              <div className="how-step-desc">Импортируйте DOCX/XLSX с позициями закупки или выберите товары из каталога вручную.</div>
             </div>
           </div>
           <div className="how-step">
             <div className="how-step-num">02</div>
             <div className="how-step-body">
-              <div className="how-step-title">ИИ генерирует исчерпывающие характеристики</div>
-              <div className="how-step-desc">Система автоматически заполняет ≥25 измеримых параметров: MTBF, TDP, USB/Wi-Fi версии, рабочая температура, КПД блока питания.</div>
+              <div className="how-step-title">ИИ подбирает технические характеристики</div>
+              <div className="how-step-desc">Система заполняет измеримые параметры для каждой позиции и проверяет их по открытым источникам.</div>
             </div>
           </div>
           <div className="how-step">
             <div className="how-step-num">03</div>
             <div className="how-step-body">
-              <div className="how-step-title">ДЭ-алгоритм проверяет конкурентность</div>
-              <div className="how-step-desc">Автоматически выявляет ≥2 независимых производителей. Если ТЗ «заточено» под одного — расширяет диапазоны значений до конкурентных.</div>
+              <div className="how-step-title">Проверяем соответствие 44-ФЗ и отсутствие ФАС-рисков</div>
+              <div className="how-step-desc">Алгоритм проверяет конкуренцию и выявляет нарушения требований закупочного законодательства.</div>
             </div>
           </div>
           <div className="how-step">
             <div className="how-step-num">04</div>
             <div className="how-step-body">
-              <div className="how-step-title">ГОСТ DOCX готов к публикации</div>
-              <div className="how-step-desc">Финальный документ: только измеримые параметры, без КТРУ/ОКПД2 в тексте, правильные ширины колонок DXA, без ошибок форматирования.</div>
+              <div className="how-step-title">Скачайте готовый DOCX для ЕИС</div>
+              <div className="how-step-desc">Финальный документ с корректным форматированием, готовый к публикации в Единой информационной системе.</div>
             </div>
           </div>
         </div>
@@ -870,15 +913,15 @@ export function App() {
           <div className="why-us-item">
             <div className="why-us-check"></div>
             <div>
-              <strong>Двойной эквивалент — автоматически</strong>
-              <span>Единственная система, которая гарантирует ≥2 конкурирующих производителей без ручной проверки.</span>
+              <strong>Проверка конкуренции — автоматически</strong>
+              <span>Система гарантирует, что ≥2 производителя соответствуют ТЗ, без ручной проверки.</span>
             </div>
           </div>
           <div className="why-us-item">
             <div className="why-us-check"></div>
             <div>
-              <strong>Web-Truth верификация характеристик</strong>
-              <span>ИИ сверяет значения с официальными datasheet производителей и помечает расхождения.</span>
+              <strong>Проверка характеристик по источникам</strong>
+              <span>ИИ сверяет значения с официальными данными производителей и помечает расхождения.</span>
             </div>
           </div>
           <div className="why-us-item">
@@ -891,15 +934,15 @@ export function App() {
           <div className="why-us-item">
             <div className="why-us-check"></div>
             <div>
-              <strong>Только измеримые параметры в DOCX</strong>
-              <span>Фильтр исключает размытые формулировки: в документ попадают только верифицируемые при приёмке значения.</span>
+              <strong>Только измеримые параметры в документе</strong>
+              <span>В DOCX попадают только проверяемые при приёмке значения — без размытых формулировок.</span>
             </div>
           </div>
           <div className="why-us-item">
             <div className="why-us-check"></div>
             <div>
-              <strong>Полный аудит-трейл</strong>
-              <span>Каждое действие системы логируется. Отчёт о соответствии сохраняется вместе с DOCX.</span>
+              <strong>Полная история документов</strong>
+              <span>Все созданные ТЗ сохраняются и доступны в любой момент для повторного использования.</span>
             </div>
           </div>
           <div className="why-us-item">
@@ -1054,6 +1097,10 @@ export function App() {
           />
         </section>
       </details>
+      )}
+
+      {showOnboarding && (
+        <OnboardingModal onClose={() => setShowOnboarding(false)} />
       )}
     </main>
   );

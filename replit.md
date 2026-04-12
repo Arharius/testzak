@@ -72,15 +72,21 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **Admin-only features**: Validation modal, system panels, trial banner hidden from non-admin users.
 
 ## UX Redesign for Procurement Specialists
+- **Top Navigation** (`App.tsx`): Fixed top nav bar replacing auth-rail + theme-rail. Logo left, nav links center (Создать ТЗ / Мои ТЗ / Тарифы), user menu right (details/summary dropdown with email, AI-provider, theme toggle, logout).
+- **Light Theme Default**: `contrast` theme is now the default. Theme toggle moved into user menu (not visible in top-level UI). `sapphire` dark theme still supported.
+- **Hero Simplification**: "Техническое задание за 3 минуты" H1. Simple description without technical jargon. Proof chips: Импорт DOCX/XLSX, Проверка конкуренции, Проверка характеристик, Готовый документ. CTA button "Попробовать бесплатно →" for guests.
+- **Feature Cards**: "Проверка конкуренции" (was "Двойной эквивалент"), "Проверка характеристик" (was "Web-Truth"), "Готовый документ" (was "ГОСТ-совместимый DOCX").
+- **How-It-Works**: Steps renamed to user-friendly Russian without technical terms (ДЭ-алгоритм → Проверяем соответствие 44-ФЗ, ГОСТ DOCX → Скачайте готовый DOCX).
+- **Smart Toolbar** (`Workspace.tsx`): `uiPhase` ('empty'|'working'|'ready') controls button visibility. Generate button label → "▶ Сгенерировать ТЗ". Internet search + EIS buttons hidden when phase=ready. Начать заново shown only when phase=ready or working.
+- **Onboarding Modal** (`OnboardingModal.tsx`): 3-step modal on first login (if orgName + customerInn empty). Step 1: org name + INN. Step 2: delivery address + signatory. Step 3: success + CTA. Saves to platformSettings. Marks done via `tz_onboarding_done` localStorage key.
 - **ProcessStepper** (`ProcessStepper.tsx`): Visual 4-step process indicator — Исходные данные → Характеристики → ТЗ → Проверка. Steps auto-update based on workspace state (done/active).
 - **EntryChoice** (`EntryChoice.tsx`): Entry screen with 3 clear paths:
   1. "У меня есть файл ТЗ" — triggers DOCX/XLSX upload
   2. "Только тип товара / модель" — manual type+model entry
   3. "Готовый шаблон закупки" — template packs
   - Includes law mode switch (44-ФЗ / 223-ФЗ)
-  - Auto-dismissed once user has data; "◀ Выбор способа" button returns to it
-- **Procurement-friendly copy**: Russian labels use закупочная vocabulary, not developer terms. Model field explained as "only an example, won't appear in TZ".
-- **Simplified toolbar**: "Добавить позицию", "Загрузить файл", "Подготовить характеристики", "Проверить ТЗ на ФАС-риски"
+  - Auto-dismissed once user has data
+- **Procurement-friendly copy**: Russian labels use закупочная vocabulary, not developer terms.
 
 ## AI Review Mode (Проверить и исправить ТЗ)
 - **Backend**: `POST /api/review-tz` — LLM-powered review of TZ text. Accepts `{tzText, lawMode}`, returns `{issues[], summary}`.

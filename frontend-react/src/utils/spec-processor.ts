@@ -271,6 +271,60 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
       }
     }
 
+    // 17. "up to X unit" из англоязычных даташитов → «не менее X единица» (для параметров производительности)
+    //     и «не более X единица» (для веса, размеров, шума)
+    const UP_TO_PATTERN = /\bup\s+to\s+([\d.,]+)\s*(GB|MB|TB|GHz|MHz|W|V|dB|mm|kg|g|m|ms|fps|Mbps|Gbps)\b/gi;
+    const isMaxParam = MAX_PARAMS.some((p) => nameLower.includes(p)) ||
+      /шум|уровень\s+шума|noise|масса|вес|weight|габарит|размер|dimension|thickness/i.test(nameLower);
+    value = value.replace(UP_TO_PATTERN, (_match, num, eng) => {
+      const ruMap: Record<string, string> = {
+        GB:'ГБ', MB:'МБ', TB:'ТБ', GHz:'ГГц', MHz:'МГц',
+        W:'Вт', V:'В', dB:'дБ', mm:'мм', kg:'кг', g:'г',
+        m:'м', ms:'мс', fps:'кадр/с', Mbps:'Мбит/с', Gbps:'Гбит/с',
+      };
+      const ruUnit = ruMap[eng] ?? eng;
+      const prefix = isMaxParam ? 'не более' : 'не менее';
+      (item as SpecItem)._fixed = true;
+      return `${prefix} ${num} ${ruUnit}`;
+    });
+
+    // 18. Wi-Fi и Bluetooth в составе ПК/серверов без явного запроса — предупреждение
+    const isWifiName  = /wi-?fi|wifi|беспровод|wireless/i.test(nameLower);
+    const isBtName    = /bluetooth|блютуз|bt\b/i.test(nameLower);
+    const isPcContext = /системн|блок|пк\b|workstation|desktop|сервер|server|компьютер|mini\s*pc/i.test(groupLower);
+    if ((isWifiName || isBtName) && isPcContext) {
+      (item as SpecItem)._warning = (item._warning ? item._warning + '; ' : '') +
+        'Беспроводные интерфейсы (Wi-Fi/BT) в госзакупке ПК требуют явного обоснования — как правило ИБ не допускает их наличие';
+    }
+
+    // 19. Значение на английском языке (нет кириллицы) и не является аббревиатурой/числом
+    const CYRILLIC_RE = /[а-яё]/i;
+    const ABBREV_RE   = /^[A-Z0-9 \-+.,;:()x×\/\\"'°%*@#]+$/i;
+    const valueTrimmed = value.trim();
+    const isLongEnglish = valueTrimmed.length > 10 && !CYRILLIC_RE.test(valueTrimmed);
+    const isPureAbbrev  = ABBREV_RE.test(valueTrimmed) && valueTrimmed.length <= 30;
+    if (isLongEnglish && !isPureAbbrev) {
+      (item as SpecItem)._warning = (item._warning ? item._warning + '; ' : '') +
+        'Значение на английском языке — ТЗ должно быть на русском (44-ФЗ ст. 21, Приказ Минфина № 126н)';
+    }
+
+    // 20. Точные размеры с дюймами/фунтами (характеристика конкретной модели) — предупреждение
+    const MODEL_DIM_RE = /\d+(\.\d+)?\s*(inch|in\b|lbs?\b|lb\b|pt\b|liter\b)/i;
+    if (MODEL_DIM_RE.test(value)) {
+      (item as SpecItem)._warning = (item._warning ? item._warning + '; ' : '') +
+        'Дюймы/фунты/литры — единицы конкретной модели. Укажите требования в метрических единицах (мм, кг) с «не более»';
+    }
+
+    // 21. Гарантия для ПК/серверов: если 12 мес и контекст ПК/монитор → рекомендовать 36 мес
+    if (/гарантия/i.test(nameLower)) {
+      const isShortWarranty = /^(не\s+менее\s+)?12\b/.test(value.trim());
+      const isPcOrMonitor = /системн|пк\b|компьютер|desktop|workstation|монитор|monitor|принтер|server|сервер/i.test(groupLower);
+      if (isShortWarranty && isPcOrMonitor) {
+        (item as SpecItem)._warning = (item._warning ? item._warning + '; ' : '') +
+          'Для ВТ рекомендуется гарантия не менее 36 месяцев (Постановление Правительства РФ № 1875 и практика ФАС)';
+      }
+    }
+
     return { ...item, group, name, value, unit };
   });
 }

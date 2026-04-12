@@ -174,6 +174,34 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
       unit = inferUnit(nameLower, value);
     }
 
+    // 16. Запрещённые формулировки (44-ФЗ ст. 33 — характеристики должны быть измеримыми)
+    const VAGUE_PATTERNS = [
+      /^по\s+треб\w*\s+(заказчика|поставщика|производителя|потребителя)/i,
+      /^по\s+усмотрению\s+\w+/i,
+      /^на\s+усмотрение\s+\w+/i,
+      /^(согласно|в\s+соответствии\s+с?)\s+(технической?\s+документацией|требованиями?\s+заказчика|документацией\s+производителя)/i,
+      /^уточняется?\s+(при\s+поставке|заказчиком|в\s+ходе|по\s+договору)/i,
+      /^определяется?\s+(производителем|поставщиком|заказчиком)/i,
+      /^не\s+хуже\s+аналогов?/i,
+      /^по\s+типу\s+товара/i,
+      /^при\s+необходимости/i,
+    ];
+    const isVague = VAGUE_PATTERNS.some((p) => p.test(value.trim()));
+    if (isVague) {
+      // Auto-fix known parameters; otherwise flag as warning
+      if (/архитектур/i.test(nameLower)) {
+        value = 'x86-64';
+        (item as SpecItem)._fixed = true;
+      } else if (/частот/i.test(nameLower) && /процессор|cpu|ядр/i.test(groupLower + nameLower)) {
+        value = 'не менее 2,4 ГГц';
+        unit = 'ГГц';
+        (item as SpecItem)._fixed = true;
+      } else {
+        (item as SpecItem)._warning = (item._warning ? item._warning + '; ' : '') +
+          'Запрещённая формулировка: укажите конкретное числовое значение (44-ФЗ ст. 33)';
+      }
+    }
+
     return { ...item, group, name, value, unit };
   });
 }

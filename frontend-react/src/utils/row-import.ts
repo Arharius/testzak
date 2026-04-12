@@ -1251,6 +1251,7 @@ function extractMultiSpecRows(
   toIdx: number,
   content: ParsedDocxContent,
   headingProductName: string,
+  allowDocWideFallback = true,
 ): ImportedProcurementRow[] | null {
   const specTableIndices: number[] = [];
   for (let j = fromIdx; j < toIdx; j += 1) {
@@ -1261,7 +1262,7 @@ function extractMultiSpecRows(
   const allLines = extractAllDocumentLines(content);
   const sectionQty = findDocumentQty(
     blocks.slice(fromIdx, toIdx).filter((b) => b.kind === 'paragraph').map((b) => b.text || ''),
-  ) || findDocumentQty(allLines);
+  ) || (allowDocWideFallback ? findDocumentQty(allLines) : null);
   const result: ImportedProcurementRow[] = [];
   for (const tblIdx of specTableIndices) {
     let productName = '';
@@ -1302,6 +1303,14 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
   // Первые абзацы документа содержат заголовок/назначение (напр. "коммутатор", "маршрутизатор")
   // и используются как контекст при определении типа товара по номеру модели (напр. MES2300B-48)
   const docTitleContext = content.paragraphs.slice(0, 12).filter((p) => p.trim().length > 3).join(' ').slice(0, 500) || undefined;
+  // БАГ 2: считаем число разделов-приложений заранее.
+  // Если приложений > 1, НЕ используем document-wide fallback для qty (иначе всем разделам
+  // достаётся количество первого элемента). Fallback применяем только для одиночных ТЗ.
+  const appendixCount = blocks.filter(
+    (b) => b.kind === 'paragraph' && DOCX_APPENDIX_HEADING_RE.test(b.text || ''),
+  ).length;
+  const allowDocWideFallback = appendixCount <= 1;
+  const allLines = extractAllDocumentLines(content);
   for (let i = 0; i < blocks.length; i += 1) {
     const block = blocks[i];
     if (block.kind !== 'paragraph' || !DOCX_APPENDIX_HEADING_RE.test(block.text || '')) continue;
@@ -1324,7 +1333,7 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
     }
     if (itemParagraphIndex < 0) {
       // If there are 2+ spec tables in this section, create one row per table
-      const multiSpecRows = extractMultiSpecRows(blocks, i + 1, nextAppendixIndex, content, headingProductName);
+      const multiSpecRows = extractMultiSpecRows(blocks, i + 1, nextAppendixIndex, content, headingProductName, allowDocWideFallback);
       if (multiSpecRows && multiSpecRows.length > 0) {
         rows.push(...multiSpecRows);
         continue;
@@ -1336,10 +1345,8 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
         // No spec table — if we have a heading product name, still try to build a row
         if (!headingProductName || headingProductName.length < 4 || shouldRejectImportText(headingProductName)) continue;
         const okpd2 = extractOkpdFromBlocks(blocks, i + 1, nextAppendixIndex);
-        const allLines = extractAllDocumentLines(content);
-        const qty = findDocumentQty(
-          blocks.slice(i + 1, nextAppendixIndex).filter((b) => b.kind === 'paragraph').map((b) => b.text || ''),
-        ) || findDocumentQty(allLines);
+        const sectionParas = blocks.slice(i + 1, nextAppendixIndex).filter((b) => b.kind === 'paragraph').map((b) => b.text || '');
+        const qty = findDocumentQty(sectionParas) || (allowDocWideFallback ? findDocumentQty(allLines) : null);
         rows.push(makeImportedRow({
           rawType: headingProductName,
           description: headingProductName,
@@ -1387,12 +1394,11 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
       if (!headerCell || headerCell.length < 2 || shouldRejectImportText(headerCell)) continue;
       const specs = parseSpecTable(specTable.rows);
       const okpd2 = extractOkpdFromBlocks(blocks, i + 1, nextAppendixIndex);
-      const allLines = extractAllDocumentLines(content);
       const qty = findDocumentQty(
         blocks.slice(i + 1, nextAppendixIndex)
           .filter((b) => b.kind === 'paragraph')
           .map((b) => b.text || ''),
-      ) || findDocumentQty(allLines);
+      ) || (allowDocWideFallback ? findDocumentQty(allLines) : null);
       rows.push(makeImportedRow({
         rawType: headerCell,
         description: headerCell,
@@ -1445,7 +1451,6 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
         }
         const fallbackNotes: string[] = ['Название позиции извлечено из заголовка таблицы характеристик.'];
         if (!headerCell || shouldRejectImportText(headerCell)) {
-          const allLines = extractAllDocumentLines(content);
           headerCell = findParagraphValue(allLines, /наименование объекта поставки/i)
             .replace(/\s*\(далее[^)]*\)/gi, '')
             .replace(/[.;,]+$/, '')
@@ -1455,12 +1460,11 @@ function parseDocxAppendixRows(content: ParsedDocxContent): ImportedProcurementR
         if (headerCell && headerCell.length >= 2 && !shouldRejectImportText(headerCell)) {
           const fallbackSpecs = parseSpecTable(specTable.rows);
           const fallbackOkpd2 = okpd2 || extractOkpdFromBlocks(blocks, i + 1, nextAppendixIndex);
-          const allLines = extractAllDocumentLines(content);
           const fallbackQty = findDocumentQty(
             blocks.slice(i + 1, nextAppendixIndex)
               .filter((b) => b.kind === 'paragraph')
               .map((b) => b.text || ''),
-          ) || findDocumentQty(allLines);
+          ) || (allowDocWideFallback ? findDocumentQty(allLines) : null);
           rows.push(makeImportedRow({
             rawType: headerCell,
             description: headerCell,

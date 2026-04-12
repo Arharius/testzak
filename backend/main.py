@@ -236,6 +236,107 @@ app.add_middleware(
 
 init_db()
 
+# ── Email service ──────────────────────────────────────────────
+try:
+    from email_service import send_email as _send_email, send_email_bg as _send_email_bg, plan_display_name as _plan_display_name  # type: ignore[import]
+    _EMAIL_SERVICE_OK = True
+except Exception as _email_import_err:
+    logger.warning(f"email_service import failed: {_email_import_err}")
+    _EMAIL_SERVICE_OK = False
+    def _send_email(*a, **kw): pass  # type: ignore[assignment]
+    def _send_email_bg(*a, **kw): pass  # type: ignore[assignment]
+    def _plan_display_name(p: str) -> str: return p.capitalize()  # type: ignore[assignment]
+
+
+def _email_bg(to: str, template: str, data: dict, user_id: str | None = None) -> None:
+    """Fire-and-forget email via daemon thread, using a fresh DB session."""
+    if not to or "@" not in to:
+        return
+    import threading
+    threading.Thread(
+        target=_send_email_bg,
+        args=(to, template, data),
+        kwargs={"db_factory": get_db, "user_id": user_id},
+        daemon=True,
+    ).start()
+
+
+# ── APScheduler — daily notifications at 10:00 UTC ──────────────────────────
+from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore[import]
+from apscheduler.triggers.cron import CronTrigger  # type: ignore[import]
+
+def _daily_email_notifications() -> None:
+    """Send trial_warning / trial_expired / subscription_warning emails."""
+    now = datetime.now(timezone.utc)
+    warn_trial_date = now.date() + timedelta(days=3)
+    warn_sub_date = now.date() + timedelta(days=5)
+    db = None
+    try:
+        db = next(get_db())
+        users = db.query(User).filter(User.email.isnot(None)).all()
+        for user in users:
+            email = (user.email or "").strip()
+            if not email or "@" not in email:
+                continue
+            plan = getattr(user, "plan", "trial") or "trial"
+
+            # trial_warning — 3 days before trial end
+            if plan == "trial" and user.trial_ends_at:
+                trial_end = user.trial_ends_at
+                if getattr(trial_end, "tzinfo", None) is None:
+                    trial_end = trial_end.replace(tzinfo=timezone.utc)
+                if trial_end.date() == warn_trial_date:
+                    _send_email_bg(
+                        email,
+                        "trial_warning",
+                        {
+                            "date": trial_end.strftime("%d.%m.%Y"),
+                            "used": str(user.tz_count or 0),
+                        },
+                        db_factory=None,
+                        user_id=user.id,
+                    )
+                # trial_expired — on expiry day
+                elif trial_end.date() <= now.date() and plan == "trial":
+                    _send_email_bg(
+                        email,
+                        "trial_expired",
+                        {},
+                        db_factory=None,
+                        user_id=user.id,
+                    )
+
+            # subscription_warning — 5 days before sub end
+            elif plan in ("start", "base", "team", "corp") and user.subscription_until:
+                sub_end = user.subscription_until
+                if getattr(sub_end, "tzinfo", None) is None:
+                    sub_end = sub_end.replace(tzinfo=timezone.utc)
+                if sub_end.date() == warn_sub_date:
+                    _send_email_bg(
+                        email,
+                        "subscription_warning",
+                        {
+                            "plan_name": _plan_display_name(plan),
+                            "date": sub_end.strftime("%d.%m.%Y"),
+                        },
+                        db_factory=None,
+                        user_id=user.id,
+                    )
+    except Exception as exc:
+        logger.error(f"[daily_notifications] Error: {exc}")
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
+_scheduler = BackgroundScheduler(timezone="UTC")
+_scheduler.add_job(_daily_email_notifications, CronTrigger(hour=10, minute=0))
+_scheduler.start()
+logger.info("APScheduler started — daily email notifications at 10:00 UTC")
+
 # ── Security headers middleware ────────────────────────────────
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -2075,6 +2176,16 @@ def admin_update_user_plan(
         target.subscription_until = now + timedelta(days=30 * req.months)
     db.commit()
     logger.info(f"Admin {admin.email} set plan={plan} months={req.months} for user {target.email}")
+    if plan not in ("trial",) and target.email and target.subscription_until:
+        _email_bg(
+            target.email,
+            "payment_success",
+            {
+                "plan_name": _plan_display_name(plan),
+                "expires_date": target.subscription_until.strftime("%d.%m.%Y"),
+            },
+            user_id=target.id,
+        )
     return {"ok": True, "user_id": user_id, "plan": plan, "subscription_until": target.subscription_until.isoformat() if target.subscription_until else None}
 
 
@@ -2468,6 +2579,15 @@ async def payment_webhook(request: Request, payload: dict, db: Session = Depends
                 user.subscription_until = datetime.now(timezone.utc) + timedelta(days=info["days"])
                 db.commit()
                 logger.info(f"User {email} upgraded to {info['role']} (plan={plan}, limit={info['tz_limit']}, payment={payment_id})")
+                _email_bg(
+                    email,
+                    "payment_success",
+                    {
+                        "plan_name": _plan_display_name(plan),
+                        "expires_date": user.subscription_until.strftime("%d.%m.%Y"),
+                    },
+                    user_id=user.id,
+                )
 
     return {"ok": True}
 

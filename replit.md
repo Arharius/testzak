@@ -135,6 +135,18 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **`QaAuditBlock.tsx`**: Sidecar component shown after `docxReady`, between publication readiness card and export buttons. Run check → see score ring + issue list → optionally run autofix → score updates in place.
 - Integrated via `buildTzTextForReview` function from `Workspace.tsx` → passed as `buildTzText` prop through `WorkspaceSidePanels`.
 
+## Email Notifications
+- Module: `backend/email_service.py`
+- Config env vars: `SMTP_HOST`, `SMTP_PORT` (587 default), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`
+- Optional: `APP_URL`, `PRICING_URL` for links in emails
+- Templates (inline strings): `welcome`, `trial_warning`, `trial_expired`, `payment_success`, `subscription_warning`
+- Port 465 → SMTP_SSL; port 587 → STARTTLS. Both supported automatically.
+- All sends are fire-and-forget via daemon threads (never blocks request)
+- Results logged to `email_log` table (user_id, template, sent_at, success, error)
+- **Hooks**: welcome → new user registration in `auth.py`; payment_success → YooKassa webhook + admin plan-change endpoint in `main.py`
+- **APScheduler** (daily 10:00 UTC): trial_warning (3 days before end), trial_expired (on expiry), subscription_warning (5 days before sub end)
+- If SMTP not configured: sends are silently skipped and logged with `success=False, error="SMTP not configured"`
+
 ## Development Notes
 - Backend API proxied via Vite dev server at `/api` → Railway backend
 - `VITE_BACKEND_URL` env var controls backend target (defaults to Railway)

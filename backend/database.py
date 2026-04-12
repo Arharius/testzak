@@ -93,6 +93,16 @@ class ImmutableAuditChain(Base):
     prev_hash = Column(String, nullable=False)
     hash = Column(String, nullable=False)
 
+class EmailLog(Base):
+    __tablename__ = "email_log"
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    user_id    = Column(String, nullable=True, index=True)
+    template   = Column(String, nullable=False)
+    sent_at    = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    success    = Column(Boolean, default=False)
+    error      = Column(String, nullable=True)
+
+
 class TZValidateLog(Base):
     __tablename__ = "tz_validate_log"
     id             = Column(Integer, primary_key=True, autoincrement=True)

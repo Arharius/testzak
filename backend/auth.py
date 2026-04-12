@@ -267,6 +267,7 @@ def get_or_create_user(email: str, db) -> User:
     email = email.lower().strip()
     user = db.query(User).filter_by(email=email).first()
     now = datetime.now(timezone.utc)
+    _is_new_user = False
     if not user:
         role = "admin" if is_admin_email(email) else "free"
         effective_limit = -1 if role == "admin" else TRIAL_TZ_COUNT
@@ -281,6 +282,7 @@ def get_or_create_user(email: str, db) -> User:
         )
         db.add(user)
         db.flush()
+        _is_new_user = True
     else:
         # Backfill trial_ends_at if missing
         if not user.trial_ends_at and user.role == "free":
@@ -295,6 +297,19 @@ def get_or_create_user(email: str, db) -> User:
         db.flush()
     user.last_login = now
     db.commit()
+    # Send welcome email for newly registered users (fire-and-forget)
+    if _is_new_user and user.plan != "admin":
+        try:
+            import threading
+            from email_service import send_email  # type: ignore[import]
+            threading.Thread(
+                target=send_email,
+                args=(email, "welcome", {"name": email.split("@")[0]}),
+                kwargs={"db": None, "user_id": user.id},
+                daemon=True,
+            ).start()
+        except Exception:
+            pass
     return user
 
 def create_jwt(email: str, role: str) -> str:

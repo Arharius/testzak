@@ -200,7 +200,7 @@ export function QaAuditBlock({ buildText, onTextFixed, autoRunKey }: QaAuditBloc
             fontWeight: 500,
           }}
         >
-          {loading ? '⏳ Проверяю...' : result == null ? 'Запустить проверку' : '↺ Перепроверить'}
+          {loading ? '⏳ Проверяю...' : 'Запустить проверку'}
         </button>
       </div>
 

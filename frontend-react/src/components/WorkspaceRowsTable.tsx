@@ -273,17 +273,27 @@ export function WorkspaceRowsTable({
                 <td>
                   <input
                     value={row.model}
-                    placeholder={lookupCatalog(row.type)?.placeholder ?? 'Модель / описание...'}
+                    placeholder={
+                      (row.importInfo?.sourceFormat === 'docx' && !row.model.trim())
+                        ? 'Укажите наименование'
+                        : (lookupCatalog(row.type)?.placeholder ?? 'Модель / описание...')
+                    }
                     onChange={(event) => onChangeRowModel(row, event)}
                     onBlur={() => window.setTimeout(onHideTypeSuggestions, 300)}
-                    style={row.meta?.name_needs_review === 'true' ? {
-                      borderColor: '#f59e0b',
-                      background: 'rgba(251,191,36,0.08)',
-                      boxShadow: '0 0 0 2px rgba(245,158,11,0.25)',
-                    } : undefined}
-                    title={row.meta?.name_needs_review === 'true'
-                      ? 'Наименование не удалось извлечь автоматически. Уточните наименование товара.'
-                      : undefined}
+                    style={
+                      (row.meta?.name_needs_review === 'true' || (row.importInfo?.sourceFormat === 'docx' && !row.model.trim()))
+                        ? {
+                            borderColor: '#f59e0b',
+                            background: 'rgba(251,191,36,0.08)',
+                            boxShadow: '0 0 0 2px rgba(245,158,11,0.25)',
+                          }
+                        : undefined
+                    }
+                    title={
+                      (row.meta?.name_needs_review === 'true' || (row.importInfo?.sourceFormat === 'docx' && !row.model.trim()))
+                        ? 'Наименование не удалось извлечь автоматически. Укажите наименование товара.'
+                        : undefined
+                    }
                   />
                 </td>
                 <td>
@@ -473,8 +483,30 @@ export function WorkspaceRowsTable({
           })}
         </tbody>
       </table>
-      <div className="workspace-inline-note">
-        Импорт списка поддерживает `CSV`, `TSV`, `TXT`, `XLSX`, `DOCX`. Для таблиц и служебных записок лучше всего работают колонки `Тип товара`, `Модель / описание`, `Тип лицензии`, `Срок действия`, `Количество`; в `DOCX` приложение также умеет забирать табличные позиции, приложения, нумерованные перечни лицензий и характеристики из таблиц/разделов, а рядом с каждой строкой показывает confidence импорта.
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: 6 }}>
+        <span
+          title="Импорт поддерживает CSV, TSV, TXT, XLSX, DOCX. Оптимальные колонки: «Тип товара», «Модель / описание», «Тип лицензии», «Срок действия», «Количество». Из DOCX извлекаются таблицы, приложения, нумерованные перечни и характеристики."
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 18,
+            height: 18,
+            borderRadius: '50%',
+            border: '1.5px solid var(--text-muted)',
+            color: 'var(--text-muted)',
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: 'help',
+            flexShrink: 0,
+            lineHeight: 1,
+            userSelect: 'none',
+          }}
+          aria-label="Форматы импорта"
+        >
+          i
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Форматы: CSV, TSV, TXT, XLSX, DOCX</span>
       </div>
     </div>
   );

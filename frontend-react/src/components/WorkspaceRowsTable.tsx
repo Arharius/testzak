@@ -95,6 +95,7 @@ type WorkspaceRowsTableProps = {
   onAddSpec: (rowId: number, afterIdx?: number) => void;
   onMoveSpec: (rowId: number, specIdx: number, direction: 'up' | 'down') => void;
   onFinishEditing: () => void;
+  onSearchOkpd2?: (rowId: number, model: string) => void;
 };
 
 export function WorkspaceRowsTable({
@@ -145,6 +146,7 @@ export function WorkspaceRowsTable({
   onAddSpec,
   onMoveSpec,
   onFinishEditing,
+  onSearchOkpd2,
 }: WorkspaceRowsTableProps) {
   return (
     <div className="rows-table-wrap">
@@ -236,6 +238,17 @@ export function WorkspaceRowsTable({
                   </select>
                   <div className="row-primary-meta">
                     <span>{getResolvedOkpd2Code(row) || 'ОКПД2 не определён'}</span>
+                    {!getResolvedOkpd2Code(row) && onSearchOkpd2 && row.model.trim() && (
+                      <button
+                        type="button"
+                        className="row-inline-action"
+                        style={{ fontSize: '0.7rem', padding: '1px 6px' }}
+                        title="Определить ОКПД2 автоматически по наименованию"
+                        onClick={() => onSearchOkpd2(row.id, row.model)}
+                      >
+                        🔍 Найти ОКПД2
+                      </button>
+                    )}
                     <span className="row-primary-pill">
                       ПП1875: {getLaw175MeasureLabel(row.meta?.law175_status || '', row.meta?.nac_regime || getUnifiedNacRegime(row.type))}
                     </span>
@@ -263,6 +276,14 @@ export function WorkspaceRowsTable({
                     placeholder={lookupCatalog(row.type)?.placeholder ?? 'Модель / описание...'}
                     onChange={(event) => onChangeRowModel(row, event)}
                     onBlur={() => window.setTimeout(onHideTypeSuggestions, 300)}
+                    style={row.meta?.name_needs_review === 'true' ? {
+                      borderColor: '#f59e0b',
+                      background: 'rgba(251,191,36,0.08)',
+                      boxShadow: '0 0 0 2px rgba(245,158,11,0.25)',
+                    } : undefined}
+                    title={row.meta?.name_needs_review === 'true'
+                      ? 'Наименование не удалось извлечь автоматически. Уточните наименование товара.'
+                      : undefined}
                   />
                 </td>
                 <td>

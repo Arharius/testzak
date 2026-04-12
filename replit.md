@@ -155,6 +155,25 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **APScheduler** (daily 10:00 UTC): trial_warning (3 days before end), trial_expired (on expiry), subscription_warning (5 days before sub end)
 - If SMTP not configured: sends are silently skipped and logged with `success=False, error="SMTP not configured"`
 
+## DOCX Product Name Extraction (Smart Import)
+- **Type flag**: `ImportedProcurementRow.nameNeedsReview?: boolean` — set when auto-extraction fails
+- **`cleanProductName(raw)`** in `row-import.ts`: strips служебные слова (закупка/поставка/приобретение/расходных/материалов/в интересах/для нужд), strips plural endings (-ов/-ев/-ей)
+- **`extractDocxProductName(paragraphs, blocks)`** — 4-priority search:
+  1. `Наименование <слово>: <значение>` regex across all paragraphs
+  2. `закупку/поставку/приобретение X` pattern with `cleanProductName()`
+  3. First non-header row of spec table (before the параметр/значение header)
+  4. Falls back to `{ name: 'Свой товар', needsReview: true }`
+- **`parseDocxFallbackRows()`** integration:
+  - Calls `extractDocxProductName` when objectName is not found by existing patterns
+  - When spec table has no merged product name row, also uses the 4-priority extractor
+  - Returns `{ ...specRow, nameNeedsReview: true }` when needsReview
+- **`Workspace.tsx`** import mapper: propagates `item.nameNeedsReview → meta.name_needs_review: 'true'`
+- **`handleRowModelChange`** in `Workspace.tsx`: clears `name_needs_review` from meta when user manually edits the model field
+- **`handleSearchOkpd2ForRow(rowId, query)`** in `Workspace.tsx`: calls `searchOkpd2(query, 3)`, updates row meta `okpd2_code`/`okpd2_name`, shows toast notification
+- **`WorkspaceRowsTable.tsx`** UI:
+  - Model input: yellow border + yellow bg (`#fef3c7`-like) + tooltip "Уточните наименование" when `meta.name_needs_review === 'true'`; clears after user edits
+  - ОКПД2 area: shows "🔍 Найти ОКПД2" inline button when ОКПД2 not set and model is non-empty; calls `onSearchOkpd2` prop (optional)
+
 ## Development Notes
 - Backend API proxied via Vite dev server at `/api` → Railway backend
 - `VITE_BACKEND_URL` env var controls backend target (defaults to Railway)

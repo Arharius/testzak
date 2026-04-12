@@ -25,6 +25,8 @@ export type ImportedProcurementRow = {
   meta?: Record<string, string>;
   specs?: SpecItem[];
   importInfo: ImportedRowImportInfo;
+  /** true если наименование не удалось извлечь и нужна ручная правка */
+  nameNeedsReview?: boolean;
 };
 
 type HeaderMap = {
@@ -1605,6 +1607,78 @@ function parseDocxEnumeratedRows(content: ParsedDocxContent): ImportedProcuremen
   return dedupeImportedRows(rows);
 }
 
+/** Слова, которые нужно вырезать из извлечённого наименования */
+const NAME_STRIP_RE = /\b(?:закупки?|поставки?|приобретения?|расходных|материалов|в\s+интересах\b.*|для\s+нужд\b.*)\b/giu;
+
+/**
+ * Очистка извлечённого наименования:
+ * — вырезает служебные слова (закупка, поставка, ...)
+ * — нормализует форму числа: окончания -ов/-ев/-ей → убрать (приводов → привод)
+ */
+function cleanProductName(raw: string): string {
+  let s = raw.trim();
+  // Убрать ведущий «на закупку/поставку/приобретение»
+  s = s.replace(/^(?:на\s+)?(?:закупку?\s+|поставку?\s+|приобретение\s+)/iu, '');
+  // Убрать хвосты «в интересах …» / «для нужд …»
+  s = s.replace(/\s+в\s+интересах\b.*/iu, '').replace(/\s+для\s+нужд\b.*/iu, '');
+  // Убрать оставшиеся стоп-слова
+  s = s.replace(NAME_STRIP_RE, '').replace(/\s{2,}/g, ' ').trim();
+  // Нормализация множественного числа: -ов/-ев/-ей на конце корня ≥4 букв
+  s = s.replace(/\b([а-яёА-ЯЁ]{4,})(?:ов|ев|ей)\b/giu, '$1');
+  return s.replace(/[,;.]+$/, '').trim();
+}
+
+/**
+ * Попытка извлечь наименование товара/услуги из параграфов документа
+ * по 4 приоритетам (см. требования пользователя).
+ * Возвращает { name, needsReview }.
+ */
+function extractDocxProductName(paragraphs: string[], blocks: DocxBlock[]): { name: string; needsReview: boolean } {
+  // Приоритет 1: «Наименование <слово>[^:]*: <значение>»
+  // Пример: «Наименование услуг: закупка DVD-RW приводов»
+  const naimeRe = /Наименование\s+\S[^:]*:\s*(.+)/iu;
+  for (const line of paragraphs) {
+    const m = normalizeCell(line).match(naimeRe);
+    if (!m) continue;
+    const candidate = cleanProductName(m[1]);
+    if (candidate.length >= 3 && !shouldRejectImportText(candidate)) {
+      return { name: candidate, needsReview: false };
+    }
+  }
+
+  // Приоритет 2: заголовок «на закупку/поставку/приобретение X»
+  const procRe = /(?:закупк[уи]|поставк[уи]|приобретени[ея])\s+(.+?)(?:\s+в\s+интересах|\s+для\b|\n|$)/iu;
+  for (const line of paragraphs) {
+    const m = normalizeCell(line).match(procRe);
+    if (!m) continue;
+    const candidate = cleanProductName(m[1]);
+    if (candidate.length >= 3 && !shouldRejectImportText(candidate)) {
+      return { name: candidate, needsReview: false };
+    }
+  }
+
+  // Приоритет 3: первая строка spec-таблицы, не содержащая «параметр»/«значение»
+  for (const block of blocks) {
+    if (block.kind !== 'table' || !block.rows || !isSpecTable(block.rows)) continue;
+    const headerIdx = findSpecHeaderIndex(block.rows);
+    for (let i = 0; i < headerIdx; i++) {
+      const row = block.rows[i];
+      const candidate = normalizeCell(row?.[0] || '');
+      if (
+        candidate.length >= 3 &&
+        !/параметр|значение|характеристика|наименование/i.test(candidate) &&
+        !shouldRejectImportText(candidate)
+      ) {
+        return { name: candidate, needsReview: false };
+      }
+    }
+    break;
+  }
+
+  // Приоритет 4: не найдено — вернуть флаг «нужна ручная правка»
+  return { name: 'Свой товар', needsReview: true };
+}
+
 function findParagraphValue(paragraphs: string[], labelRe: RegExp): string {
   for (let i = 0; i < paragraphs.length; i += 1) {
     const text = normalizeCell(paragraphs[i]);
@@ -1757,7 +1831,14 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
     .replace(/\s*\(далее[^)]*\)/gi, '')
     .replace(/[.;,]+$/, '')
     .trim();
-  const row = buildImportedRowFromText(objectName, 'fallback', {
+
+  // Расширенное извлечение наименования по 4-приоритетному алгоритму
+  // (вызывается если стандартный objectName не найден)
+  const deepExtracted = !objectName ? extractDocxProductName(paragraphs, blocks) : null;
+
+  const effectiveObjectName = objectName || (deepExtracted && !deepExtracted.needsReview ? deepExtracted.name : '');
+
+  const row = buildImportedRowFromText(effectiveObjectName, 'fallback', {
     allowWithoutQty: true,
     meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
     specs: firstSpecTable.length > 0 ? firstSpecTable : undefined,
@@ -1773,10 +1854,19 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
   // Пробуем извлечь название товара из объединённой строки внутри таблицы.
   const specTableResult = extractProductNameFromSpecTable(blocks);
   if (specTableResult && (specTableResult.name || specTableResult.specs.length > 0)) {
-    const productName = specTableResult.name || 'Товар';
     const productSpecs = specTableResult.specs;
     const qty = findDocumentQty(allLines) || 1;
-    return dedupeImportedRows([makeImportedRow({
+
+    // Если merged-строка не дала имя — используем 4-приоритетное извлечение
+    let productName = specTableResult.name;
+    let nameNeedsReview = false;
+    if (!productName) {
+      const ex = deepExtracted ?? extractDocxProductName(paragraphs, blocks);
+      productName = ex.name;
+      nameNeedsReview = ex.needsReview;
+    }
+
+    const specRow = makeImportedRow({
       rawType: productName,
       description: productName,
       licenseType: '',
@@ -1788,8 +1878,11 @@ function parseDocxFallbackRows(content: ParsedDocxContent): ImportedProcurementR
       sourceText: productName,
       meta: okpd2 ? { okpd2_code: okpd2 } : undefined,
       specs: productSpecs.length > 0 ? productSpecs : undefined,
-      notes: ['Позиция и характеристики извлечены из таблицы спецификаций.'],
-    })]);
+      notes: nameNeedsReview
+        ? ['Характеристики извлечены из таблицы. Уточните наименование товара.']
+        : ['Позиция и характеристики извлечены из таблицы спецификаций.'],
+    });
+    return dedupeImportedRows([{ ...specRow, nameNeedsReview }]);
   }
 
   const plainLineRows: ImportedProcurementRow[] = [];

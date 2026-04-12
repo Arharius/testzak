@@ -7548,6 +7548,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
           meta: normalizeResolvedMeta(type, {
             ...(item.meta || {}),
             classification_source: classificationSource,
+            ...(item.nameNeedsReview ? { name_needs_review: 'true' } : {}),
           }),
           importInfo: item.importInfo,
         });
@@ -7733,16 +7734,40 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
       setTimeout(() => setAutoDetectedRow(null), 2500);
     }
     setRows((prev) =>
-      prev.map((item) =>
-        item.id === row.id
-          ? applyAutoCommercialTerms({ ...item, model: value, type: detected })
-          : item,
-      ),
+      prev.map((item) => {
+        if (item.id !== row.id) return item;
+        const updatedMeta = item.meta?.name_needs_review
+          ? { ...item.meta, name_needs_review: undefined }
+          : item.meta;
+        return applyAutoCommercialTerms({ ...item, model: value, type: detected, meta: updatedMeta });
+      }),
     );
   }, [apiKey, model, provider, useBackend, useBackendAi]);
   const clearTypeSuggestions = useCallback(() => {
     setTypeSuggestions(null);
   }, []);
+  const handleSearchOkpd2ForRow = useCallback(async (rowId: number, query: string) => {
+    if (!useBackend || !query.trim()) return;
+    try {
+      const results = await searchOkpd2(query.trim().slice(0, 120), 3);
+      if (results.length > 0) {
+        const best = results[0];
+        setRows((prev) =>
+          prev.map((row) =>
+            row.id === rowId
+              ? { ...row, meta: { ...row.meta, okpd2_code: best.code, okpd2_name: best.name } }
+              : row,
+          ),
+        );
+        showToast(`✅ ОКПД2 определён: ${best.code} — ${best.name}`, true);
+      } else {
+        showToast('❌ ОКПД2 не найден для указанного наименования', false);
+      }
+    } catch {
+      showToast('❌ Ошибка при поиске ОКПД2', false);
+    }
+  }, [useBackend]);
+
   const handleRowTypeChange = useCallback((rowId: number, nextType: string) => {
     if (!nextType) return;
     setRows((prev) => prev.map((row) => (
@@ -11878,6 +11903,7 @@ ${hint || '- Используй детальные, проверяемые эк�
         onAddSpec={addSpec}
         onMoveSpec={moveSpec}
         onFinishEditing={finishEditing}
+        onSearchOkpd2={(rowId, query) => { void handleSearchOkpd2ForRow(rowId, query); }}
       />
 
       {docxReady && (

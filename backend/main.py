@@ -19,7 +19,7 @@ import hmac
 import base64
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Any
 from urllib.request import Request as URLRequest, urlopen
 from urllib.error import HTTPError, URLError
@@ -75,6 +75,9 @@ try:
         JWT_SECRET,
         SMTP_USER,
         SMTP_PASS,
+        check_access,
+        _get_effective_plan,
+        PLAN_TZ_LIMITS,
     )
 except ImportError:
     from database import (
@@ -110,6 +113,9 @@ except ImportError:
         JWT_SECRET,
         SMTP_USER,
         SMTP_PASS,
+        check_access,
+        _get_effective_plan,
+        PLAN_TZ_LIMITS,
     )
 
 # ── Search module ──────────────────────────────────────────────
@@ -404,8 +410,15 @@ def require_active(user: User, db=None) -> None:
         raise HTTPException(status_code=402, detail=payment_required_message(user))
     if user.tz_limit <= 0:
         raise HTTPException(status_code=402, detail=payment_required_message(user))
-    # For free trial users — lifetime counter, no monthly reset
+    # For free trial users — check time expiry and count
     if user.role == "free":
+        now = datetime.now(timezone.utc)
+        if user.trial_ends_at:
+            te = user.trial_ends_at
+            if getattr(te, "tzinfo", None) is None:
+                te = te.replace(tzinfo=timezone.utc)
+            if now > te:
+                raise HTTPException(status_code=402, detail="Триальный период завершён (14 дней). Выберите тариф для продолжения работы.")
         if user.tz_count >= user.tz_limit:
             raise HTTPException(
                 status_code=402,
@@ -1942,6 +1955,128 @@ def get_me(user: User = Depends(get_current_user)):
     resp = _user_response(user)
     resp["subscription_until"] = user.subscription_until.isoformat() if user.subscription_until else None
     return resp
+
+
+_PRICING_PLANS = [
+    {
+        "id": "trial", "name": "Пробный", "price": 0, "period": None,
+        "tz_limit": 3, "tz_period": "всего", "days": 14,
+        "features": ["Все функции разблокированы", "3 ТЗ бесплатно", "14 дней"],
+    },
+    {
+        "id": "start", "name": "Старт", "price": 1900, "period": "мес",
+        "tz_limit": 15, "tz_period": "мес",
+        "features": ["15 ТЗ/мес", "Загрузка файлов (DOCX, XLSX)", "Исправление загруженных ТЗ"],
+    },
+    {
+        "id": "base", "name": "Базовый", "price": 4900, "period": "мес",
+        "tz_limit": 50, "tz_period": "мес", "highlight": True,
+        "features": ["50 ТЗ/мес", "Автопоиск характеристик", "GigaChat + DeepSeek + OpenRouter", "Аудит ТЗ по 9 пунктам"],
+    },
+    {
+        "id": "team", "name": "Команда", "price": 12900, "period": "мес",
+        "tz_limit": None, "tz_period": None,
+        "features": ["Безлимит ТЗ", "До 5 пользователей", "Все функции"],
+    },
+    {
+        "id": "corp", "name": "Корпоратив", "price": 35000, "period": "мес",
+        "tz_limit": None, "tz_period": None,
+        "features": ["Безлимит для всей организации", "API доступ", "Выделенная поддержка"],
+    },
+]
+
+
+@app.get("/api/pricing")
+def get_pricing():
+    return {"plans": _PRICING_PLANS, "contact": "@andrei_sh_tech"}
+
+
+@app.get("/api/user/status")
+def get_user_status(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    plan = _get_effective_plan(user)
+    access = check_access(user, db)
+    remaining = access.get("remaining") or {}
+
+    trial_exp_str = None
+    if user.trial_ends_at:
+        te = user.trial_ends_at
+        if getattr(te, "tzinfo", None) is None:
+            te = te.replace(tzinfo=timezone.utc)
+        trial_exp_str = te.date().isoformat()
+
+    limits = {"start": 15, "base": 50}
+    tz_limit_month = limits.get(plan)
+
+    features = {
+        "upload_docx": True,
+        "fix_docx": True,
+        "auto_search": True,
+        "gigachat": True,
+        "api_access": plan == "corp",
+    }
+
+    sub_exp = None
+    if user.subscription_until:
+        sub_exp = user.subscription_until.isoformat()
+
+    return {
+        "plan": plan,
+        "trial_tz_used": user.tz_count if plan == "trial" else 0,
+        "trial_tz_total": TRIAL_TZ_COUNT,
+        "trial_days_left": remaining.get("days_left"),
+        "trial_tz_left": remaining.get("tz_left"),
+        "trial_expires_at": trial_exp_str,
+        "tz_used_this_month": user.tz_count if plan not in ("trial", "admin") else 0,
+        "tz_limit_month": tz_limit_month,
+        "subscription_expires_at": sub_exp,
+        "access": access,
+        "features": features,
+    }
+
+
+class UpdatePlanRequest(BaseModel):
+    plan: str
+    months: int = 1
+
+
+@app.patch("/api/admin/users/{user_id}/plan")
+def admin_update_user_plan(
+    user_id: str,
+    req: UpdatePlanRequest,
+    admin: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if admin.role != "admin":
+        raise HTTPException(status_code=403, detail="Требуются права администратора")
+    target = db.query(User).filter_by(id=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    plan = req.plan.lower().strip()
+    if plan not in PLAN_TZ_LIMITS:
+        raise HTTPException(status_code=400, detail=f"Неизвестный план: {plan}")
+
+    target.plan = plan
+    now = datetime.now(timezone.utc)
+    if plan == "trial":
+        target.role = "free"
+        target.tz_limit = TRIAL_TZ_COUNT
+        target.subscription_until = None
+    elif plan in ("start", "base"):
+        target.role = "pro"
+        target.tz_limit = PLAN_TZ_LIMITS[plan]
+        target.tz_count = 0
+        target.tz_month_start = now
+        target.subscription_until = now + timedelta(days=30 * req.months)
+    elif plan in ("team", "corp"):
+        target.role = "pro"
+        target.tz_limit = -1
+        target.tz_count = 0
+        target.subscription_until = now + timedelta(days=30 * req.months)
+    db.commit()
+    logger.info(f"Admin {admin.email} set plan={plan} months={req.months} for user {target.email}")
+    return {"ok": True, "user_id": user_id, "plan": plan, "subscription_until": target.subscription_until.isoformat() if target.subscription_until else None}
+
 
 # ── Универсальность описания (brand-avoidance) ────────────────
 _BRAND_AVOIDANCE_INSTRUCTION = (

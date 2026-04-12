@@ -8,6 +8,8 @@ import { RuntimeStatusPanel } from './components/RuntimeStatusPanel';
 import { Workspace } from './components/Workspace';
 import { PricingModal } from './components/PricingModal';
 import { LLMProviderModal } from './components/LLMProviderModal';
+import { TrialBanner } from './components/TrialBanner';
+import { PricingPage } from './components/PricingPage';
 import {
   flushAutomationQueue,
   flushPlatformQueue,
@@ -86,6 +88,7 @@ export function App() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPricing, setShowPricing] = useState(false);
+  const [currentPage, setCurrentPage] = useState<'main' | 'pricing'>('main');
   const [showLLMModal, setShowLLMModal] = useState(false);
   const [preferredProvider, setPreferredProvider] = useState<string>('deepseek');
   const [preferredModel, setPreferredModel] = useState<string>('deepseek-chat');
@@ -436,6 +439,19 @@ export function App() {
             ? 'Есть ограничения'
             : 'Нужна настройка';
 
+  if (currentPage === 'pricing') {
+    return (
+      <main className="layout sovereign-layout">
+        <div className="bg-layer" aria-hidden="true">
+          <span className="noise"></span>
+          <span className="orb orb-1"></span>
+          <span className="orb orb-2"></span>
+        </div>
+        <PricingPage onBack={() => setCurrentPage('main')} />
+      </main>
+    );
+  }
+
   return (
     <main className="layout sovereign-layout">
       {/* Auth message toast */}
@@ -445,28 +461,12 @@ export function App() {
         </div>
       )}
 
-      {/* Trial banner — hide for admin */}
-      {backendUser && backendUser.role !== 'admin' && backendUser.trial_active && (
-        <div className="trial-banner">
-          <span className="trial-banner-text">
-            Пробный доступ: осталось <strong>{backendUser.trial_tz_left ?? backendUser.trial_days_left} из {backendUser.trial_tz_total ?? 3}</strong> бесплатных ТЗ — все функции активны
-          </span>
-          <button className="trial-banner-btn" onClick={() => setShowPricing(true)}>
-            Выбрать план
-          </button>
-        </div>
-      )}
-
-      {/* Trial expired banner */}
-      {backendUser && backendUser.payment_required && backendUser.role === 'free' && (
-        <div className="trial-banner trial-expired">
-          <span className="trial-banner-text">
-            Все бесплатные ТЗ использованы. Выберите план для продолжения работы.
-          </span>
-          <button className="trial-banner-btn" onClick={() => setShowPricing(true)}>
-            Выбрать тариф — от 1 900 ₽/мес
-          </button>
-        </div>
+      {/* Trial banner — new v2 component */}
+      {backendUser && (
+        <TrialBanner
+          onGoToPricing={() => setCurrentPage('pricing')}
+          refreshTick={refreshTick}
+        />
       )}
 
       {/* Auth bar — top right */}
@@ -481,13 +481,13 @@ export function App() {
               <span className={`auth-badge ${backendUser.role === 'admin' ? 'admin' : backendUser.role === 'pro' ? 'pro' : backendUser.trial_active ? 'trial' : 'free'}`}>
                 {backendTierLabel}
               </span>
-              {backendUser.role !== 'admin' && backendUser.role !== 'pro' && (
+              {backendUser.role !== 'admin' && (
                 <button
-                  onClick={() => setShowPricing(true)}
+                  onClick={() => setCurrentPage('pricing')}
                   className="auth-primary-btn"
                   style={{ padding: '4px 12px', fontSize: '12px' }}
                 >
-                  Pro Business
+                  Тарифы
                 </button>
               )}
               <button

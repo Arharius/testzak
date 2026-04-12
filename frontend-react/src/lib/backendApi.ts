@@ -185,6 +185,13 @@ async function apiPut<T>(path: string, body: object, auth = true, timeoutMs = SH
   return _handleResponse<T>(resp);
 }
 
+async function apiPatch<T>(path: string, body: object, auth = true, timeoutMs = SHORT_TIMEOUT_MS): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  _addAuth(headers, auth);
+  const resp = await fetchWithTimeout(buildApiUrl(path), { method: 'PATCH', headers, body: JSON.stringify(body) }, timeoutMs);
+  return _handleResponse<T>(resp);
+}
+
 async function apiDelete<T>(path: string, auth = true, timeoutMs = SHORT_TIMEOUT_MS): Promise<T> {
   const headers: Record<string, string> = {};
   _addAuth(headers, auth);
@@ -551,6 +558,58 @@ export async function setLlmProviderSetting(provider: string, model?: string): P
   effective_model: string;
 }> {
   return apiPost('/api/settings/llm-provider', { provider, model: model || null }, true, SHORT_TIMEOUT_MS);
+}
+
+// ── User status & pricing ─────────────────────────────────────────────────────
+
+export interface UserStatus {
+  plan: string;
+  trial_tz_used: number;
+  trial_tz_total: number;
+  trial_days_left: number | null;
+  trial_tz_left: number | null;
+  trial_expires_at: string | null;
+  tz_used_this_month: number;
+  tz_limit_month: number | null;
+  subscription_expires_at: string | null;
+  access: {
+    allowed: boolean;
+    plan: string;
+    reason?: string;
+    message?: string;
+    remaining?: { tz_left: number; days_left: number } | null;
+  };
+  features: {
+    upload_docx: boolean;
+    fix_docx: boolean;
+    auto_search: boolean;
+    gigachat: boolean;
+    api_access: boolean;
+  };
+}
+
+export interface PricingPlan {
+  id: string;
+  name: string;
+  price: number;
+  period: string | null;
+  tz_limit: number | null;
+  tz_period: string | null;
+  days?: number;
+  highlight?: boolean;
+  features: string[];
+}
+
+export async function getUserStatus(): Promise<UserStatus> {
+  return apiGet('/api/user/status', true);
+}
+
+export async function getPricingPlans(): Promise<{ plans: PricingPlan[]; contact: string }> {
+  return apiGet('/api/pricing', false);
+}
+
+export async function adminUpdateUserPlan(userId: string, plan: string, months: number = 1): Promise<{ ok: boolean; plan: string }> {
+  return apiPatch(`/api/admin/users/${userId}/plan`, { plan, months }, true);
 }
 
 // ── Payment ──────────────────────────────────────────────────────────────────

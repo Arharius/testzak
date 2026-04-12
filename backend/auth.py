@@ -40,6 +40,102 @@ POST_TRIAL_TZ_LIMIT = max(0, _safe_int(os.getenv("POST_TRIAL_TZ_LIMIT", str(FREE
 # Count-based trial: new users get this many free ТЗ before payment required
 TRIAL_TZ_COUNT = max(1, _safe_int(os.getenv("TRIAL_TZ_COUNT", "3"), 3))
 
+PLAN_TZ_LIMITS: dict[str, int | None] = {
+    "trial": TRIAL_TZ_COUNT,
+    "start": 15,
+    "base": 50,
+    "team": None,
+    "corp": None,
+    "admin": None,
+}
+
+def _get_effective_plan(user: "User") -> str:
+    """Derive the effective plan string from user fields."""
+    stored = getattr(user, "plan", None)
+    if stored and stored in PLAN_TZ_LIMITS:
+        return stored
+    if user.role == "admin":
+        return "admin"
+    if user.role == "free":
+        return "trial"
+    lim = getattr(user, "tz_limit", -1)
+    if lim == 15:
+        return "start"
+    if lim == 50:
+        return "base"
+    if lim == -1:
+        return "team"
+    return "trial"
+
+
+def check_access(user: "User", db=None) -> dict:
+    """Full access check — returns {"allowed": bool, ...}.
+    Call after require_active if you need structured error details."""
+    now = datetime.now(timezone.utc)
+    plan = _get_effective_plan(user)
+
+    if plan == "admin":
+        return {"allowed": True, "plan": plan, "remaining": None}
+
+    if plan == "trial":
+        trial_exp = None
+        if user.trial_ends_at:
+            trial_exp = user.trial_ends_at
+            if getattr(trial_exp, "tzinfo", None) is None:
+                trial_exp = trial_exp.replace(tzinfo=timezone.utc)
+            if now > trial_exp:
+                return {
+                    "allowed": False,
+                    "plan": plan,
+                    "reason": "trial_expired",
+                    "message": "Триальный период завершён (14 дней)",
+                }
+        tz_count = user.tz_count or 0
+        if tz_count >= TRIAL_TZ_COUNT:
+            return {
+                "allowed": False,
+                "plan": plan,
+                "reason": "trial_limit",
+                "message": f"Использовано {TRIAL_TZ_COUNT}/{TRIAL_TZ_COUNT} бесплатных ТЗ",
+            }
+        tz_left = TRIAL_TZ_COUNT - tz_count
+        days_left = max(0, (trial_exp - now).days) if trial_exp else TRIAL_DAYS
+        return {"allowed": True, "plan": plan, "remaining": {"tz_left": tz_left, "days_left": days_left}}
+
+    sub_exp = user.subscription_until
+    if not sub_exp:
+        return {"allowed": False, "plan": plan, "reason": "subscription_expired", "message": "Подписка истекла"}
+    if getattr(sub_exp, "tzinfo", None) is None:
+        sub_exp = sub_exp.replace(tzinfo=timezone.utc)
+    if now > sub_exp:
+        return {"allowed": False, "plan": plan, "reason": "subscription_expired", "message": "Подписка истекла"}
+
+    if plan in ("start", "base"):
+        limit = PLAN_TZ_LIMITS[plan]
+        month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+        tz_ms = user.tz_month_start
+        if tz_ms:
+            if getattr(tz_ms, "tzinfo", None) is None:
+                tz_ms = tz_ms.replace(tzinfo=timezone.utc)
+            if tz_ms < month_start:
+                user.tz_count = 0
+                user.tz_month_start = month_start
+                if db:
+                    db.commit()
+        else:
+            user.tz_month_start = month_start
+            if db:
+                db.commit()
+        if (user.tz_count or 0) >= limit:
+            return {
+                "allowed": False,
+                "plan": plan,
+                "reason": "monthly_limit",
+                "message": f"Лимит {limit} ТЗ/мес исчерпан",
+            }
+
+    return {"allowed": True, "plan": plan, "remaining": None}
+
 def _csv_emails(value: str) -> list[str]:
     return [s.strip().lower() for s in str(value or "").split(",") if s.strip()]
 
@@ -170,21 +266,34 @@ def verify_magic_token(token: str, db) -> str | None:
 def get_or_create_user(email: str, db) -> User:
     email = email.lower().strip()
     user = db.query(User).filter_by(email=email).first()
+    now = datetime.now(timezone.utc)
     if not user:
         role = "admin" if is_admin_email(email) else "free"
         effective_limit = -1 if role == "admin" else TRIAL_TZ_COUNT
+        trial_exp = now + timedelta(days=TRIAL_DAYS)
         user = User(
             id=str(uuid.uuid4()),
             email=email,
             role=role,
+            plan="admin" if role == "admin" else "trial",
             tz_limit=effective_limit,
-            trial_ends_at=None,
+            trial_ends_at=trial_exp,
         )
         db.add(user)
         db.flush()
+    else:
+        # Backfill trial_ends_at if missing
+        if not user.trial_ends_at and user.role == "free":
+            ref = user.created_at or now
+            if getattr(ref, "tzinfo", None) is None:
+                ref = ref.replace(tzinfo=timezone.utc)
+            user.trial_ends_at = ref + timedelta(days=TRIAL_DAYS)
+        # Backfill plan if missing
+        if not getattr(user, "plan", None):
+            user.plan = _get_effective_plan(user)
     if sync_user_entitlements(user):
         db.flush()
-    user.last_login = datetime.now(timezone.utc)
+    user.last_login = now
     db.commit()
     return user
 

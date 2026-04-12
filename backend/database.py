@@ -20,10 +20,11 @@ class User(Base):
     username = Column(String, unique=True, nullable=True, index=True)  # for login/password auth
     password_hash = Column(String, nullable=True)  # PBKDF2-SHA256 hash
     role = Column(String, default="free")  # free (trial / payment required) | pro | admin
+    plan = Column(String, default="trial")  # trial | start | base | team | corp
     tz_count = Column(Integer, default=0)
     tz_limit = Column(Integer, default=0)  # post-trial default = 0, pro/admin = -1 (unlimited)
     tz_month_start = Column(DateTime, nullable=True)  # track monthly reset
-    trial_ends_at = Column(DateTime, nullable=True)  # PRO trial end
+    trial_ends_at = Column(DateTime, nullable=True)  # trial expiry date (created_at + 14 days)
     subscription_id = Column(String, nullable=True)
     subscription_until = Column(DateTime, nullable=True)
     llm_provider = Column(String, nullable=True)   # preferred AI provider: gigachat | deepseek | openrouter
@@ -145,6 +146,8 @@ def _auto_migrate(target_engine=None, target_database_url=None):
                 conn.execute(text("ALTER TABLE users ADD COLUMN llm_provider VARCHAR"))
             if "llm_model" not in existing:
                 conn.execute(text("ALTER TABLE users ADD COLUMN llm_model VARCHAR"))
+            if "plan" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN plan VARCHAR DEFAULT 'trial'"))
     if "tz_documents" in insp.get_table_names():
         existing = {c["name"] for c in insp.get_columns("tz_documents")}
         with current_engine.begin() as conn:

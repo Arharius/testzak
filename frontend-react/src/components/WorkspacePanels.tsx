@@ -1,5 +1,6 @@
 import type { TZDocumentSummary } from '../lib/backendApi';
 import type { PublicationStatusTone, ReadinessGateSummaryLike } from './workspace-panels.types';
+import { QaAuditBlock } from './QaAuditBlock';
 
 type WorkspaceSidePanelsProps = {
   publicationStatusTone: PublicationStatusTone;
@@ -15,6 +16,7 @@ type WorkspaceSidePanelsProps = {
   docxReady: boolean;
   exportReadinessTitle: string;
   exportsBlockedByReadiness: boolean;
+  buildTzText: () => string;
   onExportPackage: () => void;
   onExportDocx: () => void;
   onExportPdf: () => void;
@@ -39,6 +41,7 @@ export function WorkspaceSidePanels({
   docxReady,
   exportReadinessTitle,
   exportsBlockedByReadiness,
+  buildTzText,
   onExportPackage,
   onExportDocx,
   onExportPdf,
@@ -92,7 +95,10 @@ export function WorkspaceSidePanels({
           </div>
           <span className="workspace-side-meta">{readyRowsCount > 0 ? `${readyRowsCount} готово` : 'нет готовых позиций'}</span>
         </div>
-        <div className="workspace-action-grid workspace-action-grid--compact">
+        {docxReady && (
+          <QaAuditBlock buildText={buildTzText} />
+        )}
+        <div className="workspace-action-grid workspace-action-grid--compact" style={{ marginTop: 12 }}>
           <button type="button" onClick={onExportPackage} title={exportReadinessTitle}>📦 Экспорт JSON</button>
           <button
             type="button"

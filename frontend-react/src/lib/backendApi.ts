@@ -979,3 +979,33 @@ export async function reviewTz(
 ): Promise<TZReviewResponse> {
   return apiPost<TZReviewResponse>('/api/review-tz', { tzText, lawMode }, false, 120000);
 }
+
+// ── QA Check & Autofix ────────────────────────────────────────────────────
+
+export type QAIssue = {
+  level: 'error' | 'warning';
+  code: string;
+  message: string;
+  suggestion: string;
+};
+
+export type QACheckResponse = {
+  score: number;
+  passed: boolean;
+  issues: QAIssue[];
+};
+
+export type QAAutofixResponse = {
+  fixed_text: string;
+  auto_fixed: string[];
+  manual_required: string[];
+  qa: QACheckResponse;
+};
+
+export async function qaCheck(text: string): Promise<QACheckResponse> {
+  return apiPost<QACheckResponse>('/api/qa-check', { text }, false, 30000);
+}
+
+export async function qaAutofix(text: string): Promise<QAAutofixResponse> {
+  return apiPost<QAAutofixResponse>('/api/qa-autofix', { text }, false, 30000);
+}

@@ -3568,6 +3568,363 @@ FAIL: [список пунктов]
     )
 
 
+# ── QA Check & Autofix ─────────────────────────────────────────────────────
+
+import unicodedata as _unicodedata
+
+BRAND_NAMES = [
+    "Intel", "AMD", "Nvidia", "Realtek", "Samsung", "Seagate", "Western Digital",
+    "WD", "Kingston", "Corsair", "Dell", "HP", "Lenovo", "Cisco", "Mikrotik",
+    "Asus", "Gigabyte", "MSI", "Logitech", "Razer", "Thermaltake", "Crucial",
+    "SanDisk", "Toshiba", "Hitachi", "Noctua", "be quiet", "Cooler Master",
+    "Supermicro", "Huawei", "TP-Link", "D-Link", "Netgear", "Ubiquiti",
+]
+
+SUBJECTIVE_COLOR_MAP = {
+    "тёмно-серый": "серый", "тёмно-серого": "серого", "тёмно-серые": "серые",
+    "светло-серый": "серый", "светло-серого": "серого", "светло-серые": "серые",
+    "тёмно-синий": "синий", "тёмно-синего": "синего", "тёмно-синие": "синие",
+    "светло-синий": "синий", "светло-синего": "синего", "светло-синие": "синие",
+    "тёмно-зелёный": "зелёный", "тёмно-зелёного": "зелёного",
+    "светло-зелёный": "зелёный", "светло-зелёного": "зелёного",
+    "тёмно-красный": "красный", "тёмно-красного": "красного",
+    "тёмно-бежевый": "бежевый", "тёмно-бежевого": "бежевого",
+    "светло-бежевый": "бежевый", "светло-бежевого": "бежевого",
+    "тёмно-коричневый": "коричневый", "тёмно-коричневого": "коричневого",
+    "молочно-белый": "белый", "молочно-белого": "белого",
+    "графитово-серый": "серый", "графитово-серого": "серого",
+    "антрацитовый": "серый", "антрацитового": "серого", "антрацитовые": "серые",
+    "шампань": "бежевый",
+}
+
+META_COMMENT_PATTERNS = [
+    r"требует\s+уточнения", r"необходимо\s+проверить", r"уточнить\s+у\s+заказчика",
+    r"требуется\s+проверка", r"\bTBD\b", r"\[заполнить\]", r"\[указать\]",
+    r"\[вставить\]", r"\[наименование\]", r"будет\s+определено\s+позже",
+]
+
+UNIT_RE = _re.compile(
+    r'(?<![не менее|не более|свыше|минимум|максимум|от|до|≥|≤])'
+    r'(?:^|[\s,;(])'
+    r'(\d+[\.,]?\d*)\s*'
+    r'(ГБ|МБ|ТБ|МГц|ГГц|Вт|мм|см|м(?!\w)|кг|г(?!\w)|дюйм)',
+    _re.IGNORECASE | _re.UNICODE,
+)
+
+MODIFIER_BEFORE_RE = _re.compile(
+    r'(не\s+менее|не\s+более|свыше|минимум|максимум|от|до|≥|≤|более|менее|min|max)\s*'
+    r'(\d+[\.,]?\d*)\s*'
+    r'(ГБ|МБ|ТБ|МГц|ГГц|Вт|мм|см|м(?!\w)|кг|г(?!\w)|дюйм)',
+    _re.IGNORECASE | _re.UNICODE,
+)
+
+RESOLUTION_RE = _re.compile(r'\d{3,4}\s*[xX×]\s*\d{3,4}')
+
+EMOJI_RE = _re.compile(
+    u"["
+    u"\U0001F300-\U0001FAD6"
+    u"\U00002600-\U000027BF"
+    u"\U0000FE00-\U0000FE0F"
+    u"\U00002702-\U000027B0"
+    u"\U0001F900-\U0001F9FF"
+    u"\U0001FA00-\U0001FA6F"
+    u"]+",
+    _re.UNICODE,
+)
+
+
+class QAIssue(BaseModel):
+    level: str  # "error" | "warning"
+    code: str
+    message: str
+    suggestion: str
+
+
+class QACheckRequest(BaseModel):
+    text: str
+
+
+class QACheckResponse(BaseModel):
+    score: int
+    passed: bool
+    issues: list[QAIssue]
+
+
+class QAAutofixRequest(BaseModel):
+    text: str
+
+
+class QAAutofixResponse(BaseModel):
+    fixed_text: str
+    auto_fixed: list[str]
+    manual_required: list[str]
+    qa: QACheckResponse
+
+
+def _qa_check_text(text: str) -> QACheckResponse:
+    issues: list[QAIssue] = []
+    lines = text.split("\n")
+
+    # 1. brand_name — бренды без «или эквивалент»
+    found_brands: list[str] = []
+    for brand in BRAND_NAMES:
+        pattern = _re.compile(
+            r'\b' + _re.escape(brand) + r'[-\s]?\w*',
+            _re.IGNORECASE,
+        )
+        for m in pattern.finditer(text):
+            # Проверяем, есть ли «или эквивалент» в пределах 60 символов после
+            after = text[m.end():m.end() + 80]
+            if not _re.search(r'или\s+эквивал', after, _re.IGNORECASE):
+                found_brands.append(m.group().strip())
+    # Также ищем модели вида [A-Z]{2,}[0-9]{3,} и I[3579]-\d{4,}
+    for m in _re.finditer(r'\b[A-Z]{2,}[0-9]{3,}\b', text):
+        after = text[m.end():m.end() + 80]
+        if not _re.search(r'или\s+эквивал', after, _re.IGNORECASE):
+            found_brands.append(m.group().strip())
+    for m in _re.finditer(r'\bI[3579]-\d{4,}[A-Z]*\b', text, _re.IGNORECASE):
+        after = text[m.end():m.end() + 80]
+        if not _re.search(r'или\s+эквивал', after, _re.IGNORECASE):
+            found_brands.append(m.group().strip())
+    # Дедупликация
+    seen_brands: set[str] = set()
+    unique_brands: list[str] = []
+    for b in found_brands:
+        bl = b.lower()
+        if bl not in seen_brands:
+            seen_brands.add(bl)
+            unique_brands.append(b)
+    if unique_brands:
+        sample = ", ".join(f'«{b}»' for b in unique_brands[:3])
+        issues.append(QAIssue(
+            level="error",
+            code="brand_name",
+            message=f"Обнаружены бренды/модели без «или эквивалент»: {sample}",
+            suggestion="Замените на функциональную характеристику или добавьте «или эквивалент»",
+        ))
+
+    # 2. exact_value — точечные числовые значения без модификатора
+    protected_ranges: list[tuple[int, int]] = []
+    for m in MODIFIER_BEFORE_RE.finditer(text):
+        protected_ranges.append((max(0, m.start() - 5), m.end() + 5))
+    for m in RESOLUTION_RE.finditer(text):
+        protected_ranges.append((m.start(), m.end()))
+
+    def _is_protected(start: int, end: int) -> bool:
+        for ps, pe in protected_ranges:
+            if start < pe and end > ps:
+                return True
+        return False
+
+    exact_hits: list[str] = []
+    for line in lines:
+        for m in _re.finditer(
+            r'(?<![≥≤])(?<!\d)\b(\d+[\.,]?\d*)\s*(ГБ|МБ|ТБ|МГц|ГГц|Вт|мм|см|кг|дюйм)\b',
+            line,
+            _re.IGNORECASE,
+        ):
+            before_chunk = line[max(0, m.start() - 25):m.start()]
+            if _re.search(r'(не\s+менее|не\s+более|свыше|минимум|максимум|от\s+\d|до\s+\d|≥|≤|более|менее)', before_chunk, _re.IGNORECASE):
+                continue
+            exact_hits.append(f"{m.group(1)} {m.group(2)}")
+            if len(exact_hits) >= 3:
+                break
+        if len(exact_hits) >= 3:
+            break
+    if exact_hits:
+        sample = ", ".join(f'«{v}»' for v in exact_hits[:3])
+        issues.append(QAIssue(
+            level="error",
+            code="exact_value",
+            message=f"Точечные значения без модификатора: {sample}",
+            suggestion="Замените на «не менее X» или «от X до Y»",
+        ))
+
+    # 3. emoji
+    if EMOJI_RE.search(text):
+        issues.append(QAIssue(
+            level="error",
+            code="emoji",
+            message="Текст содержит emoji-символы",
+            suggestion="Удалите emoji — документ официальный",
+        ))
+
+    # 4. meta_comment
+    found_comments: list[str] = []
+    for pat in META_COMMENT_PATTERNS:
+        m = _re.search(pat, text, _re.IGNORECASE)
+        if m:
+            found_comments.append(m.group().strip())
+    if found_comments:
+        sample = ", ".join(f'«{c}»' for c in found_comments[:3])
+        issues.append(QAIssue(
+            level="error",
+            code="meta_comment",
+            message=f"Найдены служебные заглушки: {sample}",
+            suggestion="Замените заглушку конкретным требованием",
+        ))
+
+    # 5. subjective_color
+    color_pattern = _re.compile(
+        r'\b(тёмно|светло|молочно|графитово|антрацитов|шампан)\w*[-\s]?\w*',
+        _re.IGNORECASE,
+    )
+    if color_pattern.search(text):
+        issues.append(QAIssue(
+            level="warning",
+            code="subjective_color",
+            message="Найдены субъективные цветовые обозначения",
+            suggestion="Упростите до основного цвета или укажите RAL-код",
+        ))
+
+    # 6. no_ktru — нет упоминания КТРУ (только если это не услуга)
+    is_service_only = bool(_re.search(r'оказани[еяю]|оказание\s+услуг|медицин|осмотр|обслужив', text, _re.IGNORECASE)) \
+        and not bool(_re.search(r'поставк[аи]|товар[а-я]|оборудован', text, _re.IGNORECASE))
+    if not is_service_only:
+        if not _re.search(r'КТРУ|ктру\.рф|реестр\s+закупок|zakupki\.gov.*КТРУ', text, _re.IGNORECASE):
+            issues.append(QAIssue(
+                level="warning",
+                code="no_ktru",
+                message="Не упомянута проверка по реестру КТРУ",
+                suggestion="Проверьте наличие позиции в КТРУ на ктру.рф",
+            ))
+
+    # 7. no_warranty
+    if not _re.search(r'гарант[иийя]|гарантийн', text, _re.IGNORECASE):
+        issues.append(QAIssue(
+            level="warning",
+            code="no_warranty",
+            message="Не указан гарантийный срок",
+            suggestion="Добавьте требование к гарантийному сроку",
+        ))
+
+    # 8. no_country
+    if not is_service_only:
+        if not _re.search(r'страна\s+происхождения|страны\s+происхождения|ПП\s*(?:РФ)?\s*№?\s*1875|реестр\s+российск', text, _re.IGNORECASE):
+            issues.append(QAIssue(
+                level="warning",
+                code="no_country",
+                message="Не указаны требования к стране происхождения",
+                suggestion="Укажите требования к стране происхождения (ПП №1875)",
+            ))
+
+    error_count = sum(1 for i in issues if i.level == "error")
+    warning_count = sum(1 for i in issues if i.level == "warning")
+    score = max(0, 100 - error_count * 15 - warning_count * 5)
+
+    return QACheckResponse(score=score, passed=score >= 80, issues=issues)
+
+
+@app.post("/api/qa-check", response_model=QACheckResponse)
+async def qa_check_endpoint(body: QACheckRequest):
+    if not body.text or not body.text.strip():
+        raise HTTPException(status_code=400, detail="text не может быть пустым")
+    if len(body.text) > 500_000:
+        raise HTTPException(status_code=400, detail="text слишком длинный (макс. 500 000 символов)")
+    return _qa_check_text(body.text)
+
+
+@app.post("/api/qa-autofix", response_model=QAAutofixResponse)
+async def qa_autofix_endpoint(body: QAAutofixRequest):
+    if not body.text or not body.text.strip():
+        raise HTTPException(status_code=400, detail="text не может быть пустым")
+    if len(body.text) > 500_000:
+        raise HTTPException(status_code=400, detail="text слишком длинный")
+
+    text = body.text
+    auto_fixed: list[str] = []
+    manual_required: list[str] = []
+
+    # Fix 1: Remove emoji
+    emoji_count = len(EMOJI_RE.findall(text))
+    if emoji_count:
+        text = EMOJI_RE.sub('', text)
+        auto_fixed.append(f"Удалены emoji ({emoji_count} шт.)")
+
+    # Fix 2: точечные числовые значения → «не менее X ЕДИНИЦА»
+    unit_fix_count = 0
+
+    def _add_ne_menee(m: _re.Match) -> str:
+        nonlocal unit_fix_count
+        before_chunk = text[max(0, m.start() - 25):m.start()]
+        # Уже есть модификатор?
+        if _re.search(r'(не\s+менее|не\s+более|свыше|минимум|максимум|от\s+\d|до\s+\d|≥|≤|более|менее)', before_chunk, _re.IGNORECASE):
+            return m.group()
+        # Разрешение экрана — не трогать
+        if RESOLUTION_RE.search(text[max(0, m.start()-10):m.end()+10]):
+            return m.group()
+        unit_fix_count += 1
+        return f"не менее {m.group(1)} {m.group(2)}"
+
+    text = _re.sub(
+        r'(?<![≥≤])(?<!\d)\b(\d+[\.,]?\d*)\s*(ГБ|МБ|ТБ|МГц|ГГц|Вт|мм|см|кг|дюйм)\b',
+        _add_ne_menee,
+        text,
+        flags=_re.IGNORECASE,
+    )
+    if unit_fix_count:
+        auto_fixed.append(f"Добавлен модификатор «не менее» к {unit_fix_count} значениям")
+
+    # Fix 3: субъективные цвета
+    color_fix_count = 0
+    for src, dst in SUBJECTIVE_COLOR_MAP.items():
+        pattern = _re.compile(_re.escape(src), _re.IGNORECASE)
+        new_text, n = pattern.subn(dst, text)
+        if n:
+            text = new_text
+            color_fix_count += n
+    if color_fix_count:
+        auto_fixed.append(f"Упрощены цветовые обозначения ({color_fix_count} замен)")
+
+    # Fix 4: типографика
+    orig_text = text
+    text = text.replace('...', '…')
+    text = _re.sub(r' {2,}', ' ', text)
+    text = _re.sub(r' ([,;:!?])', r'\1', text)
+    if text != orig_text:
+        auto_fixed.append("Исправлена типографика")
+
+    # Не трогать: бренды — добавить в manual_required
+    seen_brands_fix: set[str] = set()
+    for brand in BRAND_NAMES:
+        pattern = _re.compile(r'\b' + _re.escape(brand) + r'[-\s]?\w*', _re.IGNORECASE)
+        for m in pattern.finditer(text):
+            after = text[m.end():m.end() + 80]
+            if not _re.search(r'или\s+эквивал', after, _re.IGNORECASE):
+                bname = m.group().strip()
+                if bname.lower() not in seen_brands_fix:
+                    seen_brands_fix.add(bname.lower())
+                    manual_required.append(f"Найден бренд «{bname}» — замените на функциональную характеристику или добавьте «или эквивалент»")
+    for m in _re.finditer(r'\b[A-Z]{2,}[0-9]{3,}\b', text):
+        after = text[m.end():m.end() + 80]
+        if not _re.search(r'или\s+эквивал', after, _re.IGNORECASE):
+            bname = m.group().strip()
+            if bname.lower() not in seen_brands_fix:
+                seen_brands_fix.add(bname.lower())
+                manual_required.append(f"Найден код/модель «{bname}» — замените на функциональную характеристику или добавьте «или эквивалент»")
+
+    # Мета-комментарии — добавить в manual_required
+    for pat in META_COMMENT_PATTERNS:
+        m = _re.search(pat, text, _re.IGNORECASE)
+        if m:
+            manual_required.append(f"Найдена заглушка «{m.group().strip()}» — замените конкретным требованием")
+
+    # КТРУ
+    is_service = bool(_re.search(r'оказани[еяю]|оказание\s+услуг', text, _re.IGNORECASE)) \
+        and not bool(_re.search(r'поставк[аи]|товар[а-я]|оборудован', text, _re.IGNORECASE))
+    if not is_service and not _re.search(r'КТРУ|ктру\.рф', text, _re.IGNORECASE):
+        manual_required.append("Проверьте наличие позиции в реестре КТРУ на ктру.рф")
+
+    qa_result = _qa_check_text(text)
+
+    return QAAutofixResponse(
+        fixed_text=text,
+        auto_fixed=auto_fixed,
+        manual_required=manual_required,
+        qa=qa_result,
+    )
+
+
 _STATIC_DIR = _Path(__file__).resolve().parent / "static"
 
 if _STATIC_DIR.is_dir():

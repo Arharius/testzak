@@ -129,10 +129,11 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **Global Error Handler**: All unhandled exceptions return `500` with generic Russian message (no stack traces leaked)
 - **TypeScript**: 0 compilation errors (`noUnusedLocals: true`, `noUnusedParameters: true` both pass)
 
-## Auto-Audit after DOCX Export
-- After each DOCX download, the same blob is auto-submitted to `/api/audit-tz`
-- 9-checkpoint audit: emoji, meta-comments, brands without equivalents, point values, colors, НБ for goods/SW/services, structure
-- Results shown in modal: verdict badge (ГОТОВО К ЕИС / ТРЕБУЕТ ПРАВКИ), pass count (N из 9), full report, download button
+## QA Audit System
+- **`POST /api/qa-check`**: 8 validation checks (brand_name, exact_value, emoji, meta_comment, subjective_color, no_ktru, no_warranty, no_country). Score = 100 − errors×15 − warnings×5, passed if score ≥ 80.
+- **`POST /api/qa-autofix`**: Auto-fixes emoji removal, adds «не менее» to bare numeric values, simplifies subjective colours, fixes typography. Returns `auto_fixed` list and `manual_required` list for brands/meta-comments.
+- **`QaAuditBlock.tsx`**: Sidecar component shown after `docxReady`, between publication readiness card and export buttons. Run check → see score ring + issue list → optionally run autofix → score updates in place.
+- Integrated via `buildTzTextForReview` function from `Workspace.tsx` → passed as `buildTzText` prop through `WorkspaceSidePanels`.
 
 ## Development Notes
 - Backend API proxied via Vite dev server at `/api` → Railway backend

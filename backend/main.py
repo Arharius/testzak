@@ -54,6 +54,8 @@ try:
         IntegrationIdempotencyKey,
         ImmutableAuditChain,
         TZValidateLog,
+        Generation,
+        EmailLog,
     )
     from .auth import (  # type: ignore
         send_magic_link,
@@ -92,6 +94,8 @@ except ImportError:
         IntegrationIdempotencyKey,
         ImmutableAuditChain,
         TZValidateLog,
+        Generation,
+        EmailLog,
     )
     from auth import (
         send_magic_link,
@@ -3686,6 +3690,256 @@ FAIL: [список пунктов]
         fail_count=fail_count,
         provider_used=f"{provider}/{model}",
     )
+
+
+# ── Generations history ────────────────────────────────────────────────────
+
+import base64 as _base64
+
+_GENERATIONS_STORAGE = _Path(__file__).resolve().parent / "storage" / "generations"
+_GENERATIONS_STORAGE.mkdir(parents=True, exist_ok=True)
+
+_GENERATION_STORAGE_LIMITS: dict[str, int] = {
+    "trial": 3,
+    "start": 50,
+    "base": 200,
+    "team": -1,
+    "corp": -1,
+    "admin": -1,
+    "pro": 200,  # fallback for role-based pro without explicit plan
+}
+
+
+def _gen_storage_limit(user: User) -> int:
+    plan = _get_effective_plan(user)
+    return _GENERATION_STORAGE_LIMITS.get(plan, 50)
+
+
+def _prune_generations(db, user_id: str, limit: int) -> None:
+    """Delete oldest generations if over limit. limit=-1 means unlimited."""
+    if limit < 0:
+        return
+    count = db.query(Generation).filter_by(user_id=user_id).count()
+    if count >= limit:
+        excess = count - limit + 1
+        oldest = (
+            db.query(Generation)
+            .filter_by(user_id=user_id)
+            .order_by(Generation.created_at.asc())
+            .limit(excess)
+            .all()
+        )
+        for gen in oldest:
+            if gen.docx_path:
+                try:
+                    p = _Path(gen.docx_path)
+                    if p.exists():
+                        p.unlink()
+                except Exception:
+                    pass
+            db.delete(gen)
+        db.flush()
+
+
+class GenerationSaveRequest(BaseModel):
+    title: str = ""
+    source_type: str = "text"
+    text: str = ""
+    docx_base64: Optional[str] = None
+    qa_score: Optional[int] = None
+    word_count: int = 0
+
+
+class GenerationItem(BaseModel):
+    id: int
+    title: str
+    created_at: str
+    source_type: str
+    qa_score: Optional[int]
+    word_count: int
+
+
+class GenerationFull(BaseModel):
+    id: int
+    title: str
+    created_at: str
+    source_type: str
+    text: Optional[str]
+    qa_score: Optional[int]
+    word_count: int
+    docx_available: bool
+
+
+@app.post("/api/generations", response_model=GenerationItem, status_code=201)
+async def save_generation(
+    req: GenerationSaveRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    limit = _gen_storage_limit(user)
+    _prune_generations(db, user.id, limit)
+
+    title = (req.title or req.text[:80] or "ТЗ").strip()[:80]
+    word_count = req.word_count or len((req.text or "").split())
+
+    docx_path = None
+    if req.docx_base64:
+        try:
+            docx_bytes = _base64.b64decode(req.docx_base64)
+            fname = f"{user.id}_{int(datetime.now(timezone.utc).timestamp())}.docx"
+            fpath = _GENERATIONS_STORAGE / fname
+            fpath.write_bytes(docx_bytes)
+            docx_path = str(fpath)
+        except Exception as exc:
+            logger.warning(f"[generations] Failed to save DOCX file: {exc}")
+
+    gen = Generation(
+        user_id=user.id,
+        title=title,
+        source_type=req.source_type or "text",
+        text=req.text,
+        docx_path=docx_path,
+        qa_score=req.qa_score,
+        word_count=word_count,
+    )
+    db.add(gen)
+    db.commit()
+    db.refresh(gen)
+
+    return GenerationItem(
+        id=gen.id,
+        title=gen.title,
+        created_at=gen.created_at.isoformat(),
+        source_type=gen.source_type,
+        qa_score=gen.qa_score,
+        word_count=gen.word_count,
+    )
+
+
+@app.get("/api/generations", response_model=dict)
+async def list_generations(
+    page: int = 1,
+    limit: int = 20,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    page = max(1, page)
+    limit = min(100, max(1, limit))
+    offset = (page - 1) * limit
+
+    total = db.query(Generation).filter_by(user_id=user.id).count()
+    gens = (
+        db.query(Generation)
+        .filter_by(user_id=user.id)
+        .order_by(Generation.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    items = [
+        {
+            "id": g.id,
+            "title": g.title,
+            "created_at": g.created_at.isoformat() if g.created_at else "",
+            "source_type": g.source_type,
+            "qa_score": g.qa_score,
+            "word_count": g.word_count or 0,
+        }
+        for g in gens
+    ]
+    return {"items": items, "total": total, "page": page}
+
+
+@app.get("/api/generations/{gen_id}", response_model=GenerationFull)
+async def get_generation(
+    gen_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    gen = db.query(Generation).filter_by(id=gen_id, user_id=user.id).first()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    docx_available = bool(gen.docx_path and _Path(gen.docx_path).exists())
+    return GenerationFull(
+        id=gen.id,
+        title=gen.title,
+        created_at=gen.created_at.isoformat() if gen.created_at else "",
+        source_type=gen.source_type,
+        text=gen.text,
+        qa_score=gen.qa_score,
+        word_count=gen.word_count or 0,
+        docx_available=docx_available,
+    )
+
+
+@app.get("/api/generations/{gen_id}/download")
+async def download_generation(
+    gen_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from fastapi.responses import FileResponse, Response as FastAPIResponse
+    gen = db.query(Generation).filter_by(id=gen_id, user_id=user.id).first()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    # Serve existing file if available
+    if gen.docx_path:
+        p = _Path(gen.docx_path)
+        if p.exists():
+            return FileResponse(
+                str(p),
+                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                filename=f"TZ_{gen.id}.docx",
+            )
+
+    # Regenerate minimal DOCX from stored text
+    text = gen.text or ""
+    if not text:
+        raise HTTPException(status_code=404, detail="Файл недоступен, текст не сохранён")
+    try:
+        import docx as python_docx  # type: ignore[import]
+        doc = python_docx.Document()
+        doc.add_heading(gen.title or "Техническое задание", 0)
+        for line in text.split("\n"):
+            doc.add_paragraph(line)
+        buf = io.BytesIO()
+        doc.save(buf)
+        buf.seek(0)
+        return FastAPIResponse(
+            content=buf.read(),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="TZ_{gen.id}.docx"'},
+        )
+    except ImportError:
+        # python-docx not available — return plain text
+        return FastAPIResponse(
+            content=(text or "").encode("utf-8"),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="TZ_{gen.id}.txt"'},
+        )
+
+
+@app.delete("/api/generations/{gen_id}", status_code=200)
+async def delete_generation(
+    gen_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    gen = db.query(Generation).filter_by(id=gen_id, user_id=user.id).first()
+    if not gen:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    if gen.docx_path:
+        try:
+            p = _Path(gen.docx_path)
+            if p.exists():
+                p.unlink()
+        except Exception:
+            pass
+    db.delete(gen)
+    db.commit()
+    return {"ok": True, "deleted": gen_id}
 
 
 # ── QA Check & Autofix ─────────────────────────────────────────────────────

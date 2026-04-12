@@ -31,6 +31,7 @@ import {
   type TZDocumentSummary,
   type TZValidateResponse,
   searchOkpd2,
+  saveGeneration,
 } from '../lib/backendApi';
 import { TZValidationModal } from './TZValidationModal';
 import { TZReviewPanel } from './TZReviewPanel';
@@ -10763,6 +10764,32 @@ ${hint || '- Используй детальные, проверяемые эк�
       console.log('[DOCX] Download triggered');
       showToast('DOCX скачивается. Запускаем аудит ТЗ...', true);
       appendAutomationLog({ at: new Date().toISOString(), event: 'react.export_docx', ok: true });
+
+      // Сохранить генерацию в историю (fire-and-forget, только для авторизованных)
+      if (isLoggedIn()) {
+        void (async () => {
+          try {
+            const tzText = buildTzTextForReview();
+            const reader = new FileReader();
+            const base64: string = await new Promise((resolve, reject) => {
+              reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '');
+              reader.onerror = reject;
+              reader.readAsDataURL(finalBlob);
+            });
+            const firstRow = rows.find((r) => r.status === 'done');
+            const title = (firstRow?.model || firstRow?.type || tzText.slice(0, 80) || 'ТЗ').slice(0, 80);
+            await saveGeneration({
+              title,
+              source_type: 'text',
+              text: tzText,
+              docx_base64: base64,
+              word_count: tzText.split(/\s+/).filter(Boolean).length,
+            });
+          } catch (e) {
+            console.warn('[History] Failed to save generation:', e);
+          }
+        })();
+      }
 
       // Автоматический аудит ТЗ после экспорта
       setAuditLoading(true);

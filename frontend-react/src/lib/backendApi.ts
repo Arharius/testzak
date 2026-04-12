@@ -45,7 +45,7 @@ function getRuntimeBackendUrl(): string {
   return '';
 }
 
-function buildApiUrl(path: string): string {
+export function buildApiUrl(path: string): string {
   const normalizedPath = String(path || '').startsWith('/') ? String(path) : `/${String(path || '')}`;
   if (shouldUseSameOriginApi()) return normalizedPath;
   const runtimeUrl = getRuntimeBackendUrl();
@@ -1008,4 +1008,65 @@ export async function qaCheck(text: string): Promise<QACheckResponse> {
 
 export async function qaAutofix(text: string): Promise<QAAutofixResponse> {
   return apiPost<QAAutofixResponse>('/api/qa-autofix', { text }, false, 30000);
+}
+
+// ── Generations history ───────────────────────────────────────────────────
+
+export type GenerationItem = {
+  id: number;
+  title: string;
+  created_at: string;
+  source_type: string;
+  qa_score: number | null;
+  word_count: number;
+};
+
+export type GenerationsListResponse = {
+  items: GenerationItem[];
+  total: number;
+  page: number;
+};
+
+export type GenerationFull = GenerationItem & {
+  text: string | null;
+  docx_available: boolean;
+};
+
+export type GenerationSaveRequest = {
+  title?: string;
+  source_type?: string;
+  text?: string;
+  docx_base64?: string;
+  qa_score?: number | null;
+  word_count?: number;
+};
+
+export async function saveGeneration(req: GenerationSaveRequest): Promise<GenerationItem> {
+  return apiPost<GenerationItem>('/api/generations', req, true, 30000);
+}
+
+export async function listGenerations(page = 1, limit = 20): Promise<GenerationsListResponse> {
+  return apiGet<GenerationsListResponse>(`/api/generations?page=${page}&limit=${limit}`, true);
+}
+
+export async function getGeneration(id: number): Promise<GenerationFull> {
+  return apiGet<GenerationFull>(`/api/generations/${id}`, true);
+}
+
+export function getGenerationDownloadUrl(id: number): string {
+  const base = getRuntimeBackendUrl();
+  const token = getStoredToken();
+  const url = `${base}/api/generations/${id}/download`;
+  if (token) return `${url}?token=${encodeURIComponent(token)}`;
+  return url;
+}
+
+export async function deleteGeneration(id: number): Promise<{ ok: boolean }> {
+  const url = buildApiUrl(`/api/generations/${id}`);
+  const token = getStoredToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const resp = await fetch(url, { method: 'DELETE', headers });
+  if (!resp.ok) throw new Error(`Delete failed: ${resp.status}`);
+  return resp.json() as Promise<{ ok: boolean }>;
 }

@@ -10,6 +10,7 @@ import { PricingModal } from './components/PricingModal';
 import { LLMProviderModal } from './components/LLMProviderModal';
 import { TrialBanner } from './components/TrialBanner';
 import { PricingPage } from './components/PricingPage';
+import { HistoryPage } from './components/HistoryPage';
 import {
   flushAutomationQueue,
   flushPlatformQueue,
@@ -88,7 +89,7 @@ export function App() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [showPricing, setShowPricing] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'main' | 'pricing'>('main');
+  const [currentPage, setCurrentPage] = useState<'main' | 'pricing' | 'history'>('main');
   const [showLLMModal, setShowLLMModal] = useState(false);
   const [preferredProvider, setPreferredProvider] = useState<string>('deepseek');
   const [preferredModel, setPreferredModel] = useState<string>('deepseek-chat');
@@ -452,6 +453,19 @@ export function App() {
     );
   }
 
+  if (currentPage === 'history') {
+    return (
+      <main className="layout sovereign-layout">
+        <div className="bg-layer" aria-hidden="true">
+          <span className="noise"></span>
+          <span className="orb orb-1"></span>
+          <span className="orb orb-2"></span>
+        </div>
+        <HistoryPage onBack={() => setCurrentPage('main')} />
+      </main>
+    );
+  }
+
   return (
     <main className="layout sovereign-layout">
       {/* Auth message toast */}
@@ -490,6 +504,13 @@ export function App() {
                   Тарифы
                 </button>
               )}
+              <button
+                onClick={() => setCurrentPage('history')}
+                className="auth-ghost-btn"
+                style={{ padding: '4px 12px', fontSize: '12px' }}
+              >
+                📋 История
+              </button>
               <button
                 onClick={handleLogout}
                 className="auth-ghost-btn"

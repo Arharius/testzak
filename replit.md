@@ -135,6 +135,14 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - **`QaAuditBlock.tsx`**: Sidecar component shown after `docxReady`, between publication readiness card and export buttons. Run check → see score ring + issue list → optionally run autofix → score updates in place.
 - Integrated via `buildTzTextForReview` function from `Workspace.tsx` → passed as `buildTzText` prop through `WorkspaceSidePanels`.
 
+## Generations History
+- **Table**: `generations` (id, user_id, created_at, title, source_type, text, docx_path, qa_score, word_count)
+- **Storage limits by plan**: trial=3, start=50, base=200, team/corp=unlimited. Auto-prunes oldest on overflow.
+- **DOCX storage**: blobs saved to `backend/storage/generations/` as `{user_id}_{timestamp}.docx`
+- **Endpoints**: `POST /api/generations` (save, auth required), `GET /api/generations?page&limit` (list, paginated), `GET /api/generations/{id}` (full), `GET /api/generations/{id}/download` (serve file or regenerate DOCX via python-docx), `DELETE /api/generations/{id}`
+- **Frontend**: `HistoryPage.tsx` — cards with title, date, source_type, word_count, QA score (color-coded: ≥80 green, 60-79 amber, <60 red), Download + Delete buttons, pagination. Accessible via "📋 История" button in auth-rail for logged-in users.
+- **Save hook**: After DOCX export in `Workspace.tsx/exportDocx`, auto-saves generation (title from first row model, text from `buildTzTextForReview`, DOCX as base64).
+
 ## Email Notifications
 - Module: `backend/email_service.py`
 - Config env vars: `SMTP_HOST`, `SMTP_PORT` (587 default), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`

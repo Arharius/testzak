@@ -93,6 +93,19 @@ class ImmutableAuditChain(Base):
     prev_hash = Column(String, nullable=False)
     hash = Column(String, nullable=False)
 
+class Generation(Base):
+    __tablename__ = "generations"
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    user_id     = Column(String, nullable=True, index=True)
+    created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    title       = Column(String, nullable=False, default="")
+    source_type = Column(String, nullable=False, default="text")  # text|docx|price|fix
+    text        = Column(Text, nullable=True)
+    docx_path   = Column(String, nullable=True)
+    qa_score    = Column(Integer, nullable=True)
+    word_count  = Column(Integer, nullable=True, default=0)
+
+
 class EmailLog(Base):
     __tablename__ = "email_log"
     id         = Column(Integer, primary_key=True, autoincrement=True)
@@ -175,3 +188,5 @@ def _auto_migrate(target_engine=None, target_database_url=None):
                 conn.execute(text("ALTER TABLE tz_documents ADD COLUMN updated_at TIMESTAMP"))
             if "created_at" not in existing:
                 conn.execute(text("ALTER TABLE tz_documents ADD COLUMN created_at TIMESTAMP"))
+    # generations table is created automatically by Base.metadata.create_all
+    # email_log table is created automatically by Base.metadata.create_all

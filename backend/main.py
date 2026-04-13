@@ -5152,9 +5152,10 @@ def get_tz_history(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    base_q = db.query(TZHistory).filter(TZHistory.user_id == current_user.id)
+    total = base_q.count()
     rows = (
-        db.query(TZHistory)
-        .filter(TZHistory.user_id == current_user.id)
+        base_q
         .order_by(TZHistory.created_at.desc())
         .offset(offset)
         .limit(limit)
@@ -5175,7 +5176,7 @@ def get_tz_history(
             "created_at":      r.created_at.isoformat() if r.created_at else None,
             "is_favorite":     r.is_favorite,
         })
-    return {"items": items}
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @app.get("/api/tz-history/{tz_id}")

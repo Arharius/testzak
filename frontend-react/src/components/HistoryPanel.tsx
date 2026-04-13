@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { buildApiUrl, getStoredToken } from '../lib/backendApi';
+
+const PAGE_SIZE = 20;
 
 interface TZHistoryItem {
   id: number;
@@ -8,7 +10,6 @@ interface TZHistoryItem {
   positions_count: number;
   created_at: string;
   is_favorite: boolean;
-  result_json?: unknown;
 }
 
 interface HistoryPanelProps {
@@ -17,17 +18,27 @@ interface HistoryPanelProps {
 
 export function HistoryPanel({ onRepeat }: HistoryPanelProps) {
   const [items, setItems] = useState<TZHistoryItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchPage = useCallback(async (off: number) => {
+    setLoading(true);
     const token = getStoredToken();
-    fetch(buildApiUrl('/api/tz-history'), {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(r => r.json())
-      .then(d => { setItems(d.items || []); setLoading(false); })
-      .catch(() => setLoading(false));
+    try {
+      const resp = await fetch(buildApiUrl(`/api/tz-history?limit=${PAGE_SIZE}&offset=${off}`), {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const d = await resp.json();
+      setItems(d.items || []);
+      setTotal(d.total ?? 0);
+      setOffset(off);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchPage(0); }, [fetchPage]);
 
   const handleDelete = async (id: number) => {
     if (!confirm('Удалить ТЗ из истории?')) return;
@@ -36,7 +47,7 @@ export function HistoryPanel({ onRepeat }: HistoryPanelProps) {
       method: 'DELETE',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    setItems(prev => prev.filter(i => i.id !== id));
+    await fetchPage(offset);
   };
 
   const handleFavorite = async (id: number) => {
@@ -54,22 +65,23 @@ export function HistoryPanel({ onRepeat }: HistoryPanelProps) {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
     const data = await resp.json();
-    if (onRepeat && data.result_json) {
-      onRepeat(data.result_json);
-    }
+    if (onRepeat && data.result_json) onRepeat(data.result_json);
   };
 
   if (loading) {
     return <div style={{ color: '#94a3b8', fontSize: 13, padding: '16px 0', textAlign: 'center' }}>Загрузка...</div>;
   }
 
-  if (!items.length) {
+  if (!items.length && offset === 0) {
     return (
       <div style={{ textAlign: 'center', color: '#94a3b8', padding: '32px 0', fontSize: 13 }}>
         История пуста. Сгенерируйте первое ТЗ.
       </div>
     );
   }
+
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
   const favorites = items.filter(i => i.is_favorite);
   const others = items.filter(i => !i.is_favorite);
@@ -88,7 +100,6 @@ export function HistoryPanel({ onRepeat }: HistoryPanelProps) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            transition: 'border-color 0.2s',
           }}
         >
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -126,6 +137,42 @@ export function HistoryPanel({ onRepeat }: HistoryPanelProps) {
           </div>
         </div>
       ))}
+
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 8, fontSize: 13 }}>
+          <button
+            onClick={() => fetchPage(Math.max(0, offset - PAGE_SIZE))}
+            disabled={offset === 0}
+            style={{
+              padding: '4px 14px', borderRadius: 4, border: '1px solid #e2e8f0',
+              background: offset === 0 ? '#f1f5f9' : '#fff',
+              color: offset === 0 ? '#94a3b8' : '#1e293b',
+              cursor: offset === 0 ? 'default' : 'pointer', fontSize: 12,
+            }}
+          >
+            ← Назад
+          </button>
+          <span style={{ color: '#64748b' }}>
+            {currentPage} / {totalPages}
+          </span>
+          <button
+            onClick={() => fetchPage(offset + PAGE_SIZE)}
+            disabled={offset + PAGE_SIZE >= total}
+            style={{
+              padding: '4px 14px', borderRadius: 4, border: '1px solid #e2e8f0',
+              background: offset + PAGE_SIZE >= total ? '#f1f5f9' : '#fff',
+              color: offset + PAGE_SIZE >= total ? '#94a3b8' : '#1e293b',
+              cursor: offset + PAGE_SIZE >= total ? 'default' : 'pointer', fontSize: 12,
+            }}
+          >
+            Вперёд →
+          </button>
+        </div>
+      )}
+
+      <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 11, marginTop: 4 }}>
+        Всего ТЗ: {total}
+      </div>
     </div>
   );
 }

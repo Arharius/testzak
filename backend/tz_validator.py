@@ -605,7 +605,72 @@ def validate_tz(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Авто-исправление: детерминированные фиксы для TEST-01/02/03/05
+# Авто-исправление нормативной базы (TEST-08)
+# ─────────────────────────────────────────────────────────────────────────────
+_NORMATIVE_REPLACEMENTS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r'ПП\s*РФ.{0,20}№\s*878', re.IGNORECASE), 'Постановление Правительства РФ от 23.12.2024 №1875'),
+    (re.compile(r'ПП\s*РФ.{0,20}№\s*616', re.IGNORECASE), 'Постановление Правительства РФ от 23.12.2024 №1875'),
+    (re.compile(r'ПП\s*РФ.{0,20}№\s*925', re.IGNORECASE), 'Постановление Правительства РФ от 23.12.2024 №1875'),
+    (re.compile(r'от\s+30\.04\.2020', re.IGNORECASE), 'от 23.12.2024'),
+    (re.compile(r'от\s+26\.09\.2016', re.IGNORECASE), 'от 23.12.2024'),
+]
+
+
+def fix_normative_text(full_text: str, rows: list[SpecRow]) -> tuple[str, list['FixReport']]:
+    """
+    Автоматически исправляет нормативную базу в тексте:
+    - Заменяет устаревшие ПП №878/616/925 на актуальный ПП №1875
+    - Добавляет обязательные ссылки для ТОВАРОВ (44-ФЗ, 1875, 719)
+    - Удаляет товарные НПА из документов на УСЛУГИ
+    - Добавляет ПП №1236 для ПО
+    Возвращает (исправленный текст, список отчётов о фиксах).
+    """
+    reports: list[FixReport] = []
+    result = full_text
+
+    for pat, replacement in _NORMATIVE_REPLACEMENTS:
+        m = pat.search(result)
+        if m:
+            reports.append(FixReport("TEST-08", "Нормативная база", "fix_normative",
+                                     m.group(0)[:80], replacement[:80]))
+            result = pat.sub(replacement, result)
+
+    has_goods = any(r.category == "ТОВАР" for r in rows)
+    has_service = any(r.category == "УСЛУГА" for r in rows)
+    has_software = any(r.category == "ПО" for r in rows)
+
+    if has_goods:
+        if '44-ФЗ' not in result:
+            result += '\n44-ФЗ'
+            reports.append(FixReport("TEST-08", "Нормативная база", "add_normative", "", "44-ФЗ"))
+        if '1875' not in result:
+            result += '\nПостановление Правительства РФ от 23.12.2024 №1875'
+            reports.append(FixReport("TEST-08", "Нормативная база", "add_normative", "", "ПП №1875"))
+        if '719' not in result:
+            result += '\nПостановление Правительства РФ от 17.07.2015 №719'
+            reports.append(FixReport("TEST-08", "Нормативная база", "add_normative", "", "ПП №719"))
+
+    if has_service and not has_goods:
+        cleaned = re.sub(r'ПП\s*№\s*1875[^\n]{0,80}\n?', '', result)
+        if cleaned != result:
+            reports.append(FixReport("TEST-08", "Нормативная база", "remove_service_normative",
+                                     "ПП №1875 (неприменимо к услугам)", ""))
+            result = cleaned
+        cleaned2 = re.sub(r'ПП\s*№\s*719[^\n]{0,80}\n?', '', result)
+        if cleaned2 != result:
+            reports.append(FixReport("TEST-08", "Нормативная база", "remove_service_normative",
+                                     "ПП №719 (неприменимо к услугам)", ""))
+            result = cleaned2
+
+    if has_software and '1236' not in result:
+        result += '\nПостановление Правительства РФ от 16.11.2015 №1236 (реестр Минцифры)'
+        reports.append(FixReport("TEST-08", "Нормативная база", "add_normative", "", "ПП №1236"))
+
+    return result, reports
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Авто-исправление: детерминированные фиксы для TEST-01/02/03/05/07
 # ─────────────────────────────────────────────────────────────────────────────
 @dataclass
 class FixReport:
@@ -731,11 +796,24 @@ def auto_fix_specs(
                     dedup_specs.append((sn, sv, sg))
             specs = dedup_specs
 
+        # ── TEST-07: исправить некорректные количества / единицы ─────────────
+        fixed_qty = row.qty
+        fixed_unit = row.qty_unit
+        if "TEST-07" in failed_ids:
+            if row.qty <= 0:
+                reports.append(FixReport("TEST-07", row.field, "fix_qty",
+                                         str(row.qty), "1"))
+                fixed_qty = 1
+            if not row.qty_unit:
+                reports.append(FixReport("TEST-07", row.field, "fix_qty_unit",
+                                         "", "шт."))
+                fixed_unit = "шт."
+
         fixed_rows.append(SpecRow(
             name=row.name,
             field=row.field,
-            qty=row.qty,
-            qty_unit=row.qty_unit,
+            qty=fixed_qty,
+            qty_unit=fixed_unit,
             category=row.category,
             specs=specs,
             description=row.description,

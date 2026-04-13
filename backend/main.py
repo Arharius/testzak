@@ -3495,6 +3495,7 @@ def validate_tz(req: TZValidateRequest, db: Session = Depends(get_db)):
 from tz_validator import (
     validate_tz as _run_full_validate,
     auto_fix_specs as _auto_fix_specs,
+    fix_normative_text as _fix_normative_text,
     SpecRow,
     FixReport as _FixReport,
 )
@@ -3647,6 +3648,7 @@ class AutoFixResponse(BaseModel):
     fix_report: list[FixReportOut]
     llm_called: bool
     validation: FullValidationResultOut
+    fixed_full_text: str = ""
 
 
 def _rows_in_to_spec_rows(rows_in: list[FullValidateRowIn]) -> list[SpecRow]:
@@ -3755,10 +3757,18 @@ def auto_fix_tz(req: AutoFixRequest):
             except Exception as e:
                 logger.warning(f"[AutoFix] LLM TEST-04 failed: {e}")
 
+    # ── TEST-08: исправить нормативную базу в full_text ──────────────────────
+    fixed_full_text = req.full_text
+    if "TEST-08" in failed_ids or not req.full_text:
+        fixed_full_text, normative_reports = _fix_normative_text(req.full_text, spec_rows)
+    else:
+        normative_reports = []
+
     # ── Применяем детерминированные фиксы ────────────────────────────────────
     fixed_spec_rows, fix_reports = _auto_fix_specs(
         spec_rows, validate_result.tests, llm_fixes
     )
+    fix_reports = normative_reports + fix_reports
 
     # ── Преобразуем обратно в FullValidateRowIn ───────────────────────────────
     fixed_rows_out: list[FullValidateRowIn] = []
@@ -3776,10 +3786,10 @@ def auto_fix_tz(req: AutoFixRequest):
             description=fixed.description,
         ))
 
-    # ── Re-run validation ─────────────────────────────────────────────────────
+    # ── Re-run validation с исправленным нормативным текстом ─────────────────
     re_result = _run_full_validate(
         rows=fixed_spec_rows,
-        full_text=req.full_text,
+        full_text=fixed_full_text,
         doc_sections=req.doc_sections,
         law_mode=req.law_mode,
     )
@@ -3798,6 +3808,7 @@ def auto_fix_tz(req: AutoFixRequest):
         ],
         llm_called=llm_called,
         validation=_validation_result_to_out(re_result),
+        fixed_full_text=fixed_full_text,
     )
 
 

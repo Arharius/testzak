@@ -18,6 +18,11 @@ const ACTION_LABELS: Record<string, string> = {
   add_equivalent: 'Добавлено «или эквивалент»',
   llm_measurable: 'Исправлено LLM (измеримость)',
   remove_duplicate: 'Удалён дубль характеристики',
+  fix_qty: 'Исправлено количество позиции',
+  fix_qty_unit: 'Добавлены единицы измерения',
+  fix_normative: 'Заменена устаревшая нормативная ссылка',
+  add_normative: 'Добавлена обязательная нормативная ссылка',
+  remove_service_normative: 'Удалена нормативная ссылка (неприменима к услугам)',
 };
 
 function statusIcon(status: FullTestResult['status']): string {

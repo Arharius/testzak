@@ -1038,6 +1038,7 @@ export interface AutoFixResponse {
   fix_report: FixReportItem[];
   llm_called: boolean;
   validation: FullValidationResult;
+  fixed_full_text?: string;
 }
 
 export async function autoFixTz(

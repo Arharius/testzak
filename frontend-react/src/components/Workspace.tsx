@@ -7583,6 +7583,7 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [fixIteration, setFixIteration] = useState(0);
   const [isAutoFixing, setIsAutoFixing] = useState(false);
   const [lastFixReport, setLastFixReport] = useState<FixReportItem[]>([]);
+  const [fixedFullText, setFixedFullText] = useState<string>('');
   // Автодетект: ID строки, где только что сменился тип (для подсветки)
   const [autoDetectedRow, setAutoDetectedRow] = useState<number | null>(null);
   const [focusedRowId, setFocusedRowId] = useState<number | null>(null);
@@ -10965,6 +10966,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       });
       const result = await validateTzFull(validateRows, {
         law_mode: lawMode,
+        full_text: fixedFullText || undefined,
       });
       setFullValidationResult(result);
       setFixIteration(0);
@@ -10976,7 +10978,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     } finally {
       setFullValidationRunning(false);
     }
-  }, [lawMode, rows, showToast, useBackend]);
+  }, [lawMode, rows, showToast, useBackend, fixedFullText]);
 
   const MAX_FIX_ITERATIONS = 3;
 
@@ -11012,6 +11014,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       const fixResult = await autoFixTz(validateRows, {
         law_mode: lawMode,
         iteration: nextIteration,
+        full_text: fixedFullText || buildTzTextForReview(),
       });
 
       // Apply fixed specs back to rows state
@@ -11033,6 +11036,9 @@ ${hint || '- Используй детальные, проверяемые эк�
       setLastFixReport(fixResult.fix_report);
       setFixIteration(nextIteration);
       setFullValidationResult(fixResult.validation);
+      if (fixResult.fixed_full_text) {
+        setFixedFullText(fixResult.fixed_full_text);
+      }
 
       const remaining = fixResult.validation.error_count;
       if (remaining === 0) {
@@ -11049,7 +11055,7 @@ ${hint || '- Используй детальные, проверяемые эк�
     } finally {
       setIsAutoFixing(false);
     }
-  }, [useBackend, isAutoFixing, fixIteration, rows, lawMode, showToast, setRows]);
+  }, [useBackend, isAutoFixing, fixIteration, fixedFullText, rows, lawMode, showToast, setRows, buildTzTextForReview]);
 
   const exportDocx = async () => {
     if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для экспорта DOCX.')) {
@@ -12399,6 +12405,7 @@ ${hint || '- Используй детальные, проверяемые эк�
             setFullValidationResult(null);
             setFixIteration(0);
             setLastFixReport([]);
+            setFixedFullText('');
           }}
           onProceed={async () => {
             setFullValidationResult(null);

@@ -15,6 +15,8 @@ A market-leading tool for Russian government procurement specialists to generate
 
 Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufacturers), Web-Truth verification against manufacturer datasheets, GOST-compliant DOCX output (no KTRU/OKPD2 in text, DXA column widths), exhaustive measurable specs (MTBF, TDP, USB version, Wi-Fi IEEE, operating temperature, power efficiency).
 
+**System version: v3.1** — 14 validation tests (TEST-01–TEST-14), including TEST-13 (units) and TEST-14 (OKPD2/KTRU). Regulatory matrix: PP№1875 for goods/works, PP№1236 for software only, PP№878/616/925 banned. "или выше" accepted as valid equivalent. DDR5 max frequency 9600 MHz for 2026.
+
 ## Architecture
 
 ### Frontend (`frontend-react/`)

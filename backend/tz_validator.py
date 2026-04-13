@@ -1,5 +1,5 @@
 """
-tz_validator.py — Полная проверка ТЗ по 12 тестам перед публикацией в ЕИС.
+tz_validator.py — Полная проверка ТЗ по 14 тестам перед публикацией в ЕИС.
 Запускать при каждой генерации, блокировать экспорт при наличии ошибок.
 """
 from __future__ import annotations
@@ -46,6 +46,7 @@ class SpecRow:
     category: str
     specs: list[tuple[str, str, str]]
     description: str
+    okpd2_code: str = ""
 
 
 @dataclass
@@ -118,7 +119,8 @@ _STANDARDS_EXEMPT: set[str] = {
     'Linux', 'Astra', 'ALT',
 }
 _EQUIV_MARKER = re.compile(
-    r'(или\s+эквивалент|эквивалент|аналог[а-я]*|функциональн[а-я]+\s+эквивалент)',
+    r'(или\s+эквивалент|эквивалент|аналог[а-я]*|функциональн[а-я]+\s+эквивалент'
+    r'|или\s+выше|или\s+более\s+поздн)',
     re.IGNORECASE,
 )
 
@@ -222,6 +224,47 @@ _OFFICE_PC_KEYWORDS = re.compile(
     r'(офисн|рабочее место|рабочая станция|персональн|пк\b)',
     re.IGNORECASE,
 )
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TEST-13: единицы измерения
+# ─────────────────────────────────────────────────────────────────────────────
+_UNIT_RULES: list[tuple[re.Pattern, list[str]]] = [
+    (re.compile(r'оперативн|ОЗУ|RAM', re.IGNORECASE),                 ['ГБ', 'МБ', 'ТБ']),
+    (re.compile(r'накопитель|SSD|HDD|ПЗУ', re.IGNORECASE),            ['ГБ', 'ТБ', 'МБ']),
+    (re.compile(r'частота.*процессора|тактовая частота', re.IGNORECASE), ['ГГц', 'МГц']),
+    (re.compile(r'частота.*памяти|memory speed', re.IGNORECASE),       ['МГц', 'ГГц']),
+    (re.compile(r'частота обновления|refresh rate', re.IGNORECASE),    ['Гц', 'Hz']),
+    (re.compile(r'диагональ', re.IGNORECASE),                          ['дюйм', '"', 'см']),
+    (re.compile(r'потребляемая мощность|TDP|блок питания', re.IGNORECASE), ['Вт', 'кВт']),
+    (re.compile(r'время отклика', re.IGNORECASE),                      ['мс']),
+    (re.compile(r'угол обзора', re.IGNORECASE),                        ['°', 'градус']),
+    (re.compile(r'яркость', re.IGNORECASE),                            ['кд/м²', 'нит', 'cd/m²']),
+    (re.compile(r'контрастность', re.IGNORECASE),                      [':1']),
+    (re.compile(r'вес|масса', re.IGNORECASE),                          ['кг', 'г']),
+    (re.compile(r'габарит|ширина|высота|глубина', re.IGNORECASE),      ['мм', 'см', 'м']),
+    (re.compile(r'гарантийный срок|гарантия', re.IGNORECASE),          ['мес', 'год', 'лет']),
+    (re.compile(r'скорость.*чтения|скорость.*записи', re.IGNORECASE),  ['МБ/с', 'ГБ/с', 'MB/s']),
+    (re.compile(r'уровень шума', re.IGNORECASE),                       ['дБ', 'дБА']),
+    (re.compile(r'температура.*эксплуатации', re.IGNORECASE),          ['°C']),
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TEST-14: ОКПД2/КТРУ
+# ─────────────────────────────────────────────────────────────────────────────
+_OKPD2_FORMAT = re.compile(r'^\d{2}\.\d{2}\.\d{2}\.?\d{0,3}$')
+_KNOWN_OKPD2: dict[str, list[str]] = {
+    '26.20.15': ['системный блок', 'персональный компьютер', 'пк'],
+    '26.20.17': ['монитор', 'дисплей', 'экран'],
+    '26.80.13': ['диск', 'dvd', 'cd', 'привод', 'оптический'],
+    '26.20.22': ['ноутбук', 'лэптоп', 'портативный компьютер'],
+    '26.20.18': ['клавиатура', 'мышь', 'манипулятор', 'устройство ввода'],
+    '28.23.13': ['мфу', 'принтер', 'сканер'],
+    '26.20.40': ['маршрутизатор', 'коммутатор', 'свитч', 'сетевое'],
+    '26.30.11': ['телефон', 'ip-телефон'],
+    '26.20.16': ['сервер'],
+    '27.20.26': ['ибп', 'источник бесперебойного'],
+    '58.29.29': ['программное обеспечение', 'по', 'лицензия', 'антивирус', 'офисный пакет'],
+}
 
 
 def _extract_number(value: str) -> float | None:
@@ -403,6 +446,8 @@ def validate_tz(
         freq_val = _num(['частота памяти', 'тактовая частота памяти', 'частота ОЗУ'])
         if 'DDR4' in ddr_type_val and freq_val and freq_val > 6400:
             t06.warn("Частота DDR4 > 6400 МГц — нестандартная конфигурация", fld=row.field)
+        if 'DDR5' in ddr_type_val and freq_val and freq_val > 9600:
+            t06.warn(f"Частота DDR5 {freq_val:.0f} МГц > 9600 МГц — нереалистична для 2026 г.", fld=row.field)
 
         diag_val = _num(['диагональ', 'размер экрана', 'размер матрицы'])
         res_val = ""
@@ -464,15 +509,21 @@ def validate_tz(
             if token not in full_text:
                 t08.warn(f"Рекомендуется добавить: «{token}»")
 
-    if has_service:
+    if has_service and not has_goods:
         if '1875' in full_text:
-            t08.fail("ПП №1875 не применяется к услугам")
+            t08.fail("ПП №1875 не применяется к услугам — удалить", autofix="update_normative")
         if '719' in full_text:
-            t08.fail("ПП №719 не применяется к услугам")
+            t08.fail("ПП №719 не применяется к услугам — удалить", autofix="update_normative")
+        if '1236' in full_text:
+            t08.warn("ПП №1236 применяется к ПО, не к услугам — проверьте")
 
     if has_software:
         if '1236' not in full_text:
-            t08.warn("Для ПО рекомендуется: ПП №1236 (реестр отечественного ПО)")
+            t08.fail("Для ПО обязательно: ПП №1236 (реестр российского ПО Минцифры)", autofix="update_normative")
+        if '1875' in full_text:
+            t08.warn("ПП №1875 применяется к товарам, не к ПО — проверьте")
+        if '719' in full_text:
+            t08.warn("ПП №719 применяется к товарам, не к ПО — проверьте")
 
     results.append(t08)
 
@@ -588,6 +639,57 @@ def validate_tz(
     else:
         t12.status = "skip"
     results.append(t12)
+
+    # ── TEST-13 ────────────────────────────────────────────────────────────
+    t13 = TestResult("TEST-13", "Единицы измерения характеристик")
+    for row in rows:
+        for spec_name, spec_value, _grp in row.specs:
+            if not spec_value.strip() or spec_value.strip() in ('-', '—'):
+                continue
+            for param_pat, allowed_units in _UNIT_RULES:
+                if param_pat.search(spec_name):
+                    unit_ok = any(u.lower() in spec_value.lower() for u in allowed_units)
+                    if not unit_ok:
+                        t13.fail(
+                            f"«{spec_name}»: значение «{spec_value[:60]}» — ожидаются единицы {allowed_units}",
+                            fld=f"{row.field} → {spec_name}",
+                            autofix="fix_unit",
+                        )
+    results.append(t13)
+
+    # ── TEST-14 ────────────────────────────────────────────────────────────
+    t14 = TestResult("TEST-14", "Коды ОКПД2/КТРУ")
+    for row in rows:
+        okpd2 = row.okpd2_code.strip() if row.okpd2_code else ""
+        if not okpd2:
+            t14.warn(
+                f"«{row.name}»: не указан код ОКПД2",
+                fld=row.field,
+            )
+            continue
+        if not _OKPD2_FORMAT.match(okpd2):
+            t14.warn(
+                f"«{row.name}»: ОКПД2 «{okpd2}» — неверный формат (ожидается XX.XX.XX.XXX)",
+                fld=row.field,
+            )
+            continue
+        item_lower = row.name.lower()
+        matched = False
+        for code_prefix, keywords in _KNOWN_OKPD2.items():
+            if okpd2.startswith(code_prefix):
+                matched = True
+                if not any(kw in item_lower for kw in keywords):
+                    t14.warn(
+                        f"ОКПД2 {okpd2} возможно не соответствует «{row.name}» — проверьте",
+                        fld=row.field,
+                    )
+                break
+        if not matched:
+            t14.warn(
+                f"ОКПД2 {okpd2} не найден в справочнике — проверьте вручную на zakupki.gov.ru",
+                fld=row.field,
+            )
+    results.append(t14)
 
     # ── Итог ────────────────────────────────────────────────────────────────
     error_count = sum(len(r.errors) for r in results)

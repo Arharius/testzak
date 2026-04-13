@@ -3516,6 +3516,7 @@ class FullValidateRowIn(BaseModel):
     qty: int = 1
     qty_unit: str = "шт."
     category: str = "ТОВАР"
+    okpd2_code: str = ""
 
 
 class FullValidateRequest(BaseModel):
@@ -3551,7 +3552,7 @@ class FullValidationResultOut(BaseModel):
 
 @app.post("/api/tz/validate/full", response_model=FullValidationResultOut)
 def validate_tz_full(req: FullValidateRequest, db: Session = Depends(get_db)):
-    """Полная 12-тестовая проверка ТЗ перед публикацией в ЕИС."""
+    """Полная 14-тестовая проверка ТЗ перед публикацией в ЕИС."""
     spec_rows = [
         SpecRow(
             name=r.name,
@@ -3561,6 +3562,7 @@ def validate_tz_full(req: FullValidateRequest, db: Session = Depends(get_db)):
             category=r.category,
             specs=[(s.name, s.value, s.group) for s in r.specs],
             description=r.description,
+            okpd2_code=r.okpd2_code,
         )
         for r in req.rows
     ]
@@ -3661,6 +3663,7 @@ def _rows_in_to_spec_rows(rows_in: list[FullValidateRowIn]) -> list[SpecRow]:
             category=r.category,
             specs=[(s.name, s.value, s.group) for s in r.specs],
             description=r.description,
+            okpd2_code=r.okpd2_code,
         )
         for r in rows_in
     ]

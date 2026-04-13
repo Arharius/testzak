@@ -1003,6 +1003,7 @@ export interface FullValidateRowInput {
   qty?: number;
   qty_unit?: string;
   category?: string;
+  okpd2_code?: string;
 }
 
 export async function validateTzFull(

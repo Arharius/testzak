@@ -277,17 +277,18 @@ export async function generateWithBackend(
   messages: { role: string; content: string }[],
   temperature = 0.1,
   maxTokens = 4096,
+  noCount = false,
 ): Promise<string> {
   // Strategy: get API key from backend (auth + usage counting), then stream directly from browser
   // This avoids Railway's 60s HTTP timeout
   try {
-    return await _generateWithDirectStream(provider, model, messages, temperature, maxTokens);
+    return await _generateWithDirectStream(provider, model, messages, temperature, maxTokens, noCount);
   } catch (streamErr) {
     console.warn('[AI] Direct stream failed, falling back to proxy:', streamErr);
     // Fallback to non-streaming proxy (may timeout for long prompts)
     const result = await apiPost<{ ok: boolean; data: { choices?: { message?: { content?: string } }[] } }>(
       '/api/ai/generate',
-      { provider, model, messages, temperature, max_tokens: maxTokens, timeout_sec: 100 },
+      { provider, model, messages, temperature, max_tokens: maxTokens, timeout_sec: 100, no_count: noCount },
       'optional',
     );
     return result.data?.choices?.[0]?.message?.content || '';
@@ -304,11 +305,12 @@ async function _generateWithDirectStream(
   messages: { role: string; content: string }[],
   temperature: number,
   maxTokens: number,
+  noCount = false,
 ): Promise<string> {
   // Step 1: Get API key from backend (also checks auth + counts usage)
   const keyResp = await apiPost<{ ok: boolean; key: string; url: string }>(
     '/api/ai/key',
-    { provider },
+    { provider, no_count: noCount },
     'optional',
     SHORT_TIMEOUT_MS,
   );

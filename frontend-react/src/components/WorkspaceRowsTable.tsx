@@ -2,6 +2,7 @@ import { Fragment, type ChangeEvent } from 'react';
 import { GOODS_CATALOG, GOODS_GROUPS } from '../data/goods-catalog';
 import { GENERAL_CATALOG, GENERAL_GROUPS } from '../data/general-catalog';
 import type { SpecItem } from '../utils/spec-processor';
+import type { VerifyResult } from '../utils/verify';
 import { WorkspaceRowDetailPanel } from './WorkspaceRowDetailPanel';
 import { WorkspaceSpecEditor } from './WorkspaceSpecEditor';
 import type { ImportedRowImportInfo } from '../utils/row-import';
@@ -23,6 +24,8 @@ type GoodsRowLike = {
     sourceContextText?: string;
   };
   importInfo?: ImportedRowImportInfo;
+  verification?: VerifyResult;
+  verifying?: boolean;
 };
 
 type CatalogLike = {
@@ -358,6 +361,43 @@ export function WorkspaceRowsTable({
                       {row.status === 'done' && `✅ Готово · ${row.specs?.length ?? 0} характеристик`}
                       {row.status === 'error' && `❌ ${row.error ?? 'Ошибка'}`}
                     </span>
+                    )}
+                    {row.verifying && (
+                      <span className="eis-verify-badge eis-verify-badge--checking" title="Идёт проверка соответствия требованиям 44-ФЗ и ЕИС...">
+                        🔍 Проверка ЕИС…
+                      </span>
+                    )}
+                    {!row.verifying && row.verification && (
+                      <span
+                        className={`eis-verify-badge ${
+                          row.verification.readyForEis
+                            ? 'eis-verify-badge--ok'
+                            : row.verification.score >= 70
+                              ? 'eis-verify-badge--warn'
+                              : 'eis-verify-badge--fail'
+                        }`}
+                        title={(() => {
+                          const v = row.verification;
+                          const lines = [`ЕИС-готовность: ${v.score}%`];
+                          if (v.criticalCount > 0) lines.push(`❌ Критичных нарушений: ${v.criticalCount}`);
+                          if (v.warningCount > 0) lines.push(`⚠️ Предупреждений: ${v.warningCount}`);
+                          const fixed = v.issues.filter(i => i.autoFixed).length;
+                          if (fixed > 0) lines.push(`🔧 Авто-исправлено: ${fixed}`);
+                          if (v.issues.length > 0) {
+                            lines.push('');
+                            lines.push('Найденные нарушения:');
+                            v.issues.slice(0, 5).forEach(issue => {
+                              lines.push(`• ${issue.severity === 'critical' ? '❌' : '⚠️'} ${issue.specName}: ${issue.rule}${issue.autoFixed ? ' [исправлено]' : ''}`);
+                            });
+                            if (v.issues.length > 5) lines.push(`  ...и ещё ${v.issues.length - 5}`);
+                          }
+                          if (v.readyForEis) lines.push('✅ Готово к размещению в ЕИС');
+                          return lines.join('\n');
+                        })()}
+                      >
+                        {row.verification.readyForEis ? '✅' : row.verification.score >= 70 ? '⚠️' : '❌'} ЕИС {row.verification.score}%
+                        {row.verification.issues.some(i => i.autoFixed) && ' 🔧'}
+                      </span>
                     )}
                     <div className="row-status-actions">
                       {row.status === 'idle' && row.model.trim() && (

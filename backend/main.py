@@ -457,6 +457,7 @@ class AIGenerateRequest(BaseModel):
     messages: list[dict]
     temperature: Optional[float] = 0.3
     max_tokens: Optional[int] = 4096
+    no_count: bool = False
 
 class SearchSpecsRequest(BaseModel):
     product: str          # e.g. "Acer Veriton X2690G системный блок"
@@ -2310,8 +2311,8 @@ def ai_generate(request: Request, req: AIGenerateRequest, user: Optional[User] =
     # Проверка универсальности ответа
     ai_text = result.get("choices", [{}])[0].get("message", {}).get("content", "")
     universality = _check_universality(ai_text)
-    # Count usage (only for non-admin free users with limits)
-    if user and user.role != "admin" and user.tz_limit != -1:
+    # Count usage (only for non-admin free users with limits, and not for verification calls)
+    if not req.no_count and user and user.role != "admin" and user.tz_limit != -1:
         user.tz_count = (user.tz_count or 0) + 1
         if not user.tz_month_start:
             user.tz_month_start = datetime(datetime.now(timezone.utc).year, datetime.now(timezone.utc).month, 1, tzinfo=timezone.utc)
@@ -2373,6 +2374,7 @@ def ai_generate_stream(request: Request, req: AIGenerateRequest, user: Optional[
 
 class AIKeyRequest(BaseModel):
     provider: str
+    no_count: bool = False
 
 @app.post("/api/ai/key")
 @limiter.limit("30/minute")
@@ -2384,8 +2386,8 @@ def ai_get_key(request: Request, req: AIKeyRequest, user: Optional[User] = Depen
         require_active(user, db)
     api_key = _get_api_key(req.provider)
     url = _get_ai_url(req.provider)
-    # Count usage
-    if user and user.role != "admin" and user.tz_limit != -1:
+    # Count usage only for main generation calls (not verification/audit)
+    if not req.no_count and user and user.role != "admin" and user.tz_limit != -1:
         user.tz_count = (user.tz_count or 0) + 1
         if not user.tz_month_start:
             user.tz_month_start = datetime(datetime.now(timezone.utc).year, datetime.now(timezone.utc).month, 1, tzinfo=timezone.utc)

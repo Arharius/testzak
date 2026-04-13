@@ -36,6 +36,7 @@ import {
   autoFixTz,
   searchOkpd2,
   saveGeneration,
+  getStoredToken,
 } from '../lib/backendApi';
 import { TZValidationModal } from './TZValidationModal';
 import { FullValidationPanel } from './FullValidationPanel';
@@ -11361,6 +11362,40 @@ ${hint || '- Используй детальные, проверяемые эк�
             });
           } catch (e) {
             console.warn('[History] Failed to save generation:', e);
+          }
+        })();
+
+        // Сохранить в tz_history (новая таблица с позициями)
+        void (async () => {
+          try {
+            const doneRows = rows.filter((r) => r.status === 'done' && r.specs?.length);
+            const appendices = doneRows.map((r) => {
+              const g = lookupCatalog(r.type);
+              return {
+                position_name: r.model?.trim() || g.name,
+                unit:          'шт',
+                quantity:      r.qty ?? 1,
+                okpd2_code:    r.meta?.okpd2_code || g.okpd2 || '',
+                okpd2_name:    r.meta?.okpd2_name || g.okpd2name || '',
+              };
+            });
+            const categoryHint = doneRows.some((r) => lookupCatalog(r.type)?.isSoftware)
+              ? 'ПО'
+              : doneRows.some((r) => isServiceCatalogType(r.type))
+              ? 'УСЛУГА'
+              : 'ТОВАР';
+            const resultJson = {
+              meta:       { category: categoryHint, law_mode: lawMode },
+              appendices,
+            };
+            const token = getStoredToken();
+            await fetch('/api/tz-history/save', {
+              method:  'POST',
+              headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+              body:    JSON.stringify({ result_json: resultJson }),
+            });
+          } catch (e) {
+            console.warn('[TZ-History] Failed to save:', e);
           }
         })();
       }

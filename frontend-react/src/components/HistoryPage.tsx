@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { GenerationItem } from '../lib/backendApi';
 import { listGenerations, deleteGeneration, buildApiUrl, getStoredToken } from '../lib/backendApi';
+import { HistoryPanel } from './HistoryPanel';
 
 type HistoryPageProps = {
   onBack: () => void;
@@ -309,7 +310,7 @@ export function HistoryPage({ onBack }: HistoryPageProps) {
         </button>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text-primary, #1e293b)' }}>
-            История генераций
+            История ТЗ
           </h1>
           {!loading && (
             <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
@@ -317,6 +318,22 @@ export function HistoryPage({ onBack }: HistoryPageProps) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* ТЗ с позициями (новая таблица tz_history) */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#1e293b', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>📋</span>
+          <span>Сохранённые ТЗ</span>
+        </div>
+        <HistoryPanel onRepeat={() => { onBack(); }} />
+      </div>
+
+      <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 24, marginBottom: 16 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: '#1e293b', marginBottom: 4 }}>
+          📄 Архив генераций (DOCX)
+        </div>
+        <div style={{ fontSize: 12, color: '#94a3b8' }}>Все скаченные DOCX-файлы</div>
       </div>
 
       {/* Error */}

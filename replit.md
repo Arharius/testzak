@@ -17,6 +17,13 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 
 **System version: v3.1** — 14 validation tests (TEST-01–TEST-14), including TEST-13 (units) and TEST-14 (OKPD2/KTRU). Regulatory matrix: PP№1875 for goods/works, PP№1236 for software only, PP№878/616/925 banned. "или выше" accepted as valid equivalent. DDR5 max frequency 9600 MHz for 2026.
 
+**5 new features implemented:**
+- **ФИЧ 1: EISCard** — Шпаргалка ЕИС: ОКЕИ-коды, ОКПД2, кнопки копирования, способ закупки. Компонент `EISCard.tsx` + справочник `okei_codes.ts`. Показывается в правой панели после готовых позиций.
+- **ФИЧ 2: История ТЗ** — Таблица `tz_history` (SQLAlchemy model), 5 API эндпоинтов (GET/GET/{id}/DELETE/PATCH-favorite/POST-save). Компонент `HistoryPanel.tsx`.
+- **ФИЧ 3: Шаблоны КТРУ** — Справочник `ktru_templates.ts` (9 позиций: ПК, монитор, ноутбук, МФУ, ИБП, сервер, коммутатор, DVD, ПО). Компонент `TemplateSelector.tsx` в тулбаре. При выборе — новая строка с заполненными характеристиками.
+- **ФИЧ 4: Калькулятор НМЦК** — `nmck_calculator.py` (поиск ЕИС + фолбэк PRICE_BENCHMARKS для 10 категорий). POST `/api/nmck/calculate`. Компонент `NMCKCalculator.tsx`.
+- **ФИЧ 5: Проверка ФАС** — `fas_checker.py` (поиск br.fas.gov.ru + локальный анализ брендов/избыточных требований). POST `/api/fas/check`. Компонент `FASChecker.tsx`.
+
 ## Architecture
 
 ### Frontend (`frontend-react/`)

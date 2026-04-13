@@ -58,6 +58,7 @@ try:
         EmailLog,
         PilotFeedback,
         ErrorLog,
+        TZHistory,
     )
     from .auth import (  # type: ignore
         send_magic_link,
@@ -101,6 +102,7 @@ except ImportError:
         EmailLog,
         PilotFeedback,
         ErrorLog,
+        TZHistory,
     )
     from auth import (
         send_magic_link,
@@ -5096,6 +5098,214 @@ PLAN_DAYS = {
     "corp": 365,
     "admin": 0,
 }
+
+
+try:
+    from .nmck_calculator import search_similar_contracts, calculate_nmck_by_market, get_benchmark
+    from .fas_checker import search_fas_decisions, analyze_local_risks, get_risk_level
+except ImportError:
+    from nmck_calculator import search_similar_contracts, calculate_nmck_by_market, get_benchmark
+    from fas_checker import search_fas_decisions, analyze_local_risks, get_risk_level
+
+
+def _build_tz_title(result_json: dict) -> str:
+    appendices = result_json.get("appendices", [])
+    if not appendices:
+        positions = result_json.get("positions", [])
+        if positions:
+            names = [p.get("name", "") or p.get("position_name", "") for p in positions[:3]]
+        else:
+            return "ТЗ без наименования"
+    else:
+        names = [a.get("position_name", "") for a in appendices[:3]]
+    title = ", ".join(n for n in names if n)
+    extra = len(appendices) - 3
+    if extra > 0:
+        title += f" (+{extra} поз.)"
+    return title[:500] or "ТЗ"
+
+
+def _save_tz_history(user_id: str, result_json: dict, db, docx_path: str | None = None) -> None:
+    try:
+        title = _build_tz_title(result_json)
+        category = result_json.get("meta", {}).get("category", "ТОВАР")
+        appendices = result_json.get("appendices", result_json.get("positions", []))
+        record = TZHistory(
+            user_id=user_id,
+            title=title,
+            category=category,
+            positions=json.dumps(appendices, ensure_ascii=False),
+            result_json=json.dumps(result_json, ensure_ascii=False),
+            docx_path=docx_path,
+        )
+        db.add(record)
+        db.commit()
+    except Exception as e:
+        logger.warning(f"save_tz_history failed: {e}")
+        db.rollback()
+
+
+@app.get("/api/tz-history")
+def get_tz_history(
+    limit: int = 20,
+    offset: int = 0,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(TZHistory)
+        .filter(TZHistory.user_id == current_user.id)
+        .order_by(TZHistory.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    items = []
+    for r in rows:
+        try:
+            positions_list = json.loads(r.positions or "[]")
+            positions_count = len(positions_list)
+        except Exception:
+            positions_count = 0
+        items.append({
+            "id":              r.id,
+            "title":           r.title,
+            "category":        r.category,
+            "positions_count": positions_count,
+            "created_at":      r.created_at.isoformat() if r.created_at else None,
+            "is_favorite":     r.is_favorite,
+        })
+    return {"items": items}
+
+
+@app.get("/api/tz-history/{tz_id}")
+def get_tz_history_item(
+    tz_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = db.query(TZHistory).filter_by(id=tz_id, user_id=current_user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="ТЗ не найдено")
+    result_json = {}
+    try:
+        result_json = json.loads(row.result_json or "{}")
+    except Exception:
+        pass
+    return {
+        "id":          row.id,
+        "title":       row.title,
+        "category":    row.category,
+        "created_at":  row.created_at.isoformat() if row.created_at else None,
+        "is_favorite": row.is_favorite,
+        "result_json": result_json,
+    }
+
+
+@app.delete("/api/tz-history/{tz_id}")
+def delete_tz_history_item(
+    tz_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = db.query(TZHistory).filter_by(id=tz_id, user_id=current_user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="ТЗ не найдено")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+@app.patch("/api/tz-history/{tz_id}/favorite")
+def toggle_tz_favorite(
+    tz_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    row = db.query(TZHistory).filter_by(id=tz_id, user_id=current_user.id).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="ТЗ не найдено")
+    row.is_favorite = not row.is_favorite
+    db.commit()
+    return {"ok": True, "is_favorite": row.is_favorite}
+
+
+@app.post("/api/tz-history/save")
+async def save_tz_to_history(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    result_json = payload.get("result_json", {})
+    docx_path = payload.get("docx_path")
+    _save_tz_history(current_user.id, result_json, db, docx_path)
+    return {"ok": True}
+
+
+@app.post("/api/nmck/calculate")
+async def calculate_nmck(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+):
+    okpd2    = str(payload.get("okpd2", ""))
+    keyword  = str(payload.get("keyword", ""))
+    quantity = max(int(payload.get("quantity", 1)), 1)
+
+    contracts = await search_similar_contracts(okpd2, keyword, quantity)
+
+    if contracts:
+        unit_prices = [c["unit_price"] for c in contracts if c.get("unit_price", 0) > 0]
+        result = calculate_nmck_by_market(unit_prices, quantity)
+        if result.get("nmck"):
+            return {
+                "ok": True,
+                "result": result,
+                "contracts": contracts[:5],
+                "legal_basis": result.get("legal_basis", "ч.1 ст.22 44-ФЗ"),
+            }
+
+    benchmark = get_benchmark(okpd2, quantity)
+    if benchmark:
+        return {
+            "ok": True,
+            "fallback": True,
+            "result": benchmark,
+            "contracts": [],
+            "recommendation": "Запросите 3 коммерческих предложения для актуализации",
+        }
+
+    return {
+        "ok": False,
+        "error": "Аналогичные контракты не найдены в ЕИС",
+        "recommendation": "Запросите 3 коммерческих предложения вручную",
+        "contracts": [],
+    }
+
+
+@app.post("/api/fas/check")
+async def check_fas_risks(
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+):
+    position_name   = str(payload.get("position_name", ""))
+    okpd2           = str(payload.get("okpd2", ""))
+    characteristics = payload.get("characteristics", [])
+
+    keywords = [position_name]
+    if okpd2:
+        keywords.append(okpd2[:8])
+
+    decisions   = await search_fas_decisions(keywords, okpd2)
+    local_risks = analyze_local_risks(characteristics, position_name)
+    risk_level  = get_risk_level(decisions, local_risks)
+
+    return {
+        "ok":                   True,
+        "fas_decisions":        decisions,
+        "local_risks":          local_risks,
+        "risk_level":           risk_level,
+        "total_decisions_found": len(decisions),
+    }
 
 
 _STATIC_DIR = _Path(__file__).resolve().parent / "static"

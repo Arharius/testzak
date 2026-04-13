@@ -1,6 +1,17 @@
 import type { TZDocumentSummary } from '../lib/backendApi';
 import type { PublicationStatusTone, ReadinessGateSummaryLike } from './workspace-panels.types';
 import { QaAuditBlock } from './QaAuditBlock';
+import { EISCard } from './EISCard';
+import { NMCKCalculator } from './NMCKCalculator';
+import { FASChecker } from './FASChecker';
+
+export interface ToolPosition {
+  name: string;
+  unit: string;
+  quantity: number;
+  okpd2?: string;
+  characteristics?: Array<{ name: string; value: string }>;
+}
 
 type WorkspaceSidePanelsProps = {
   publicationStatusTone: PublicationStatusTone;
@@ -18,6 +29,7 @@ type WorkspaceSidePanelsProps = {
   exportsBlockedByReadiness: boolean;
   buildTzText: () => string;
   qaAutoRunKey?: number;
+  toolPositions?: ToolPosition[];
   onExportPackage: () => void;
   onExportDocx: () => void;
   onExportPdf: () => void;
@@ -44,6 +56,7 @@ export function WorkspaceSidePanels({
   exportsBlockedByReadiness,
   buildTzText,
   qaAutoRunKey,
+  toolPositions = [],
   onExportPackage: _onExportPackage,
   onExportDocx,
   onExportPdf,
@@ -147,7 +160,35 @@ export function WorkspaceSidePanels({
             )}
           </div>
         )}
+
+        {docxReady && toolPositions.length > 0 && (
+          <EISCard positions={toolPositions} />
+        )}
       </div>
+
+      {docxReady && toolPositions.length > 0 && (
+        <>
+          <div className="workspace-side-card">
+            <div className="workspace-side-head">
+              <div>
+                <div className="micro-label">НМЦК</div>
+                <strong>Калькулятор начальной цены</strong>
+              </div>
+            </div>
+            <NMCKCalculator positions={toolPositions} />
+          </div>
+
+          <div className="workspace-side-card">
+            <div className="workspace-side-head">
+              <div>
+                <div className="micro-label">ФАС</div>
+                <strong>Проверка рисков</strong>
+              </div>
+            </div>
+            <FASChecker positions={toolPositions} />
+          </div>
+        </>
+      )}
     </>
   );
 }

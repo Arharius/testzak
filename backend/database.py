@@ -150,6 +150,19 @@ class ErrorLog(Base):
     traceback  = Column(Text, nullable=True)
 
 
+class TZHistory(Base):
+    __tablename__ = "tz_history"
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    user_id     = Column(String, nullable=False, index=True)
+    title       = Column(String(500), nullable=False, default="")
+    category    = Column(String(20), nullable=False, default="ТОВАР")
+    positions   = Column(Text, nullable=False, default="[]")
+    result_json = Column(Text, nullable=False, default="{}")
+    docx_path   = Column(String(500), nullable=True)
+    created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    is_favorite = Column(Boolean, nullable=False, default=False)
+
+
 def get_db():
     db = SessionLocal()
     try:

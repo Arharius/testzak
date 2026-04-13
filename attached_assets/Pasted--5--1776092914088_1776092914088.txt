@@ -1,0 +1,1149 @@
+ПЛАН РЕАЛИЗАЦИИ 5 ФИЧ — ПОШАГОВЫЙ С ПРОВЕРКАМИ
+Каждый шаг завершается тестом. Следующий шаг — только после
+прохождения теста предыдущего.
+
+════════════════════════════════════════════════════════════════
+ФИЧ 1: ШПАРГАЛКА ЕИС (ОКПД2 / ОКЕИ)
+════════════════════════════════════════════════════════════════
+
+ШАГ 1.1 — Создать справочник кодов ОКЕИ
+
+Создать файл src/data/okei_codes.js:
+
+export const OKEI_CODES = {
+  "шт":       { code: "796", name: "Штука" },
+  "шт.":      { code: "796", name: "Штука" },
+  "штука":    { code: "796", name: "Штука" },
+  "л":        { code: "112", name: "Литр" },
+  "л.":       { code: "112", name: "Литр" },
+  "литр":     { code: "112", name: "Литр" },
+  "кг":       { code: "166", name: "Килограмм" },
+  "кг.":      { code: "166", name: "Килограмм" },
+  "м":        { code: "006", name: "Метр" },
+  "м²":       { code: "055", name: "Квадратный метр" },
+  "м³":       { code: "113", name: "Кубический метр" },
+  "мес":      { code: "362", name: "Месяц" },
+  "мес.":     { code: "362", name: "Месяц" },
+  "месяц":    { code: "362", name: "Месяц" },
+  "час":      { code: "356", name: "Час" },
+  "ч":        { code: "356", name: "Час" },
+  "день":     { code: "359", name: "День" },
+  "дней":     { code: "359", name: "День" },
+  "год":      { code: "361", name: "Год" },
+  "лет":      { code: "361", name: "Год" },
+  "лицензия": { code: "839", name: "Лицензия" },
+  "лиц":      { code: "839", name: "Лицензия" },
+  "компл":    { code: "839", name: "Комплект" },
+  "комплект": { code: "839", name: "Комплект" },
+  "упак":     { code: "778", name: "Упаковка" },
+  "пачка":    { code: "778", name: "Упаковка" },
+}
+
+export function getOKEI(unit) {
+  const key = (unit || '').toLowerCase().trim()
+  return OKEI_CODES[key] || { code: "796", name: "Штука (по умолчанию)" }
+}
+
+▸ ТЕСТ 1.1:
+  getOKEI("шт.") → { code: "796", name: "Штука" }
+  getOKEI("мес") → { code: "362", name: "Месяц" }
+  getOKEI("xyz") → { code: "796", name: "Штука (по умолчанию)" }
+  Если все три возвращают ожидаемое → переходим к 1.2
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 1.2 — Создать компонент EISCard
+
+Создать src/components/EISCard.jsx:
+
+import { useState } from 'react'
+import { getOKEI } from '../data/okei_codes'
+
+const PROCUREMENT_METHODS = [
+  { limit: 600_000,   method: "Запрос котировок (ст.72 44-ФЗ)",    color: "green" },
+  { limit: 3_000_000, method: "Электронный аукцион (ст.59 44-ФЗ)", color: "blue" },
+  { limit: Infinity,  method: "Конкурс или аукцион (ст.48 44-ФЗ)", color: "orange" },
+]
+
+export function EISCard({ positions, nmck }) {
+  const [copiedId, setCopiedId] = useState(null)
+
+  const copy = (text, id) => {
+    navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 1500)
+  }
+
+  const method = PROCUREMENT_METHODS.find(m => !nmck || nmck <= m.limit)
+
+  return (
+    <div className="mt-4 border border-blue-200 rounded-lg bg-blue-50 p-4">
+      <h3 className="font-semibold text-blue-800 mb-3">
+        📋 Данные для ввода в ЕИС
+      </h3>
+
+      <div className="space-y-3">
+        {positions.map((pos, i) => {
+          const okei = getOKEI(pos.unit)
+          return (
+            <div key={i} className="bg-white rounded border border-blue-100 p-3">
+              <div className="font-medium text-gray-800 mb-2">
+                Позиция {i + 1}: {pos.name}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                {[
+                  { label: "ОКПД2",   value: pos.okpd2 || "—" },
+                  { label: "ОКЕИ код",value: okei.code },
+                  { label: "ОКЕИ",    value: okei.name },
+                  { label: "Кол-во",  value: String(pos.quantity) },
+                ].map(({ label, value }) => {
+                  const copyId = `${i}-${label}`
+                  return (
+                    <div key={label} className="flex items-center justify-between
+                                                bg-gray-50 rounded px-2 py-1">
+                      <span className="text-gray-500">{label}:</span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-medium">{value}</span>
+                        <button
+                          onClick={() => copy(value, copyId)}
+                          className="text-xs text-blue-600 hover:text-blue-800
+                                     border border-blue-200 rounded px-1"
+                        >
+                          {copiedId === copyId ? "✓" : "копировать"}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {method && (
+        <div className={`mt-3 p-2 rounded text-sm font-medium
+          ${method.color === 'green'  ? 'bg-green-50 text-green-800' :
+            method.color === 'blue'   ? 'bg-blue-50 text-blue-800' :
+                                        'bg-orange-50 text-orange-800'}`}>
+          Способ закупки: {method.method}
+        </div>
+      )}
+    </div>
+  )
+}
+
+▸ ТЕСТ 1.2:
+  Добавить на любую страницу временно:
+  <EISCard
+    positions={[
+      { name:"Системный блок", unit:"шт.", quantity:30,
+        okpd2:"26.20.15.110" },
+      { name:"Монитор", unit:"шт.", quantity:60,
+        okpd2:"26.20.17.110" }
+    ]}
+    nmck={500000}
+  />
+
+  Ожидание:
+  □ Показывается синяя карточка
+  □ ОКЕИ код = 796 для обеих позиций
+  □ Кнопка "копировать" копирует значение в буфер
+  □ Способ закупки: "Запрос котировок" (сумма 500к)
+  □ Удалить временный код после теста
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 1.3 — Подключить EISCard после генерации ТЗ
+
+В компоненте где отображается результат генерации
+(после кнопок "Скачать DOCX" и "Скачать PDF"):
+
+import { EISCard } from './EISCard'
+
+// В JSX после блока с кнопками скачивания:
+{generationResult && generationResult.appendices && (
+  <EISCard
+    positions={generationResult.appendices.map(a => ({
+      name:     a.position_name,
+      unit:     a.unit,
+      quantity: a.quantity,
+      okpd2:    a.okpd2_code,
+    }))}
+    nmck={generationResult.meta?.nmck || null}
+  />
+)}
+
+▸ ТЕСТ 1.3:
+  1. Сгенерировать ТЗ с 2+ позициями
+  2. Под кнопками скачивания появилась карточка ЕИС
+  3. Данные соответствуют позициям из ТЗ
+  4. Кнопки "копировать" работают
+  ✅ ФИЧ 1 ГОТОВА
+
+
+════════════════════════════════════════════════════════════════
+ФИЧ 2: ИСТОРИЯ ТЗ + ПОВТОР
+════════════════════════════════════════════════════════════════
+
+ШАГ 2.1 — Таблица истории в БД
+
+Выполнить SQL:
+
+CREATE TABLE IF NOT EXISTS tz_history (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title       VARCHAR(500) NOT NULL,
+  category    VARCHAR(20)  NOT NULL DEFAULT 'ТОВАР',
+  positions   JSONB        NOT NULL DEFAULT '[]',
+  result_json JSONB        NOT NULL DEFAULT '{}',
+  docx_path   VARCHAR(500),
+  created_at  TIMESTAMP    NOT NULL DEFAULT NOW(),
+  is_favorite BOOLEAN      NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX idx_tz_history_user ON tz_history(user_id, created_at DESC);
+
+▸ ТЕСТ 2.1:
+  SELECT * FROM tz_history LIMIT 1;
+  → Таблица существует, ошибок нет
+  Если ошибка → исправить SQL и повторить
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 2.2 — API для истории
+
+Добавить в backend эндпоинты:
+
+# GET /api/tz-history — список ТЗ пользователя
+@router.get("/api/tz-history")
+async def get_history(
+    limit: int = 20,
+    offset: int = 0,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    rows = db.execute("""
+        SELECT id, title, category, positions,
+               created_at, is_favorite,
+               jsonb_array_length(positions) as positions_count
+        FROM tz_history
+        WHERE user_id = :uid
+        ORDER BY created_at DESC
+        LIMIT :limit OFFSET :offset
+    """, {"uid": current_user.id,
+          "limit": limit, "offset": offset}).fetchall()
+    return {"items": [dict(r) for r in rows]}
+
+# GET /api/tz-history/{id} — получить конкретное ТЗ
+@router.get("/api/tz-history/{tz_id}")
+async def get_tz(tz_id: int,
+                 current_user = Depends(get_current_user),
+                 db: Session = Depends(get_db)):
+    row = db.execute("""
+        SELECT * FROM tz_history
+        WHERE id = :id AND user_id = :uid
+    """, {"id": tz_id, "uid": current_user.id}).fetchone()
+    if not row:
+        raise HTTPException(404, "ТЗ не найдено")
+    return dict(row)
+
+# DELETE /api/tz-history/{id}
+@router.delete("/api/tz-history/{tz_id}")
+async def delete_tz(tz_id: int,
+                    current_user = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    db.execute("""
+        DELETE FROM tz_history
+        WHERE id = :id AND user_id = :uid
+    """, {"id": tz_id, "uid": current_user.id})
+    db.commit()
+    return {"ok": True}
+
+# PATCH /api/tz-history/{id}/favorite
+@router.patch("/api/tz-history/{tz_id}/favorite")
+async def toggle_favorite(tz_id: int,
+                          current_user = Depends(get_current_user),
+                          db: Session = Depends(get_db)):
+    db.execute("""
+        UPDATE tz_history
+        SET is_favorite = NOT is_favorite
+        WHERE id = :id AND user_id = :uid
+    """, {"id": tz_id, "uid": current_user.id})
+    db.commit()
+    return {"ok": True}
+
+▸ ТЕСТ 2.2:
+  curl -H "Authorization: Bearer TOKEN" /api/tz-history
+  → {"items": []} (пустой список, но без ошибки 500)
+  curl -X DELETE -H "Authorization: Bearer TOKEN" /api/tz-history/999
+  → 404 "ТЗ не найдено"
+  ✅ если оба ответа корректны
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 2.3 — Сохранять ТЗ после генерации
+
+В функции генерации ТЗ, после успешного создания DOCX:
+
+# Python backend
+def save_to_history(user_id, result_json, docx_path, db):
+    title = build_title(result_json)  # см. ниже
+    db.execute("""
+        INSERT INTO tz_history
+          (user_id, title, category, positions, result_json, docx_path)
+        VALUES
+          (:uid, :title, :cat, :pos::jsonb, :res::jsonb, :path)
+    """, {
+        "uid":   user_id,
+        "title": title,
+        "cat":   result_json.get("meta", {}).get("category", "ТОВАР"),
+        "pos":   json.dumps(result_json.get("appendices", []),
+                            ensure_ascii=False),
+        "res":   json.dumps(result_json, ensure_ascii=False),
+        "path":  docx_path,
+    })
+    db.commit()
+
+def build_title(result_json):
+    appendices = result_json.get("appendices", [])
+    if not appendices:
+        return "ТЗ без наименования"
+    names = [a.get("position_name", "") for a in appendices[:3]]
+    title = ", ".join(n for n in names if n)
+    if len(appendices) > 3:
+        title += f" (+{len(appendices)-3} поз.)"
+    return title[:500]
+
+▸ ТЕСТ 2.3:
+  1. Сгенерировать ТЗ из UI
+  2. SELECT * FROM tz_history ORDER BY id DESC LIMIT 1;
+  → Запись появилась, title содержит наименование позиции
+  ✅ если запись есть
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 2.4 — Компонент HistoryPanel
+
+Создать src/components/HistoryPanel.jsx:
+
+import { useState, useEffect } from 'react'
+
+export function HistoryPanel({ onRepeat }) {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/tz-history', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    })
+      .then(r => r.json())
+      .then(d => { setItems(d.items || []); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const handleDelete = async (id) => {
+    if (!confirm('Удалить ТЗ из истории?')) return
+    await fetch(`/api/tz-history/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    })
+    setItems(items.filter(i => i.id !== id))
+  }
+
+  const handleFavorite = async (id) => {
+    await fetch(`/api/tz-history/${id}/favorite`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    })
+    setItems(items.map(i =>
+      i.id === id ? { ...i, is_favorite: !i.is_favorite } : i
+    ))
+  }
+
+  if (loading) return <div className="text-gray-500">Загрузка...</div>
+  if (!items.length) return (
+    <div className="text-center text-gray-400 py-8">
+      История пуста. Сгенерируйте первое ТЗ.
+    </div>
+  )
+
+  return (
+    <div className="space-y-2">
+      {items.map(item => (
+        <div key={item.id}
+             className="bg-white border border-gray-200 rounded-lg p-3
+                        flex items-center justify-between hover:border-blue-300">
+          <div>
+            <div className="font-medium text-gray-800">{item.title}</div>
+            <div className="text-xs text-gray-400 mt-0.5">
+              {item.category} · {item.positions_count} поз. ·{' '}
+              {new Date(item.created_at).toLocaleDateString('ru-RU')}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 ml-4">
+            <button
+              onClick={() => handleFavorite(item.id)}
+              className="text-lg"
+              title="В избранное"
+            >
+              {item.is_favorite ? '⭐' : '☆'}
+            </button>
+            <button
+              onClick={() => onRepeat(item.result_json)}
+              className="text-sm bg-blue-600 text-white px-3 py-1
+                         rounded hover:bg-blue-700"
+            >
+              Повторить
+            </button>
+            <button
+              onClick={() => handleDelete(item.id)}
+              className="text-sm text-red-500 hover:text-red-700"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+▸ ТЕСТ 2.4:
+  1. Добавить <HistoryPanel onRepeat={(data) => console.log(data)} />
+     на страницу истории
+  2. Открыть страницу → список ТЗ отображается
+  3. Кнопка "Повторить" → console.log выводит JSON
+  4. "✕" → запись удаляется из списка без перезагрузки
+  5. "☆" → меняется на "⭐" без перезагрузки
+  ✅ ФИЧ 2 ГОТОВА
+
+════════════════════════════════════════════════════════════════
+ФИЧ 3: ШАБЛОНЫ ПО КТРУ
+════════════════════════════════════════════════════════════════
+
+ШАГ 3.1 — База шаблонов КТРУ
+
+Создать src/data/ktru_templates.js:
+
+export const KTRU_TEMPLATES = {
+  "26.20.15.110": {
+    name: "Компьютер персональный",
+    okpd2: "26.20.15.110",
+    category: "ТОВАР",
+    characteristics: [
+      { name: "Тип", value: "Настольный (Desktop)", unit: "тип" },
+      { name: "Форм-фактор корпуса", value: "Tower, SFF или USFF", unit: "тип" },
+      { name: "Архитектура процессора", value: "x86-64", unit: "тип" },
+      { name: "Количество ядер процессора", value: "не менее 4", unit: "шт" },
+      { name: "Тактовая частота процессора (базовая)", value: "не менее 2.4", unit: "ГГц" },
+      { name: "Объём оперативной памяти", value: "не менее 8", unit: "ГБ" },
+      { name: "Тип оперативной памяти", value: "DDR4 или DDR5", unit: "тип" },
+      { name: "Объём накопителя", value: "не менее 256", unit: "ГБ" },
+      { name: "Тип накопителя", value: "SSD", unit: "тип" },
+      { name: "Порты USB 3.0 и выше", value: "не менее 4", unit: "шт" },
+      { name: "Видеовыход", value: "HDMI или DisplayPort, не менее 1", unit: "шт" },
+      { name: "Сетевой интерфейс", value: "Ethernet RJ-45, не менее 1 Гбит/с", unit: "тип" },
+      { name: "Потребляемая мощность", value: "не более 65", unit: "Вт" },
+      { name: "Класс энергоэффективности", value: "не ниже «А»", unit: "класс" },
+      { name: "Совместимость с отечественными ОС", value: "Astra Linux, ALT Linux или эквивалент из реестра Минцифры", unit: "совместимость" },
+      { name: "Гарантийный срок", value: "не менее 36", unit: "мес" },
+    ]
+  },
+  "26.20.17.110": {
+    name: "Монитор",
+    okpd2: "26.20.17.110",
+    category: "ТОВАР",
+    characteristics: [
+      { name: "Диагональ экрана", value: "не менее 21.5", unit: "дюйм" },
+      { name: "Разрешение", value: "не менее 1920 x 1080 (FHD)", unit: "пикс" },
+      { name: "Тип матрицы", value: "IPS, VA или эквивалент", unit: "тип" },
+      { name: "Яркость", value: "не менее 250", unit: "кд/м²" },
+      { name: "Контрастность", value: "не менее 1000:1", unit: "—" },
+      { name: "Время отклика", value: "не более 8", unit: "мс" },
+      { name: "Угол обзора", value: "не менее 178° по горизонтали и вертикали", unit: "°" },
+      { name: "Частота обновления", value: "не менее 60", unit: "Гц" },
+      { name: "Видеовход HDMI", value: "не менее 1 порта, версия не ниже 1.4", unit: "шт" },
+      { name: "Покрытие экрана", value: "матовое, антибликовое", unit: "тип" },
+      { name: "Регулировка наклона", value: "от -5° до +20°", unit: "°" },
+      { name: "Крепление VESA", value: "75x75 или 100x100 мм", unit: "мм" },
+      { name: "Потребляемая мощность", value: "не более 25", unit: "Вт" },
+      { name: "Класс энергоэффективности", value: "не ниже «А»", unit: "класс" },
+      { name: "Гарантийный срок", value: "не менее 36", unit: "мес" },
+    ]
+  },
+  "26.80.13.000": {
+    name: "DVD-привод внешний USB",
+    okpd2: "26.80.13.000",
+    category: "ТОВАР",
+    characteristics: [
+      { name: "Интерфейс", value: "USB 3.0", unit: "тип" },
+      { name: "Скорость записи DVD-R", value: "не менее 8x", unit: "—" },
+      { name: "Скорость чтения DVD", value: "не менее 16x", unit: "—" },
+      { name: "Поддерживаемые форматы", value: "DVD-R/RW, DVD+R/RW, CD-R/RW", unit: "—" },
+      { name: "Буфер", value: "не менее 2", unit: "МБ" },
+      { name: "Шум при работе", value: "не более 45", unit: "дБ" },
+      { name: "Потребляемая мощность", value: "не более 5", unit: "Вт" },
+      { name: "Гарантийный срок", value: "не менее 12", unit: "мес" },
+    ]
+  },
+  "26.20.22.000": {
+    name: "Ноутбук",
+    okpd2: "26.20.22.000",
+    category: "ТОВАР",
+    characteristics: [
+      { name: "Диагональ экрана", value: "не менее 14", unit: "дюйм" },
+      { name: "Разрешение", value: "не менее 1920 x 1080 (FHD)", unit: "пикс" },
+      { name: "Количество ядер процессора", value: "не менее 4", unit: "шт" },
+      { name: "Тактовая частота", value: "не менее 2.0", unit: "ГГц" },
+      { name: "Объём оперативной памяти", value: "не менее 8", unit: "ГБ" },
+      { name: "Объём накопителя", value: "не менее 256", unit: "ГБ" },
+      { name: "Тип накопителя", value: "SSD NVMe или SATA", unit: "тип" },
+      { name: "Ёмкость аккумулятора", value: "не менее 40", unit: "Вт·ч" },
+      { name: "Время работы от аккумулятора", value: "не менее 6", unit: "час" },
+      { name: "Порт USB 3.0 и выше", value: "не менее 2", unit: "шт" },
+      { name: "Видеовыход HDMI", value: "не менее 1", unit: "шт" },
+      { name: "Сетевой интерфейс Ethernet", value: "не менее 100 Мбит/с", unit: "тип" },
+      { name: "Класс энергоэффективности", value: "не ниже «А»", unit: "класс" },
+      { name: "Совместимость с ОС", value: "Astra Linux, ALT Linux или эквивалент из реестра Минцифры", unit: "совместимость" },
+      { name: "Гарантийный срок", value: "не менее 12", unit: "мес" },
+    ]
+  },
+  "28.23.13.000": {
+    name: "МФУ лазерное",
+    okpd2: "28.23.13.000",
+    category: "ТОВАР",
+    characteristics: [
+      { name: "Тип печати", value: "Лазерный", unit: "тип" },
+      { name: "Функции", value: "печать, копирование, сканирование", unit: "тип" },
+      { name: "Формат", value: "A4", unit: "тип" },
+      { name: "Скорость печати (ч/б)", value: "не менее 25", unit: "стр/мин" },
+      { name: "Разрешение печати", value: "не менее 1200 x 1200", unit: "dpi" },
+      { name: "Объём лотка", value: "не менее 250", unit: "листов" },
+      { name: "Двусторонняя печать", value: "автоматическая, наличие", unit: "наличие" },
+      { name: "Интерфейс USB", value: "USB 2.0, не менее 1", unit: "шт" },
+      { name: "Сетевой интерфейс", value: "Ethernet RJ-45, не менее 100 Мбит/с", unit: "тип" },
+      { name: "Ресурс картриджа", value: "не менее 3000", unit: "стр" },
+      { name: "Класс энергоэффективности", value: "не ниже «А»", unit: "класс" },
+      { name: "Гарантийный срок", value: "не менее 12", unit: "мес" },
+    ]
+  },
+  "27.20.26.000": {
+    name: "ИБП",
+    okpd2: "27.20.26.000",
+    category: "ТОВАР",
+    characteristics: [
+      { name: "Топология", value: "Line-Interactive или Off-line", unit: "тип" },
+      { name: "Мощность (ВА)", value: "не менее 600", unit: "ВА" },
+      { name: "Мощность (Вт)", value: "не менее 360", unit: "Вт" },
+      { name: "Время работы при нагрузке 50%", value: "не менее 10", unit: "мин" },
+      { name: "Розеток с защитой", value: "не менее 4", unit: "шт" },
+      { name: "Интерфейс управления", value: "USB", unit: "тип" },
+      { name: "Гарантийный срок", value: "не менее 24", unit: "мес" },
+    ]
+  },
+}
+
+export function getTemplate(okpd2) {
+  return KTRU_TEMPLATES[okpd2] || null
+}
+
+export function searchTemplates(query) {
+  const q = query.toLowerCase()
+  return Object.values(KTRU_TEMPLATES).filter(t =>
+    t.name.toLowerCase().includes(q) ||
+    t.okpd2.includes(q)
+  )
+}
+
+▸ ТЕСТ 3.1:
+  getTemplate("26.20.15.110") → объект с characteristics.length > 10
+  searchTemplates("монитор") → массив с 1 элементом
+  searchTemplates("xyz") → пустой массив
+  ✅ если все три корректны
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 3.2 — Компонент TemplateSelector
+
+Создать src/components/TemplateSelector.jsx:
+
+import { useState } from 'react'
+import { searchTemplates, KTRU_TEMPLATES } from '../data/ktru_templates'
+
+export function TemplateSelector({ onSelect }) {
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
+
+  const results = query.length > 1
+    ? searchTemplates(query)
+    : Object.values(KTRU_TEMPLATES)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-sm border border-gray-300 rounded px-3 py-1.5
+                   hover:border-blue-400 bg-white"
+      >
+        📂 Шаблоны КТРУ
+      </button>
+
+      {open && (
+        <div className="absolute z-50 top-full mt-1 left-0 w-80
+                        bg-white border border-gray-200 rounded-lg
+                        shadow-lg">
+          <div className="p-2 border-b">
+            <input
+              autoFocus
+              placeholder="Поиск по названию или ОКПД2..."
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              className="w-full text-sm border border-gray-200 rounded
+                         px-2 py-1 focus:outline-none focus:border-blue-400"
+            />
+          </div>
+          <div className="max-h-60 overflow-y-auto">
+            {results.map(t => (
+              <button
+                key={t.okpd2}
+                onClick={() => { onSelect(t); setOpen(false); setQuery('') }}
+                className="w-full text-left px-3 py-2 hover:bg-blue-50
+                           border-b border-gray-50 last:border-0"
+              >
+                <div className="text-sm font-medium">{t.name}</div>
+                <div className="text-xs text-gray-400">{t.okpd2}</div>
+              </button>
+            ))}
+            {results.length === 0 && (
+              <div className="text-center text-gray-400 py-4 text-sm">
+                Шаблон не найден
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+▸ ТЕСТ 3.2:
+  1. Разместить <TemplateSelector onSelect={t => console.log(t)} />
+  2. Нажать "Шаблоны КТРУ" → выпадающий список открылся
+  3. Ввести "монитор" → показывается шаблон монитора
+  4. Выбрать шаблон → console.log выводит объект с characteristics
+  5. Нажать за пределами → список закрылся
+  ✅ ФИЧ 3 ГОТОВА
+
+
+════════════════════════════════════════════════════════════════
+ФИЧ 4: КАЛЬКУЛЯТОР НМЦК
+════════════════════════════════════════════════════════════════
+
+ШАГ 4.1 — Парсер открытых данных ЕИС
+
+Создать backend/nmck_calculator.py:
+
+import httpx
+import asyncio
+from typing import Optional
+
+EIS_API = "https://zakupki.gov.ru/epz/order/extendedsearch/results.html"
+EIS_OPEN_DATA = "https://opendata.zakupki.gov.ru/api/data"
+
+async def search_similar_contracts(
+    okpd2: str,
+    keyword: str,
+    quantity: int = 1
+) -> list[dict]:
+    """
+    Ищет аналогичные исполненные контракты через открытые данные ЕИС.
+    API: https://opendata.zakupki.gov.ru
+    """
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            resp = await client.get(
+                "https://opendata.zakupki.gov.ru/api/contracts",
+                params={
+                    "okpd2": okpd2[:8],  # первые 8 знаков
+                    "keyword": keyword,
+                    "status": "EC",       # исполнен (Executed Contract)
+                    "page": 1,
+                    "limit": 10,
+                }
+            )
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            contracts = data.get("data", [])
+            return [
+                {
+                    "price":     c.get("price", 0),
+                    "quantity":  c.get("quantity", 1),
+                    "unit_price": c.get("price", 0) / max(c.get("quantity", 1), 1),
+                    "date":      c.get("signDate", ""),
+                    "region":    c.get("region", ""),
+                    "supplier":  c.get("supplierName", ""),
+                }
+                for c in contracts
+                if c.get("price", 0) > 0
+            ]
+        except Exception:
+            return []
+
+
+def calculate_nmck_by_market(
+    unit_prices: list[float],
+    quantity: int
+) -> dict:
+    """
+    Метод сопоставимых рыночных цен (ч.1 ст.22 44-ФЗ).
+    Требует не менее 3 цен.
+    """
+    if len(unit_prices) < 3:
+        return {
+            "method": "insufficient_data",
+            "error": "Недостаточно данных (нужно ≥3 цены)",
+            "nmck": None,
+        }
+
+    prices = sorted(unit_prices)
+
+    # Убрать выбросы (более 33% от медианы)
+    median = prices[len(prices) // 2]
+    filtered = [p for p in prices
+                if 0.67 * median <= p <= 1.33 * median]
+
+    if len(filtered) < 3:
+        filtered = prices[:5]  # берём 5 минимальных
+
+    avg_unit = sum(filtered) / len(filtered)
+    nmck = avg_unit * quantity
+
+    return {
+        "method": "market_prices",
+        "unit_prices_used": filtered,
+        "avg_unit_price": round(avg_unit, 2),
+        "quantity": quantity,
+        "nmck": round(nmck, 2),
+        "nmck_with_vat": round(nmck * 1.20, 2),  # +НДС 20%
+        "sources_count": len(filtered),
+    }
+
+
+# Эндпоинт
+@router.post("/api/nmck/calculate")
+async def calculate_nmck(
+    payload: dict,
+    current_user = Depends(get_current_user)
+):
+    okpd2    = payload.get("okpd2", "")
+    keyword  = payload.get("keyword", "")
+    quantity = int(payload.get("quantity", 1))
+
+    contracts = await search_similar_contracts(okpd2, keyword, quantity)
+
+    if not contracts:
+        return {
+            "ok": False,
+            "error": "Аналогичные контракты не найдены в ЕИС",
+            "recommendation": "Запросите 3 коммерческих предложения вручную",
+            "contracts": [],
+        }
+
+    unit_prices = [c["unit_price"] for c in contracts if c["unit_price"] > 0]
+    result = calculate_nmck_by_market(unit_prices, quantity)
+
+    return {
+        "ok": True,
+        "result": result,
+        "contracts": contracts[:5],
+        "legal_basis": "ч.1 ст.22 44-ФЗ — метод сопоставимых рыночных цен",
+    }
+
+▸ ТЕСТ 4.1:
+  curl -X POST /api/nmck/calculate \
+    -H "Authorization: Bearer TOKEN" \
+    -d '{"okpd2":"26.20.15","keyword":"системный блок","quantity":1}'
+
+  Ожидание один из двух ответов:
+  a) {"ok": true, "result": {"nmck": 12345.00, ...}}
+  b) {"ok": false, "error": "Аналогичные контракты не найдены..."}
+
+  Любой из них — корректный ответ (нет 500 ошибки)
+  ✅ если нет исключения 500
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 4.2 — Фолбэк: ценовые ориентиры
+
+Если ЕИС API не вернул данных — использовать локальный справочник.
+
+Добавить в backend/nmck_calculator.py:
+
+# Медианные цены 2024-2025 из открытых данных ЕИС
+PRICE_BENCHMARKS = {
+  "26.20.15": {"min": 25_000,  "median": 45_000,  "max": 90_000,
+               "name": "Системный блок"},
+  "26.20.17": {"min": 8_000,   "median": 15_000,  "max": 35_000,
+               "name": "Монитор"},
+  "26.80.13": {"min": 1_500,   "median": 2_500,   "max": 5_000,
+               "name": "DVD-привод внешний"},
+  "26.20.22": {"min": 40_000,  "median": 75_000,  "max": 150_000,
+               "name": "Ноутбук"},
+  "28.23.13": {"min": 15_000,  "median": 30_000,  "max": 60_000,
+               "name": "МФУ"},
+  "27.20.26": {"min": 3_000,   "median": 6_000,   "max": 15_000,
+               "name": "ИБП"},
+}
+
+def get_benchmark(okpd2: str, quantity: int) -> dict | None:
+    key = okpd2[:8]
+    bench = PRICE_BENCHMARKS.get(key)
+    if not bench:
+        return None
+    return {
+        "method": "benchmark",
+        "name": bench["name"],
+        "unit_price_median": bench["median"],
+        "nmck": bench["median"] * quantity,
+        "nmck_range": {
+            "min": bench["min"] * quantity,
+            "max": bench["max"] * quantity,
+        },
+        "warning": "Ориентировочные данные — уточните 3 КП",
+        "legal_basis": "ч.1 ст.22 44-ФЗ (требует актуализации КП)",
+    }
+
+Обновить эндпоинт — если ЕИС вернул пусто, вернуть benchmark:
+
+    if not contracts:
+        benchmark = get_benchmark(okpd2, quantity)
+        return {
+            "ok": bool(benchmark),
+            "fallback": True,
+            "result": benchmark,
+            "error": None if benchmark else "Данные не найдены",
+            "recommendation": "Запросите 3 коммерческих предложения",
+            "contracts": [],
+        }
+
+▸ ТЕСТ 4.2:
+  POST /api/nmck/calculate с okpd2="26.20.15", quantity=30
+  Ожидание: nmck ≈ 1 350 000 (45000 * 30) или близко
+  ✅ если nmck > 0
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 4.3 — Компонент NMCKCalculator
+
+Создать src/components/NMCKCalculator.jsx:
+
+import { useState } from 'react'
+
+export function NMCKCalculator({ positions }) {
+  const [results, setResults] = useState({})
+  const [loading, setLoading] = useState({})
+
+  const calculate = async (pos, index) => {
+    setLoading(prev => ({ ...prev, [index]: true }))
+    try {
+      const resp = await fetch('/api/nmck/calculate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({
+          okpd2:    pos.okpd2,
+          keyword:  pos.name,
+          quantity: pos.quantity,
+        }),
+      })
+      const data = await resp.json()
+      setResults(prev => ({ ...prev, [index]: data }))
+    } finally {
+      setLoading(prev => ({ ...prev, [index]: false }))
+    }
+  }
+
+  const totalNMCK = Object.values(results)
+    .filter(r => r?.result?.nmck)
+    .reduce((sum, r) => sum + r.result.nmck, 0)
+
+  const fmt = (n) => n
+    ? new Intl.NumberFormat('ru-RU', {
+        style: 'currency', currency: 'RUB', maximumFractionDigits: 0
+      }).format(n)
+    : '—'
+
+  return (
+    <div className="border border-green-200 rounded-lg bg-green-50 p-4 mt-4">
+      <h3 className="font-semibold text-green-800 mb-3">
+        💰 Калькулятор НМЦК (ч.1 ст.22 44-ФЗ)
+      </h3>
+
+      <div className="space-y-3">
+        {positions.map((pos, i) => {
+          const res = results[i]
+          return (
+            <div key={i} className="bg-white rounded border border-green-100 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="font-medium">{pos.name} × {pos.quantity}</span>
+                <button
+                  onClick={() => calculate(pos, i)}
+                  disabled={loading[i]}
+                  className="text-sm bg-green-600 text-white px-3 py-1
+                             rounded hover:bg-green-700 disabled:opacity-50"
+                >
+                  {loading[i] ? 'Ищем...' : 'Рассчитать'}
+                </button>
+              </div>
+
+              {res && (
+                <div className="text-sm space-y-1">
+                  {res.ok ? (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">НМЦК:</span>
+                        <span className="font-bold text-green-700">
+                          {fmt(res.result.nmck)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">С НДС 20%:</span>
+                        <span>{fmt(res.result.nmck_with_vat ||
+                               res.result.nmck * 1.2)}</span>
+                      </div>
+                      {res.fallback && (
+                        <div className="text-amber-600 text-xs mt-1">
+                          ⚠️ {res.result?.warning}
+                        </div>
+                      )}
+                      <div className="text-gray-400 text-xs">
+                        {res.legal_basis}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-red-500">{res.error}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      {totalNMCK > 0 && (
+        <div className="mt-3 pt-3 border-t border-green-200
+                        flex justify-between items-center">
+          <span className="font-semibold text-green-800">
+            Итого НМЦК:
+          </span>
+          <span className="text-xl font-bold text-green-700">
+            {fmt(totalNMCK)}
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+▸ ТЕСТ 4.3:
+  1. Разместить компонент с тестовыми позициями
+  2. Нажать "Рассчитать" для любой позиции
+  3. Показывается НМЦК в рублях (не 0, не ошибка 500)
+  4. При нескольких позициях → показывается итого
+  ✅ ФИЧ 4 ГОТОВА
+
+
+════════════════════════════════════════════════════════════════
+ФИЧ 5: ПРОВЕРКА НА ЖАЛОБЫ ФАС
+════════════════════════════════════════════════════════════════
+
+ШАГ 5.1 — Парсер решений ФАС
+
+Создать backend/fas_checker.py:
+
+import httpx
+import re
+from typing import Optional
+
+FAS_API = "https://br.fas.gov.ru/api/decisions"
+
+async def search_fas_decisions(
+    keywords: list[str],
+    okpd2: Optional[str] = None
+) -> list[dict]:
+    """
+    Поиск решений ФАС по ключевым словам в описании закупки.
+    Публичный API: https://br.fas.gov.ru
+    """
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        query = " ".join(keywords[:3])  # первые 3 ключевых слова
+        try:
+            resp = await client.get(
+                FAS_API,
+                params={
+                    "query": query,
+                    "type": "COMPLAINT",
+                    "result": "UPHELD",   # жалоба удовлетворена
+                    "dateFrom": "2023-01-01",
+                    "limit": 5,
+                }
+            )
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            decisions = data.get("items", data.get("data", []))
+            return [
+                {
+                    "case_number": d.get("caseNumber", ""),
+                    "date":        d.get("date", ""),
+                    "violation":   d.get("violation", d.get("subject", "")),
+                    "url":         f"https://br.fas.gov.ru/cases/{d.get('id', '')}",
+                    "risk_type":   classify_risk(d),
+                }
+                for d in decisions[:5]
+            ]
+        except Exception:
+            return []
+
+
+def classify_risk(decision: dict) -> str:
+    """Классифицировать тип нарушения."""
+    text = (decision.get("violation", "") +
+            decision.get("subject", "")).lower()
+
+    if any(w in text for w in
+           ["бренд", "товарный знак", "конкретн", "единственн"]):
+        return "brand_restriction"
+    if any(w in text for w in
+           ["характеристик", "избыточн", "завышен"]):
+        return "excessive_requirements"
+    if any(w in text for w in
+           ["нмцк", "цена", "обоснован"]):
+        return "nmck_justification"
+    return "other"
+
+
+RISK_DESCRIPTIONS = {
+    "brand_restriction": {
+        "label": "Ограничение конкуренции (бренд)",
+        "color": "red",
+        "advice": "Проверьте все упоминания брендов — "
+                  "добавьте 'или эквивалент'",
+    },
+    "excessive_requirements": {
+        "label": "Избыточные требования",
+        "color": "orange",
+        "advice": "Проверьте что характеристики не "
+                  "ограничивают круг поставщиков",
+    },
+    "nmck_justification": {
+        "label": "Обоснование цены",
+        "color": "yellow",
+        "advice": "Убедитесь что НМЦК обоснована "
+                  "3+ коммерческими предложениями",
+    },
+    "other": {
+        "label": "Иное нарушение",
+        "color": "gray",
+        "advice": "Изучите решение подробнее",
+    },
+}
+
+
+# Эндпоинт
+@router.post("/api/fas/check")
+async def check_fas_risks(
+    payload: dict,
+    current_user = Depends(get_current_user)
+):
+    position_name = payload.get("position_name", "")
+    okpd2         = payload.get("okpd2", "")
+    characteristics = payload.get("characteristics", [])
+
+    # Ключевые слова для поиска
+    keywords = [position_name]
+    if okpd2:
+        keywords.append(okpd2[:8])
+
+    decisions = await search_fas_decisions(keywords, okpd2)
+
+    # Локальный анализ рисков (не зависит от API)
+    local_risks = analyze_local_risks(characteristics, position_name)
+
+    return {
+        "ok": True,
+        "fas_decisions": decisions,
+        "local_risks": local_risks,
+        "risk_level": get_risk_level(decisions, local_risks),
+        "total_decisions_found": len(decisions),
+    }
+
+
+def analyze_local_risks(characteristics: list, name: str) -> list:
+    """Анализ рисков без внешнего API."""
+    risks = []
+    char_text = " ".join(
+        f"{c.get('name','')} {c.get('value','')}"
+        for c in characteristics
+    ).lower()
+
+    # Проверка брендов
+    brands = ["intel", "amd", "samsung", "hp", "dell",
+              "lenovo", "apple", "cisco", "microsoft"]
+    for brand in brands:
+        if brand in char_text:
+            pattern = re.search(
+                rf'\b{brand}\b.{{0,60}}(или эквивалент|или аналог)',
+                char_text, re.IGNORECASE
+            )
+            if not pattern:
+                risks.append({
+                    "type": "brand_restriction",
+                    "description": f"Бренд '{brand}' без 'или эквивалент'",
+                    **RISK_DESCRIPTIONS["brand_restriction"],
+                })
+
+    # Проверка завышенных требований для офисной техники
+    office_keywords = ["офис", "рабочее место", "бухгалтер"]
+    is_office = any(kw in name.lower() for kw in office_keywords)
+    if is_office:
+        ram_match = re.search(r'оперативн\w+.*?(\d+)\s*гб', char_text)
+        if ram_match and int(ram_match.group(1)) > 32:
+            risks.append({
+                "type": "excessive_requirements",
+                "description": f"RAM {ram_match.group(1)} ГБ для офисного ПК — риск жалобы",
+                **RISK_DESCRIPTIONS["excessive_requirements"],
+            })
+
+    return risks
+
+
+def get_risk_level(decisions, local_risks) -> str:
+    if len(decisions) >= 3 or len(local_risks) >= 2:
+        return "HIGH"
+    if len(decisions) >= 1 or len(local_risks) >= 1:
+        return "MEDIUM"
+    return "LOW"
+
+▸ ТЕСТ 5.1:
+  POST /api/fas/check
+  -d '{"position_name":"Системный блок","okpd2":"26.20.15",
+       "characteristics":[]}'
+
+  Ожидание:
+  {"ok": true, "risk_level": "LOW"|"MEDIUM"|"HIGH",
+   "fas_decisions": [...], "local_risks": [...]}
+  (нет 500 ошибки)
+  ✅ если нет исключения
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 5.2 — Компонент FASChecker
+
+Создать src/c **...**
+
+_This response is too long to display in full._

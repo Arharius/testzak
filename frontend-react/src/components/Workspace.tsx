@@ -39,6 +39,7 @@ import {
 } from '../lib/backendApi';
 import { TZValidationModal } from './TZValidationModal';
 import { FullValidationPanel } from './FullValidationPanel';
+import { TemplateSelector } from './TemplateSelector';
 import { TZReviewPanel } from './TZReviewPanel';
 import { ProcessStepper } from './ProcessStepper';
 import { EntryChoice } from './EntryChoice';
@@ -10094,6 +10095,35 @@ ${hint || '- Используй детальные, проверяемые эк�
     addRowWithType(catalogMode === 'general' ? 'otherGoods' : 'pc');
   }, [addRowWithType, catalogMode]);
 
+  const handleTemplateSelect = useCallback((template: { name: string; okpd2: string; characteristics: Array<{ name: string; value: string; unit: string }> }) => {
+    const detectedType = detectTypeByImportedOkpd2(template.name, template.okpd2) || 'otherGoods';
+    const newId = Date.now();
+    const templateSpecs: SpecItem[] = template.characteristics.map((c) => ({
+      group: 'Технические характеристики',
+      name:  c.name,
+      value: c.value,
+      unit:  c.unit,
+    } as SpecItem));
+    setRows((prev) => [
+      ...prev,
+      {
+        id:            newId,
+        type:          detectedType,
+        typeLocked:    false,
+        model:         template.name,
+        licenseType:   '',
+        term:          '',
+        licenseTypeAuto: false,
+        termAuto:      false,
+        qty:           1,
+        status:        'done',
+        specs:         templateSpecs,
+        meta:          { okpd2_code: template.okpd2, okpd2_name: template.name },
+      } as GoodsRow,
+    ]);
+    setDocxReady(true);
+  }, []);
+
   const replaceWorkspaceRows = useCallback((nextRows: GoodsRow[]) => {
     setRows(nextRows);
     setCurrentDocId(null);
@@ -12083,6 +12113,7 @@ ${hint || '- Используй детальные, проверяемые эк�
         </div>)}
         <div className="workspace-action-grid workspace-action-grid--toolbar">
           <button type="button" onClick={addRow}>+ Добавить позицию</button>
+          <TemplateSelector onSelect={handleTemplateSelect} />
           <button type="button" onClick={() => importFileInputRef.current?.click()}>📥 Загрузить файлы</button>
           {uiPhase === 'ready' && (
             <button type="button" onClick={resetWorkspaceDraft}>↺ Начать заново</button>
@@ -12477,6 +12508,19 @@ ${hint || '- Используй детальные, проверяемые эк�
             exportsBlockedByReadiness={exportsBlockedByReadiness}
             buildTzText={buildTzTextForReview}
             qaAutoRunKey={qaAutoRunKey}
+            toolPositions={rows
+              .filter((row) => row.status === 'done' && row.specs?.length)
+              .map((row) => {
+                const g = lookupCatalog(row.type);
+                const specs = row.specs ?? [];
+                return {
+                  name:            row.model?.trim() || g.name,
+                  unit:            'шт',
+                  quantity:        row.qty ?? 1,
+                  okpd2:           row.meta?.okpd2_code || g.okpd2 || '',
+                  characteristics: specs.map((s) => ({ name: s.name, value: s.value })),
+                };
+              })}
             onExportPackage={() => exportPackage()}
             onExportDocx={() => { void exportDocx(); }}
             onExportPdf={exportPdf}

@@ -3587,6 +3587,67 @@ textarea[readonly] {
   }
 }
 
+@media (max-width: 640px) {
+  .layout { padding: 16px; gap: 16px; }
+  .sovereign-layout { padding-top: 72px; }
+
+  .workspace-action-grid--toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-batch-search-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .workspace-batch-search-label { margin-right: 0; }
+  .workspace-batch-search-btn { width: 100%; justify-content: center; }
+
+  .pricing-modal { padding: 20px 16px; border-radius: 12px; }
+  .pricing-cards { grid-template-columns: 1fr !important; }
+
+  .workspace-review-cta { flex-direction: column; align-items: stretch; gap: 10px; }
+  .workspace-review-btn { width: 100%; text-align: center; justify-content: center; }
+
+  .eis-verify-badge { font-size: 10px; padding: 2px 5px; }
+  .eis-verify-tooltip { min-width: 180px; max-width: 90vw; font-size: 10px; }
+
+  .row-trust-card { padding: 12px; }
+  .workspace-header { padding: 16px; }
+  .workspace-section-header { padding: 10px 14px; }
+}
+
+@media (max-width: 480px) {
+  .layout { padding: 10px; gap: 12px; }
+  .sovereign-layout { padding-top: 60px; }
+
+  .nav-logo-text { font-size: 14px; }
+  .nav-action-btn { padding: 6px 10px; font-size: 12px; }
+
+  .hero h1 { font-size: 26px; line-height: 1.25; }
+  .hero p { font-size: 13px; }
+
+  .workspace-action-grid--toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-action-grid button,
+  .workspace-action-stack button { font-size: 13px; }
+
+  .workspace-batch-search-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .workspace-batch-search-btn { width: 100%; text-align: center; justify-content: center; }
+
+  .tabs-nav { gap: 4px; }
+  .tabs-btn { padding: 7px 10px; font-size: 12px; }
+
+  .modal-outer { padding: 10px; }
+  .modal-panel { padding: 18px 14px; border-radius: 12px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -5326,6 +5387,59 @@ html[data-theme='contrast'] .workspace-template-card {
   font-size: 20px;
   font-weight: 700;
   margin: 0;
+}
+
+.workspace-batch-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  background: rgba(96, 165, 250, 0.05);
+  border: 1px solid rgba(96, 165, 250, 0.15);
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.workspace-batch-search-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
+.workspace-batch-search-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(96, 165, 250, 0.3) !important;
+  background: rgba(96, 165, 250, 0.1) !important;
+  color: #60a5fa !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  white-space: nowrap;
+  transition: all 0.15s !important;
+  min-height: auto !important;
+  width: auto !important;
+}
+
+.workspace-batch-search-btn:hover:not(:disabled) {
+  background: rgba(96, 165, 250, 0.18) !important;
+  border-color: rgba(96, 165, 250, 0.5) !important;
+}
+
+.workspace-batch-search-btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+.workspace-batch-search-btn.is-loading {
+  animation: pulse-opacity 1.2s ease-in-out infinite;
 }
 
 .workspace-review-cta {

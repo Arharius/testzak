@@ -7566,9 +7566,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [deLoading, setDeLoading] = useState(false);
 
   // Общий статус поиска по ЕИС (резерв)
-  const [_eisSearching, setEisSearching] = useState(false); void _eisSearching;
+  const [eisSearching, setEisSearching] = useState(false);
   // Общий статус подтягивания из интернета (резерв)
-  const [_internetSearching, setInternetSearching] = useState(false); void _internetSearching;
+  const [internetSearching, setInternetSearching] = useState(false);
   // Toast-уведомление
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [validationResult, setValidationResult] = useState<TZValidateResponse | null>(null);
@@ -10261,7 +10261,6 @@ ${hint || '- Используй детальные, проверяемые эк�
       );
     }
   }, [apiKey, enterpriseSettings.benchmarking, ensurePaidFeatureAccess, fetchInternetCandidateForRow, rows, runComplianceGate, scrollToPreview, showToast, useBackend]);
-  void enrichFromInternet;
 
   // ── Найти ТЗ в ЕИС (zakupki.gov.ru) ─────────────────────────────────────────
   const searchZakupki = useCallback(async () => {
@@ -10321,7 +10320,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       );
     }
   }, [apiKey, enterpriseSettings.benchmarking, ensurePaidFeatureAccess, fetchEisCandidateForRow, rows, runComplianceGate, scrollToPreview, showToast, useBackend]);
-  void searchZakupki;
+
   const refreshRowFromSource = useCallback(async (rowId: number, source: 'internet' | 'eis') => {
     if (!ensurePaidFeatureAccess(`Пробный период завершён. Оформите Pro Business для ${source === 'eis' ? 'поиска в ЕИС' : 'подтягивания источников'}.`)) {
       return;
@@ -11812,6 +11811,29 @@ ${hint || '- Используй детальные, проверяемые эк�
           )}
           {uiPhase === 'working' && null}
         </div>
+        {rows.some(r => r.model.trim().length > 0) && !paymentRequired && (
+          <div className="workspace-batch-search-bar">
+            <span className="workspace-batch-search-label">Данные из внешних источников:</span>
+            <button
+              type="button"
+              className={`workspace-batch-search-btn${internetSearching ? ' is-loading' : ''}`}
+              disabled={internetSearching || eisSearching || mutation.isPending || publicationAutopilotRunning}
+              onClick={() => void enrichFromInternet()}
+              title="Подтянуть реальные характеристики из сайтов производителей и открытых источников для всех позиций"
+            >
+              {internetSearching ? '⏳ Поиск в интернете...' : '🌐 Интернет'}
+            </button>
+            <button
+              type="button"
+              className={`workspace-batch-search-btn${eisSearching ? ' is-loading' : ''}`}
+              disabled={eisSearching || internetSearching || mutation.isPending || publicationAutopilotRunning}
+              onClick={() => void searchZakupki()}
+              title="Найти характеристики в реестрах zakupki.gov.ru и КТРУ для всех позиций"
+            >
+              {eisSearching ? '⏳ Поиск в ЕИС...' : '🏛️ ЕИС / КТРУ'}
+            </button>
+          </div>
+        )}
         {docxReady && !paymentRequired && !publicationAutopilotRunning && (
           <div className="workspace-review-cta">
             <button

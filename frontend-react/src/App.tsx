@@ -15,6 +15,7 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { PaymentSuccessPage } from './components/PaymentSuccessPage';
 import { PilotFeedbackModal } from './components/PilotFeedbackModal';
 import AdminUsersPage from './components/AdminUsersPage';
+import { LegalPage } from './components/LegalPage';
 import { submitPilotFeedback } from './lib/backendApi';
 import {
   flushAutomationQueue,
@@ -93,11 +94,15 @@ export function App() {
   const [loginMode, setLoginMode] = useState<'email' | 'password'>('password');
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+  const [consentChecked, setConsentChecked] = useState(false);
   const [showPricing, setShowPricing] = useState(false);
-  const [currentPage, setCurrentPage] = useState<'main' | 'pricing' | 'history' | 'payment-success' | 'admin'>(() => {
+  const [currentPage, setCurrentPage] = useState<'main' | 'pricing' | 'history' | 'payment-success' | 'admin' | 'terms' | 'privacy' | 'offer'>(() => {
     const path = window.location.pathname;
     if (path === '/pricing') return 'pricing';
     if (path === '/payment/success') return 'payment-success';
+    if (path === '/terms') return 'terms';
+    if (path === '/privacy') return 'privacy';
+    if (path === '/offer') return 'offer';
     return 'main';
   });
   const [showLLMModal, setShowLLMModal] = useState(false);
@@ -128,6 +133,9 @@ export function App() {
     let path = '/';
     if (currentPage === 'pricing') path = '/pricing';
     else if (currentPage === 'payment-success') path = '/payment/success';
+    else if (currentPage === 'terms') path = '/terms';
+    else if (currentPage === 'privacy') path = '/privacy';
+    else if (currentPage === 'offer') path = '/offer';
     if (window.location.pathname !== path) {
       window.history.pushState({}, '', path);
     }
@@ -138,6 +146,9 @@ export function App() {
     const handler = () => {
       const path = window.location.pathname;
       if (path === '/pricing') setCurrentPage('pricing');
+      else if (path === '/terms') setCurrentPage('terms');
+      else if (path === '/privacy') setCurrentPage('privacy');
+      else if (path === '/offer') setCurrentPage('offer');
       else setCurrentPage('main');
     };
     window.addEventListener('popstate', handler);
@@ -503,6 +514,15 @@ export function App() {
             ? 'Есть ограничения'
             : 'Нужна настройка';
 
+  if (currentPage === 'terms' || currentPage === 'privacy' || currentPage === 'offer') {
+    return (
+      <LegalPage
+        type={currentPage as 'terms' | 'privacy' | 'offer'}
+        onBack={() => setCurrentPage('main')}
+      />
+    );
+  }
+
   if (currentPage === 'pricing') {
     return (
       <div style={{ minHeight: '100vh', background: '#fff', color: '#111' }}>
@@ -778,9 +798,28 @@ export function App() {
                 className="auth-input"
               />
               {loginError && <div className="auth-error">{loginError}</div>}
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, color: '#64748b', margin: '8px 0', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={consentChecked}
+                  onChange={(e) => setConsentChecked(e.target.checked)}
+                  style={{ marginTop: 2, flexShrink: 0 }}
+                  required
+                />
+                <span>
+                  Я принимаю условия{' '}
+                  <button type="button" onClick={() => setCurrentPage('terms')} style={{ background: 'none', border: 'none', padding: 0, color: '#2563eb', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>
+                    Пользовательского соглашения
+                  </button>
+                  {' '}и{' '}
+                  <button type="button" onClick={() => setCurrentPage('privacy')} style={{ background: 'none', border: 'none', padding: 0, color: '#2563eb', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>
+                    Политики конфиденциальности
+                  </button>
+                </span>
+              </label>
               <button
                 onClick={handleSendLink}
-                disabled={loginLoading || !loginEmail.trim()}
+                disabled={loginLoading || !loginEmail.trim() || !consentChecked}
                 className="auth-submit-btn"
               >
                 {loginLoading ? 'Отправка...' : 'Отправить ссылку для входа'}
@@ -1178,6 +1217,23 @@ export function App() {
         </section>
       </details>
       )}
+
+      <footer style={{ borderTop: '1px solid #1e293b', marginTop: 48, padding: '24px 24px', textAlign: 'center', fontSize: 12, color: '#64748b', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '12px 24px' }}>
+        <span>© {new Date().getFullYear()} ТЗ-генератор · Шкуренко А.Н., самозанятый</span>
+        <span aria-hidden="true">·</span>
+        <button type="button" onClick={() => setCurrentPage('terms')} style={{ background: 'none', border: 'none', padding: 0, color: '#94a3b8', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>
+          Пользовательское соглашение
+        </button>
+        <button type="button" onClick={() => setCurrentPage('privacy')} style={{ background: 'none', border: 'none', padding: 0, color: '#94a3b8', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>
+          Политика конфиденциальности
+        </button>
+        <button type="button" onClick={() => setCurrentPage('offer')} style={{ background: 'none', border: 'none', padding: 0, color: '#94a3b8', cursor: 'pointer', fontSize: 12, textDecoration: 'underline' }}>
+          Публичная оферта
+        </button>
+        <a href="mailto:info@tz-gen.ru" style={{ color: '#94a3b8', textDecoration: 'none', fontSize: 12 }}>
+          info@tz-gen.ru
+        </a>
+      </footer>
 
       {showOnboarding && (
         <OnboardingModal onClose={() => setShowOnboarding(false)} />

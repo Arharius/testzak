@@ -1,0 +1,996 @@
+════════════════════════════════════════════════════════════════
+ПРОМТ — 4 ЗАДАЧИ ДЛЯ ПРОДА
+Юридические документы + Email + Лендинг + Яндекс.Метрика
+════════════════════════════════════════════════════════════════
+
+
+════════════════════════════════════════════════════════════════
+ЗАДАЧА 1 — ЮРИДИЧЕСКИЕ ДОКУМЕНТЫ
+════════════════════════════════════════════════════════════════
+
+ШАГ 1.1 — Создать три страницы
+
+Создать маршруты:
+  /terms    — Пользовательское соглашение
+  /privacy  — Политика конфиденциальности
+  /offer    — Публичная оферта
+
+Создать src/pages/LegalPage.jsx:
+
+import { useParams } from 'react-router-dom'
+
+const LEGAL_CONTENT = {
+  terms: {
+    title: "Пользовательское соглашение",
+    updated: "13 апреля 2025 г.",
+    sections: [
+      {
+        heading: "1. Общие положения",
+        text: `1.1. Настоящее Пользовательское соглашение
+(далее — «Соглашение») регулирует отношения между
+Шкуренко Андреем Николаевичем, самозанятым
+(далее — «Исполнитель»), и пользователем сервиса
+ТЗ-генератор (далее — «Пользователь»).
+
+1.2. Используя сервис, Пользователь подтверждает
+полное согласие с условиями настоящего Соглашения.
+
+1.3. Сервис предназначен для автоматизированной
+генерации технических заданий для государственных
+закупок в соответствии с 44-ФЗ.`,
+      },
+      {
+        heading: "2. Предмет соглашения",
+        text: `2.1. Исполнитель предоставляет Пользователю
+доступ к сервису генерации технических заданий
+для государственных закупок.
+
+2.2. Сервис является вспомогательным инструментом.
+Пользователь самостоятельно несёт ответственность
+за соответствие сгенерированных документов
+требованиям законодательства РФ.
+
+2.3. Сервис не является юридической консультацией.`,
+      },
+      {
+        heading: "3. Права и обязанности",
+        text: `3.1. Пользователь обязуется:
+— не передавать данные для входа третьим лицам;
+— не использовать сервис для создания документов,
+  нарушающих законодательство РФ;
+— не использовать автоматизированные средства
+  для массового создания запросов.
+
+3.2. Исполнитель обязуется:
+— обеспечивать доступность сервиса не менее
+  95% времени в месяц;
+— не передавать данные Пользователя третьим лицам
+  без его согласия, кроме случаев, предусмотренных
+  законодательством РФ.`,
+      },
+      {
+        heading: "4. Оплата и возврат",
+        text: `4.1. Стоимость тарифов указана на странице /pricing.
+
+4.2. Оплата производится авансом за период подписки.
+
+4.3. Возврат средств осуществляется в течение 3 дней
+с момента оплаты при условии, что Пользователь
+не использовал функции платного тарифа.
+
+4.4. По истечении 3 дней возврат не производится.`,
+      },
+      {
+        heading: "5. Ответственность",
+        text: `5.1. Исполнитель не несёт ответственности
+за результаты государственных закупок, в которых
+использовались документы, созданные с помощью сервиса.
+
+5.2. Максимальная ответственность Исполнителя
+ограничена суммой, уплаченной Пользователем
+за последний расчётный период.`,
+      },
+      {
+        heading: "6. Заключительные положения",
+        text: `6.1. Соглашение вступает в силу с момента
+регистрации Пользователя в сервисе.
+
+6.2. Исполнитель вправе изменять условия Соглашения
+с уведомлением Пользователя по email не менее
+чем за 7 дней.
+
+6.3. По всем вопросам: info@[ваш-домен].ru`,
+      },
+    ],
+  },
+
+  privacy: {
+    title: "Политика конфиденциальности",
+    updated: "13 апреля 2025 г.",
+    sections: [
+      {
+        heading: "1. Какие данные мы собираем",
+        text: `1.1. При регистрации: email-адрес, пароль
+(хранится в зашифрованном виде).
+
+1.2. При использовании сервиса: данные,
+введённые в форму генерации ТЗ (наименования
+позиций, характеристики, количества).
+
+1.3. Автоматически: IP-адрес, тип браузера,
+дата и время посещений (для аналитики и безопасности).`,
+      },
+      {
+        heading: "2. Как мы используем данные",
+        text: `2.1. Для предоставления доступа к сервису
+и идентификации Пользователя.
+
+2.2. Для генерации технических заданий
+с использованием API OpenAI (данные передаются
+в обезличенном виде без персональных данных).
+
+2.3. Для улучшения качества сервиса и технической
+поддержки.
+
+2.4. Для направления уведомлений о работе сервиса
+и обновлениях (можно отписаться в настройках).`,
+      },
+      {
+        heading: "3. Передача данных третьим лицам",
+        text: `3.1. Мы не продаём и не передаём персональные
+данные Пользователей третьим лицам.
+
+3.2. Исключения (в соответствии с законодательством РФ):
+— по требованию уполномоченных органов государственной
+  власти при наличии законного основания;
+— технические партнёры (хостинг, платёжные системы)
+  в минимально необходимом объёме.
+
+3.3. Обработка персональных данных осуществляется
+в соответствии с Федеральным законом № 152-ФЗ
+«О персональных данных».`,
+      },
+      {
+        heading: "4. Хранение и защита данных",
+        text: `4.1. Данные хранятся на серверах на территории РФ
+или в ЕЭС.
+
+4.2. Пароли хранятся в зашифрованном виде
+(алгоритм bcrypt).
+
+4.3. Передача данных осуществляется по протоколу HTTPS.
+
+4.4. Срок хранения данных: до момента удаления
+аккаунта Пользователем + 30 дней.`,
+      },
+      {
+        heading: "5. Права Пользователя",
+        text: `5.1. Пользователь вправе:
+— запросить полный перечень хранимых данных;
+— запросить исправление неточных данных;
+— запросить удаление аккаунта и всех данных;
+— отозвать согласие на обработку персональных данных.
+
+5.2. Для реализации прав обратитесь:
+info@[ваш-домен].ru
+
+5.3. Запрос обрабатывается в течение 30 дней.`,
+      },
+    ],
+  },
+
+  offer: {
+    title: "Публичная оферта",
+    updated: "13 апреля 2025 г.",
+    sections: [
+      {
+        heading: "1. Оферент",
+        text: `Шкуренко Андрей Николаевич, самозанятый,
+ИНН: [ваш ИНН],
+Email: info@[ваш-домен].ru`,
+      },
+      {
+        heading: "2. Предмет оферты",
+        text: `2.1. Оферент предоставляет Акцептанту доступ
+к программному сервису «ТЗ-генератор» для
+автоматизированного создания технических заданий
+для государственных закупок.
+
+2.2. Сервис предоставляется по модели SaaS
+(Software as a Service) через веб-интерфейс.`,
+      },
+      {
+        heading: "3. Акцепт оферты",
+        text: `3.1. Акцептом настоящей оферты является
+совершение любого из следующих действий:
+— регистрация в сервисе;
+— оплата любого из тарифов;
+— начало использования функций сервиса.
+
+3.2. Акцептуя оферту, Акцептант подтверждает,
+что ознакомлен с Пользовательским соглашением
+и Политикой конфиденциальности.`,
+      },
+      {
+        heading: "4. Стоимость и порядок оплаты",
+        text: `4.1. Стоимость услуг определяется действующими
+тарифами, размещёнными на сайте в разделе /pricing.
+
+4.2. Оплата производится в рублях РФ.
+
+4.3. Факт оплаты является подтверждением акцепта
+настоящей оферты.
+
+4.4. Самозанятый не является плательщиком НДС.
+Чек формируется через приложение «Мой налог».`,
+      },
+      {
+        heading: "5. Срок действия и расторжение",
+        text: `5.1. Оферта действует бессрочно до момента
+её отзыва Оферентом.
+
+5.2. Договор считается расторгнутым с момента
+удаления аккаунта Акцептантом или истечения
+оплаченного периода.
+
+5.3. Оферент вправе расторгнуть договор
+в одностороннем порядке при нарушении
+Пользовательского соглашения.`,
+      },
+    ],
+  },
+}
+
+export function LegalPage() {
+  const { type } = useParams()
+  const content = LEGAL_CONTENT[type]
+
+  if (!content) return (
+    <div className="max-w-3xl mx-auto p-8 text-center text-gray-500">
+      Страница не найдена
+    </div>
+  )
+
+  return (
+    <div className="max-w-3xl mx-auto p-8">
+      <h1 className="text-2xl font-bold text-gray-900 mb-2">
+        {content.title}
+      </h1>
+      <p className="text-sm text-gray-400 mb-8">
+        Последнее обновление: {content.updated}
+      </p>
+
+      <div className="space-y-6">
+        {content.sections.map((section, i) => (
+          <div key={i}>
+            <h2 className="font-semibold text-gray-800 mb-2">
+              {section.heading}
+            </h2>
+            <div className="text-gray-600 text-sm leading-relaxed
+                            whitespace-pre-line">
+              {section.text}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-12 pt-6 border-t border-gray-200
+                      text-xs text-gray-400 text-center">
+        По вопросам: info@[ваш-домен].ru
+      </div>
+    </div>
+  )
+}
+
+Добавить в роутер (App.jsx / Router):
+  <Route path="/terms"   element={<LegalPage />} />
+  <Route path="/privacy" element={<LegalPage />} />
+  <Route path="/offer"   element={<LegalPage />} />
+
+▸ ТЕСТ 1.1:
+  □ /terms   — открывается, текст читается
+  □ /privacy — открывается, текст читается
+  □ /offer   — открывается, текст читается
+  □ /legal/xyz — "Страница не найдена"
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 1.2 — Ссылки в футере и форме регистрации
+
+В компоненте Footer добавить:
+  <a href="/terms">Пользовательское соглашение</a>
+  <a href="/privacy">Политика конфиденциальности</a>
+  <a href="/offer">Публичная оферта</a>
+
+В форме регистрации добавить чекбокс:
+  <label className="flex items-start gap-2 text-sm text-gray-600">
+    <input
+      type="checkbox"
+      required
+      className="mt-0.5"
+    />
+    <span>
+      Я принимаю условия{' '}
+      <a href="/terms" target="_blank"
+         className="text-blue-600 hover:underline">
+        Пользовательского соглашения
+      </a>
+      {' '}и{' '}
+      <a href="/privacy" target="_blank"
+         className="text-blue-600 hover:underline">
+        Политики конфиденциальности
+      </a>
+    </span>
+  </label>
+
+ВАЖНО: атрибут required на чекбоксе — регистрация без
+согласия невозможна.
+
+▸ ТЕСТ 1.2:
+  □ Ссылки в футере открывают страницы в новой вкладке
+  □ Форма регистрации: без чекбокса → кнопка не работает
+  □ Форма регистрации: с чекбоксом → регистрация проходит
+  ✅ ЗАДАЧА 1 ГОТОВА. Заменить [ваш ИНН] и [ваш-домен]
+     на реальные данные.
+
+
+════════════════════════════════════════════════════════════════
+ЗАДАЧА 2 — EMAIL ПРИ РЕГИСТРАЦИИ
+════════════════════════════════════════════════════════════════
+
+ШАГ 2.1 — Настроить отправку email (backend)
+
+Добавить зависимость:
+  pip install resend
+  (или: pip install sendgrid / pip install python-dotenv smtplib)
+
+Рекомендуется Resend.com — бесплатно до 3000 писем/мес,
+простой API, хорошая доставляемость.
+
+Получить API ключ на resend.com → добавить в .env:
+  RESEND_API_KEY=re_xxxxxxxxx
+  FROM_EMAIL=noreply@[ваш-домен].ru
+  SITE_URL=https://[ваш-домен].ru
+
+Создать backend/email_service.py:
+
+import resend
+import os
+from datetime import datetime
+
+resend.api_key = os.getenv("RESEND_API_KEY")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "noreply@tz-generator.ru")
+SITE_URL = os.getenv("SITE_URL", "https://tz-generator.ru")
+
+
+def send_welcome_email(to_email: str, user_name: str = None):
+    """Отправить приветственное письмо при регистрации."""
+    name = user_name or to_email.split("@")[0]
+    try:
+        resend.Emails.send({
+            "from":    FROM_EMAIL,
+            "to":      [to_email],
+            "subject": "Добро пожаловать в ТЗ-генератор",
+            "html":    build_welcome_html(name),
+        })
+        return True
+    except Exception as e:
+        print(f"[EMAIL ERROR] welcome to {to_email}: {e}")
+        return False
+
+
+def send_generation_complete_email(
+    to_email: str,
+    tz_title: str,
+    download_url: str
+):
+    """Уведомление о готовности ТЗ."""
+    try:
+        resend.Emails.send({
+            "from":    FROM_EMAIL,
+            "to":      [to_email],
+            "subject": f"ТЗ готово: {tz_title[:60]}",
+            "html":    build_ready_html(tz_title, download_url),
+        })
+        return True
+    except Exception as e:
+        print(f"[EMAIL ERROR] generation to {to_email}: {e}")
+        return False
+
+
+def build_welcome_html(name: str) -> str:
+    return f"""
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, sans-serif; max-width: 600px;
+             margin: 0 auto; padding: 20px; color: #333;">
+
+  <div style="background: #2563eb; padding: 24px;
+              border-radius: 8px 8px 0 0; text-align: center;">
+    <h1 style="color: white; margin: 0; font-size: 24px;">
+      ТЗ-генератор
+    </h1>
+    <p style="color: #bfdbfe; margin: 8px 0 0;">
+      Технические задания для госзакупок
+    </p>
+  </div>
+
+  <div style="background: #f8fafc; padding: 32px;
+              border: 1px solid #e2e8f0;
+              border-radius: 0 0 8px 8px;">
+
+    <h2 style="color: #1e40af; margin-top: 0;">
+      Привет, {name}!
+    </h2>
+
+    <p style="line-height: 1.6;">
+      Вы успешно зарегистрировались в сервисе.
+      Теперь вы можете создавать технические задания
+      для госзакупок по 44-ФЗ за 5 минут вместо 2 часов.
+    </p>
+
+    <h3 style="color: #374151;">Что вы получили:</h3>
+    <ul style="line-height: 2;">
+      <li>✅ Генерация ТЗ с 14 проверками на ошибки</li>
+      <li>✅ Выгрузка в формате DOCX</li>
+      <li>✅ Шпаргалка для ввода в ЕИС</li>
+      <li>✅ История и повтор ТЗ</li>
+    </ul>
+
+    <div style="text-align: center; margin: 32px 0;">
+      <a href="{SITE_URL}/generate"
+         style="background: #2563eb; color: white;
+                padding: 14px 32px; border-radius: 6px;
+                text-decoration: none; font-size: 16px;
+                font-weight: bold; display: inline-block;">
+        Создать первое ТЗ →
+      </a>
+    </div>
+
+    <p style="color: #6b7280; font-size: 14px;">
+      Если у вас есть вопросы — ответьте на это письмо
+      или напишите на info@[ваш-домен].ru
+    </p>
+
+    <hr style="border: none; border-top: 1px solid #e5e7eb;
+               margin: 24px 0;">
+
+    <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+      © {datetime.now().year} ТЗ-генератор · Шкуренко А.Н.,
+      самозанятый<br>
+      <a href="{SITE_URL}/unsubscribe"
+         style="color: #9ca3af;">Отписаться от уведомлений</a>
+    </p>
+  </div>
+
+</body>
+</html>
+"""
+
+
+def build_ready_html(tz_title: str, download_url: str) -> str:
+    return f"""
+<!DOCTYPE html>
+<html lang="ru">
+<head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, sans-serif; max-width: 600px;
+             margin: 0 auto; padding: 20px; color: #333;">
+
+  <div style="background: #059669; padding: 24px;
+              border-radius: 8px 8px 0 0; text-align: center;">
+    <h1 style="color: white; margin: 0;">✅ ТЗ готово</h1>
+  </div>
+
+  <div style="background: #f8fafc; padding: 32px;
+              border: 1px solid #e2e8f0;
+              border-radius: 0 0 8px 8px;">
+
+    <p style="line-height: 1.6;">
+      Ваше техническое задание <strong>{tz_title}</strong>
+      успешно сгенерировано и прошло все проверки.
+    </p>
+
+    <div style="text-align: center; margin: 32px 0;">
+      <a href="{download_url}"
+         style="background: #059669; color: white;
+                padding: 14px 32px; border-radius: 6px;
+                text-decoration: none; font-size: 16px;
+                font-weight: bold; display: inline-block;">
+        Скачать DOCX →
+      </a>
+    </div>
+
+    <p style="color: #9ca3af; font-size: 12px; text-align: center;">
+      © {datetime.now().year} ТЗ-генератор
+    </p>
+  </div>
+</body>
+</html>
+"""
+
+▸ ТЕСТ 2.1:
+  python -c "
+  from backend.email_service import send_welcome_email
+  result = send_welcome_email('ваш@email.ru', 'Тест')
+  print('OK' if result else 'FAIL')
+  "
+  □ Письмо пришло в течение 2 минут
+  □ Не попало в спам
+  □ Кнопка "Создать первое ТЗ →" кликабельна
+
+────────────────────────────────────────────────────────────────
+
+ШАГ 2.2 — Вызвать email при регистрации
+
+В эндпоинте POST /api/auth/register после создания юзера:
+
+from backend.email_service import send_welcome_email
+import asyncio
+
+# В конце функции регистрации, после db.commit():
+asyncio.create_task(
+    asyncio.to_thread(
+        send_welcome_email,
+        user.email,
+        user.email.split("@")[0]
+    )
+)
+
+Если asyncio недоступен — отправлять синхронно:
+  send_welcome_email(user.email, user.email.split("@")[0])
+
+ВАЖНО: ошибка отправки email НЕ должна блокировать
+регистрацию. Функция обёрнута в try/except.
+
+▸ ТЕСТ 2.2:
+  1. Зарегистрировать нового пользователя
+  2. Проверить почту → письмо пришло до 2 минут
+  3. Повторить регистрацию с тем же email →
+     ошибка регистрации, но без краша сервера
+  ✅ ЗАДАЧА 2 ГОТОВА
+
+
+════════════════════════════════════════════════════════════════
+ЗАДАЧА 3 — ЛЕНДИНГ
+════════════════════════════════════════════════════════════════
+
+ШАГ 3.1 — Создать компонент LandingPage
+
+Создать src/pages/LandingPage.jsx:
+
+import { useNavigate } from 'react-router-dom'
+
+const PAIN_POINTS = [
+  { icon: "⏱️", text: "2 часа на одно ТЗ вручную" },
+  { icon: "⚠️", text: "Возврат из-за ошибок в характеристиках" },
+  { icon: "📋", text: "Ручной поиск ОКПД2 и ОКЕИ кодов" },
+  { icon: "⚖️", text: "Риск жалобы ФАС за бренд без эквивалента" },
+]
+
+const FEATURES = [
+  {
+    icon: "🚀",
+    title: "ТЗ за 5 минут",
+    desc: "Заполните форму → получите готовый DOCX. Без Word, без шаблонов.",
+  },
+  {
+    icon: "✅",
+    title: "14 проверок на ошибки",
+    desc: "Автоматический контроль: мета-комментарии, бренды, дубли, нормативка.",
+  },
+  {
+    icon: "📋",
+    title: "Шпаргалка для ЕИС",
+    desc: "ОКПД2, ОКЕИ коды и количества — готовы для копирования в ЕИС.",
+  },
+  {
+    icon: "💰",
+    title: "Расчёт НМЦК",
+    desc: "Обоснование начальной цены по данным исполненных контрактов ЕИС.",
+  },
+  {
+    icon: "⚖️",
+    title: "Проверка рисков ФАС",
+    desc: "Анализ по реестру решений ФАС до подачи закупки.",
+  },
+  {
+    icon: "📁",
+    title: "История и повтор",
+    desc: "Сохраняем все ваши ТЗ. В следующем году — нажмите «Повторить».",
+  },
+]
+
+const PRICING = [
+  {
+    name: "Бесплатно",
+    price: "0 ₽",
+    period: "",
+    features: [
+      "3 генерации в месяц",
+      "Скачать DOCX",
+      "Шпаргалка ЕИС",
+    ],
+    cta: "Начать бесплатно",
+    primary: false,
+  },
+  {
+    name: "Профессионал",
+    price: "3 500 ₽",
+    period: "/ месяц",
+    features: [
+      "Неограниченные генерации",
+      "История и повтор ТЗ",
+      "Шаблоны КТРУ",
+      "Расчёт НМЦК",
+      "Проверка рисков ФАС",
+      "Приоритетная поддержка",
+    ],
+    cta: "Подключить",
+    primary: true,
+  },
+]
+
+const EXAMPLE_POSITIONS = [
+  "Системный блок, 30 шт. → ТЗ с 14 характеристиками",
+  "Монитор 21.5\" FHD, 60 шт. → ОКПД2 + ОКЕИ автоматически",
+  "МФУ лазерное A4, 5 шт. → НМЦК: 150 000 ₽",
+]
+
+export function LandingPage() {
+  const navigate = useNavigate()
+
+  return (
+    <div className="min-h-screen bg-white">
+
+      {/* NAV */}
+      <nav className="border-b border-gray-100 px-6 py-4
+                      flex items-center justify-between
+                      max-w-6xl mx-auto">
+        <span className="font-bold text-xl text-blue-700">
+          ТЗ-генератор
+        </span>
+        <div className="flex gap-3">
+          <button
+            onClick={() => navigate('/login')}
+            className="text-gray-600 hover:text-gray-900 px-4 py-2"
+          >
+            Войти
+          </button>
+          <button
+            onClick={() => navigate('/register')}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg
+                       hover:bg-blue-700"
+          >
+            Попробовать бесплатно
+          </button>
+        </div>
+      </nav>
+
+      {/* HERO */}
+      <section className="max-w-4xl mx-auto px-6 pt-20 pb-16
+                          text-center">
+        <div className="inline-block bg-blue-50 text-blue-700
+                        px-4 py-1.5 rounded-full text-sm font-medium mb-6">
+          Для контрактных управляющих и специалистов по закупкам
+        </div>
+        <h1 className="text-4xl md:text-5xl font-bold text-gray-900
+                       leading-tight mb-6">
+          Техническое задание<br/>
+          <span className="text-blue-600">по 44-ФЗ за 5 минут</span>
+        </h1>
+        <p className="text-xl text-gray-500 mb-8 max-w-2xl mx-auto">
+          Заполните форму — получите готовый DOCX с 14 проверками
+          на ошибки. Без риска жалобы ФАС.
+        </p>
+        <button
+          onClick={() => navigate('/register')}
+          className="bg-blue-600 text-white px-8 py-4 rounded-xl
+                     text-lg font-semibold hover:bg-blue-700
+                     shadow-lg shadow-blue-200"
+        >
+          Создать первое ТЗ бесплатно →
+        </button>
+        <p className="text-sm text-gray-400 mt-3">
+          Без карты. 3 генерации бесплатно.
+        </p>
+      </section>
+
+      {/* PAIN POINTS */}
+      <section className="bg-gray-50 py-12">
+        <div className="max-w-4xl mx-auto px-6">
+          <h2 className="text-center text-2xl font-bold
+                         text-gray-800 mb-8">
+            Узнаёте себя?
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {PAIN_POINTS.map((p, i) => (
+              <div key={i}
+                   className="bg-white rounded-xl p-4 text-center
+                              border border-gray-200">
+                <div className="text-3xl mb-2">{p.icon}</div>
+                <div className="text-sm text-gray-600">{p.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* EXAMPLE */}
+      <section className="max-w-4xl mx-auto px-6 py-16">
+        <h2 className="text-2xl font-bold text-gray-900 mb-2
+                       text-center">
+          Как это работает
+        </h2>
+        <p className="text-gray-500 text-center mb-8">
+          Введите позиции закупки — система сделает остальное
+        </p>
+        <div className="bg-gray-900 rounded-xl p-6 font-mono
+                        text-sm space-y-2">
+          {EXAMPLE_POSITIONS.map((line, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <span className="text-green-400">▶</span>
+              <span className="text-gray-300">{line}</span>
+            </div>
+          ))}
+          <div className="border-t border-gray-700 pt-3 mt-3">
+            <span className="text-blue-400">
+              ✓ Готово: ТЗ.docx (14 проверок пройдено)
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* FEATURES */}
+      <section className="bg-gray-50 py-16">
+        <div className="max-w-5xl mx-auto px-6">
+          <h2 className="text-2xl font-bold text-gray-900
+                         text-center mb-10">
+            Всё что нужно для закупки
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {FEATURES.map((f, i) => (
+              <div key={i}
+                   className="bg-white rounded-xl p-6
+                              border border-gray-200">
+                <div className="text-3xl mb-3">{f.icon}</div>
+                <h3 className="font-semibold text-gray-800 mb-2">
+                  {f.title}
+                </h3>
+                <p className="text-gray-500 text-sm leading-relaxed">
+                  {f.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING */}
+      <section className="max-w-3xl mx-auto px-6 py-16">
+        <h2 className="text-2xl font-bold text-gray-900
+                       text-center mb-10">
+          Тарифы
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {PRICING.map((plan, i) => (
+            <div key={i}
+                 className={`rounded-xl p-6 border-2
+                   ${plan.primary
+                     ? 'border-blue-600 bg-blue-50'
+                     : 'border-gray-200 bg-white'}`}>
+              {plan.primary && (
+                <div className="text-xs font-semibold text-blue-600
+                                uppercase tracking-wide mb-3">
+                  Популярный
+                </div>
+              )}
+              <h3 className="text-xl font-bold text-gray-900">
+                {plan.name}
+              </h3>
+              <div className="mt-2 mb-6">
+                <span className="text-3xl font-bold text-gray-900">
+                  {plan.price}
+                </span>
+                <span className="text-gray-500">{plan.period}</span>
+              </div>
+              <ul className="space-y-2 mb-6">
+                {plan.features.map((f, j) => (
+                  <li key={j}
+                      className="flex items-center gap-2 text-sm
+                                 text-gray-600">
+                    <span className="text-green-500">✓</span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={() => navigate('/register')}
+                className={`w-full py-3 rounded-lg font-medium
+                  ${plan.primary
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}
+              >
+                {plan.cta}
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* CTA FINAL */}
+      <section className="bg-blue-600 py-16 text-center">
+        <h2 className="text-3xl font-bold text-white mb-4">
+          Создайте первое ТЗ прямо сейчас
+        </h2>
+        <p className="text-blue-100 mb-8">
+          Бесплатно. Без установки. Без карты.
+        </p>
+        <button
+          onClick={() => navigate('/register')}
+          className="bg-white text-blue-600 px-8 py-4 rounded-xl
+                     text-lg font-semibold hover:bg-blue-50"
+        >
+          Начать бесплатно →
+        </button>
+      </section>
+
+      {/* FOOTER */}
+      <footer className="bg-gray-900 text-gray-400 py-8 px-6">
+        <div className="max-w-4xl mx-auto flex flex-col md:flex-row
+                        items-center justify-between gap-4">
+          <div className="text-sm">
+            © {new Date().getFullYear()} ТЗ-генератор ·
+            Шкуренко А.Н., самозанятый
+          </div>
+          <div className="flex gap-4 text-sm">
+            <a href="/terms"   className="hover:text-white">
+              Соглашение
+            </a>
+            <a href="/privacy" className="hover:text-white">
+              Конфиденциальность
+            </a>
+            <a href="/offer"   className="hover:text-white">
+              Оферта
+            </a>
+          </div>
+        </div>
+      </footer>
+
+    </div>
+  )
+}
+
+Подключить в роутере:
+  <Route path="/" element={<LandingPage />} />
+  (только для неавторизованных — авторизованных
+   редиректить на /generate или /dashboard)
+
+▸ ТЕСТ 3.1:
+  □ / открывается без авторизации
+  □ Кнопка "Создать первое ТЗ бесплатно" → /register
+  □ Мобильная версия 390px: нет горизонтального скролла
+  □ Все 6 карточек фич отображаются
+  □ Таблица тарифов: 2 колонки
+  □ Футер: 3 ссылки на юр.документы работают
+  □ Авторизованный пользователь на / →
+    редирект на /generate (не видит лендинг)
+  ✅ ЗАДАЧА 3 ГОТОВА
+
+
+════════════════════════════════════════════════════════════════
+ЗАДАЧА 4 — ЯНДЕКС.МЕТРИКА
+════════════════════════════════════════════════════════════════
+
+ШАГ 4.1 — Создать счётчик
+
+1. Зайти на metrika.yandex.ru
+2. Добавить счётчик → указать домен сайта
+3. Настройки:
+   □ Вебвизор — включить
+   □ Карта скроллинга — включить
+   □ Отслеживание форм — включить
+4. Скопировать номер счётчика (8-9 цифр)
+
+ШАГ 4.2 — Добавить код в index.html
+
+В public/index.html или index.html в секции <head>:
+
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+  (function(m,e,t,r,i,k,a){
+    m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+    m[i].l=1*new Date();
+    k=e.createElement(t),a=e.getElementsByTagName(t)[0];
+    k.async=1;k.src=r;a.parentNode.insertBefore(k,a)
+  })(window, document, "script",
+     "https://mc.yandex.ru/metrika/tag.js", "ym");
+
+  ym(XXXXXX, "init", {
+    clickmap:     true,
+    trackLinks:   true,
+    accurateTrackBounce: true,
+    webvisor:     true,
+    ecommerce:    "dataLayer"
+  });
+</script>
+<noscript>
+  <div>
+    <img src="https://mc.yandex.ru/watch/XXXXXX"
+         style="position:absolute; left:-9999px;"
+         alt="" />
+  </div>
+</noscript>
+<!-- /Yandex.Metrika counter -->
+
+Заменить XXXXXX на реальный номер счётчика.
+
+ШАГ 4.3 — Добавить цели (Goals)
+
+В metrika.yandex.ru → Цели → Добавить цель:
+
+ЦЕЛЬ 1: Регистрация
+  Тип: JavaScript-событие
+  Идентификатор: registration_complete
+
+ЦЕЛЬ 2: Генерация ТЗ
+  Тип: JavaScript-событие
+  Идентификатор: tz_generated
+
+ЦЕЛЬ 3: Скачивание DOCX
+  Тип: JavaScript-событие
+  Идентификатор: docx_downloaded
+
+ЦЕЛЬ 4: Переход к оплате
+  Тип: JavaScript-событие
+  Идентификатор: pricing_click
+
+В коде React — вызывать цели в нужных местах:
+
+// Вспомогательная функция (добавить в src/utils/analytics.js):
+export function trackGoal(goalName, params = {}) {
+  if (typeof ym !== 'undefined') {
+    ym(XXXXXX, 'reachGoal', goalName, params)
+  }
+}
+
+// Примеры использования:
+// После успешной регистрации:
+trackGoal('registration_complete')
+
+// После успешной генерации:
+trackGoal('tz_generated', { category: 'ТОВАР', positions: 2 })
+
+// После скачивания DOCX:
+trackGoal('docx_downloaded')
+
+// При клике "Подключить" на тарифах:
+trackGoal('pricing_click', { plan: 'professional' })
+
+▸ ТЕСТ 4.1:
+  1. Открыть сайт
+  2. F12 → Console → ввести: ym(XXXXXX, 'reachGoal', 'test')
+     → нет ошибки "ym is not defined"
+  3. Metrika → Вебвизор → через 5-10 минут появился визит
+  4. Пройти регистрацию → в Метрике через 10 минут
+     отобразилась цель "registration_complete"
+  ✅ ЗАДАЧА 4 ГОТОВА
+
+
+════════════════════════════════════════════════════════════════
+ФИНАЛЬНАЯ ПРОВЕРКА ВСЕХ 4 ЗАДАЧ
+════════════════════════════════════════════════════════════════
+
+□ / → лендинг открывается, кнопки ведут на /register
+□ /terms, /privacy, /offer → страницы открываются
+□ Форма регистрации: чекбокс с согласием обязателен
+□ Регистрация → приветственное письмо пришло до 2 минут
+□ Письмо не в спаме
+□ HTTPS на всех страницах
+□ Метрика: ym определён, нет ошибок в консоли
+□ Все 3 юр.ссылки в футере работают
+□ Мобильная версия лендинга без горизонтального скролла
+
+════════════════════════════════════════════════════════════════
+После прохождения всех чекбоксов — продукт готов к продаже.
+════════════════════════════════════════════════════════════════

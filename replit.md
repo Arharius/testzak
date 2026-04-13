@@ -88,6 +88,30 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
   - Auto-dismissed once user has data
 - **Procurement-friendly copy**: Russian labels use закупочная vocabulary, not developer terms.
 
+## 12-Test EIS Validation System (Проверка перед ЕИС)
+- **Backend**: `backend/tz_validator.py` — полноценный валидатор ТЗ по 12 тестам
+  - TEST-01: Мета-комментарии ([!], TODO, FIXME, [Требуется уточнить])
+  - TEST-02: Запрещённые формулировки 44-ФЗ ст. 33 (по требованиям заказчика, уточняется при поставке и т.д.)
+  - TEST-03: Товарные знаки без «или эквивалент» (словарь 35+ брендов, исключения для стандартов)
+  - TEST-04: Неизмеримые характеристики (не прошедшие VALID_PATTERNS)
+  - TEST-05: Дублирующиеся характеристики (нормализованное сравнение имён)
+  - TEST-06: Логические конфликты (TDP vs БП, диагональ vs разрешение, отклик vs матрица)
+  - TEST-07: Корректность количеств (qty > 0, единицы измерения)
+  - TEST-08: Нормативная база (устаревшие ПП №878/616/925, обязательные ссылки для ТОВАР/УСЛУГА/ПО)
+  - TEST-09: Структура документа (7 обязательных разделов + приложения)
+  - TEST-10: Класс энергоэффективности (мониторы, ПК, принтеры, ИБП)
+  - TEST-11: Ограничение конкуренции ФАС (RAM > 64 ГБ, SSD > 2 ТБ для офисного ПК, монитор > 32")
+  - TEST-12: Читаемость DOCX (корректность файла, кодировка, размер, шрифт)
+- **Backend endpoint**: `POST /api/tz/validate/full` → `FullValidationResultOut`
+- **Frontend**: `FullValidationPanel.tsx` — тёмная модальная панель с перечнем 12 тестов
+  - Статусы: ✅ ПРОЙДЕН / ❌ ОШИБКА / ⚠️ ПРЕДУПРЕЖДЕНИЕ / ⏭️ ПРОПУЩЕН
+  - Счётчик прошедших тестов, ошибок, предупреждений
+  - Раскрываемые детали каждого теста с полем и контекстом
+  - Кнопки: «Исправить автоматически», «Скачать DOCX», «Скачать всё равно ⚠️»
+  - Красный баннер при force-download: предупреждение о возможном отклонении ЕИС/ФАС
+- **Batch search toolbar**: кнопки «🌐 Интернет» и «🏛️ ЕИС / КТРУ» появляются когда хотя бы одна строка заполнена
+- **Mobile responsiveness**: медиа-запросы 640px и 480px для тулбаров, кнопок, модалей
+
 ## AI Review Mode (Проверить и исправить ТЗ)
 - **Backend**: `POST /api/review-tz` — LLM-powered review of TZ text. Accepts `{tzText, lawMode}`, returns `{issues[], summary}`.
   - Issue levels: `blocking` (FAS risks), `legal` (law inaccuracies), `technical` (logic errors)

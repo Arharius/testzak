@@ -5468,6 +5468,22 @@ html[data-theme='contrast'] .workspace-template-card {
   width: auto !important;
 }
 
+.workspace-review-btn--eis {
+  border-color: rgba(96, 165, 250, 0.4) !important;
+  background: rgba(59, 130, 246, 0.12) !important;
+  color: #60a5fa !important;
+}
+
+.workspace-review-btn--eis:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.2) !important;
+  border-color: rgba(96, 165, 250, 0.6) !important;
+}
+
+.workspace-review-btn--eis:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
 .workspace-review-btn:hover {
   background: rgba(251, 191, 36, 0.25) !important;
   box-shadow: 0 0 12px rgba(251, 191, 36, 0.15);

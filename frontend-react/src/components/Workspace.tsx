@@ -30,10 +30,13 @@ import {
   type SpecFromSearch,
   type TZDocumentSummary,
   type TZValidateResponse,
+  type FullValidationResult,
+  validateTzFull,
   searchOkpd2,
   saveGeneration,
 } from '../lib/backendApi';
 import { TZValidationModal } from './TZValidationModal';
+import { FullValidationPanel } from './FullValidationPanel';
 import { TZReviewPanel } from './TZReviewPanel';
 import { ProcessStepper } from './ProcessStepper';
 import { EntryChoice } from './EntryChoice';
@@ -7573,6 +7576,8 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [validationResult, setValidationResult] = useState<TZValidateResponse | null>(null);
   const [pendingExportFn, setPendingExportFn] = useState<(() => void) | null>(null);
+  const [fullValidationResult, setFullValidationResult] = useState<FullValidationResult | null>(null);
+  const [fullValidationRunning, setFullValidationRunning] = useState(false);
   // Автодетект: ID строки, где только что сменился тип (для подсветки)
   const [autoDetectedRow, setAutoDetectedRow] = useState<number | null>(null);
   const [focusedRowId, setFocusedRowId] = useState<number | null>(null);
@@ -10928,6 +10933,44 @@ ${hint || '- Используй детальные, проверяемые эк�
     }
   }, [applyAntiFasAutoFix, applyBenchmarkPatch, applyLegalReadinessPatch, applyServiceReadinessPatch, focusRow, refreshRowClassification, refreshRowFromSource]);
 
+  const runFullValidation = useCallback(async (onDone?: (canExport: boolean) => void) => {
+    if (!useBackend) {
+      showToast('ℹ️ Полная проверка доступна только в режиме с бэкендом', false);
+      return;
+    }
+    setFullValidationRunning(true);
+    try {
+      const validateRows = rows.map((row) => {
+        const typeLow = (row.type || '').toLowerCase();
+        const cat = typeLow.includes('услуг') ? 'УСЛУГА'
+          : (typeLow.includes(' по') || typeLow.includes('лицензи') || typeLow.includes('software')) ? 'ПО'
+          : 'ТОВАР';
+        return {
+          name: row.model || row.type || '',
+          field: row.type || '',
+          qty: row.qty ?? 1,
+          qty_unit: 'шт.',
+          category: cat,
+          specs: (row.specs || []).map((s) => ({
+            name: s.name || '',
+            value: s.value || '',
+            group: s.group || '',
+          })),
+        };
+      });
+      const result = await validateTzFull(validateRows, {
+        law_mode: lawMode,
+      });
+      setFullValidationResult(result);
+      if (onDone) onDone(result.can_export);
+    } catch (err) {
+      showToast('⚠️ Не удалось выполнить проверку ТЗ', false);
+      console.error('Full validation error:', err);
+    } finally {
+      setFullValidationRunning(false);
+    }
+  }, [lawMode, rows, showToast, useBackend]);
+
   const exportDocx = async () => {
     if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для экспорта DOCX.')) {
       return;
@@ -11845,6 +11888,16 @@ ${hint || '- Используй детальные, проверяемые эк�
             >
               🔍 Проверить ТЗ
             </button>
+            {useBackend && (
+              <button
+                type="button"
+                className="workspace-review-btn workspace-review-btn--eis"
+                disabled={fullValidationRunning}
+                onClick={() => void runFullValidation()}
+              >
+                {fullValidationRunning ? '⏳ Проверка...' : '🛡️ Проверка перед ЕИС (12 тестов)'}
+              </button>
+            )}
             <span className="workspace-review-hint">
               Экспертная проверка на ФАС-риски, юридические и технические ошибки по {lawMode}-ФЗ
             </span>
@@ -12252,6 +12305,22 @@ ${hint || '- Используй детальные, проверяемые эк�
               }
               setPendingExportFn(null);
             }
+          }}
+        />
+      )}
+      {fullValidationResult && (
+        <FullValidationPanel
+          result={fullValidationResult}
+          isFixing={false}
+          onClose={() => setFullValidationResult(null)}
+          onProceed={async () => {
+            setFullValidationResult(null);
+            await exportDocx();
+          }}
+          onAutoFix={() => {
+            applyAntiFasAutoFix();
+            setFullValidationResult(null);
+            showToast('🔧 Автоисправления применены. Повторите проверку.', true);
           }}
         />
       )}

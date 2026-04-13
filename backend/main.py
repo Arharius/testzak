@@ -3491,6 +3491,134 @@ def validate_tz(req: TZValidateRequest, db: Session = Depends(get_db)):
     )
 
 
+# ─── Full 12-test validation ─────────────────────────────────────────────────
+from tz_validator import validate_tz as _run_full_validate, SpecRow
+
+
+class FullValidateSpecIn(BaseModel):
+    name: str = ""
+    value: str = ""
+    group: str = ""
+    unit: str = ""
+
+
+class FullValidateRowIn(BaseModel):
+    name: str = ""
+    field: str = ""
+    specs: list[FullValidateSpecIn] = []
+    description: str = ""
+    qty: int = 1
+    qty_unit: str = "шт."
+    category: str = "ТОВАР"
+
+
+class FullValidateRequest(BaseModel):
+    rows: list[FullValidateRowIn] = []
+    description: str = ""
+    law_mode: str = "44"
+    doc_sections: list[str] = []
+    full_text: str = ""
+
+
+class TestIssueOut(BaseModel):
+    message: str
+    field: str = ""
+    detail: str = ""
+    autofix_hint: str = ""
+
+
+class TestResultOut(BaseModel):
+    id: str
+    name: str
+    status: str
+    errors: list[TestIssueOut] = []
+    warnings: list[TestIssueOut] = []
+
+
+class FullValidationResultOut(BaseModel):
+    tests: list[TestResultOut]
+    passed: bool
+    error_count: int
+    warning_count: int
+    can_export: bool
+
+
+@app.post("/api/tz/validate/full", response_model=FullValidationResultOut)
+def validate_tz_full(req: FullValidateRequest, db: Session = Depends(get_db)):
+    """Полная 12-тестовая проверка ТЗ перед публикацией в ЕИС."""
+    spec_rows = [
+        SpecRow(
+            name=r.name,
+            field=r.field,
+            qty=r.qty,
+            qty_unit=r.qty_unit,
+            category=r.category,
+            specs=[(s.name, s.value, s.group) for s in r.specs],
+            description=r.description,
+        )
+        for r in req.rows
+    ]
+
+    result = _run_full_validate(
+        rows=spec_rows,
+        full_text=req.full_text or req.description,
+        doc_sections=req.doc_sections,
+        law_mode=req.law_mode,
+    )
+
+    try:
+        db.add(TZValidateLog(
+            can_export=result.can_export,
+            critical_count=result.error_count,
+            moderate_count=result.warning_count,
+            critical_json=json.dumps(
+                [{"id": t.id, "errors": len(t.errors)} for t in result.tests if t.errors],
+                ensure_ascii=False,
+            ),
+            moderate_json=json.dumps(
+                [{"id": t.id, "warnings": len(t.warnings)} for t in result.tests if t.warnings],
+                ensure_ascii=False,
+            ),
+            category=req.rows[0].category if req.rows else None,
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    return FullValidationResultOut(
+        tests=[
+            TestResultOut(
+                id=t.id,
+                name=t.name,
+                status=t.status,
+                errors=[
+                    TestIssueOut(
+                        message=e.message,
+                        field=e.field,
+                        detail=e.detail,
+                        autofix_hint=e.autofix_hint,
+                    )
+                    for e in t.errors
+                ],
+                warnings=[
+                    TestIssueOut(
+                        message=w.message,
+                        field=w.field,
+                        detail=w.detail,
+                        autofix_hint=w.autofix_hint,
+                    )
+                    for w in t.warnings
+                ],
+            )
+            for t in result.tests
+        ],
+        passed=result.passed,
+        error_count=result.error_count,
+        warning_count=result.warning_count,
+        can_export=result.can_export,
+    )
+
+
 class AIRepairDocxResponse(BaseModel):
     protocol: str
     fixed_text: str

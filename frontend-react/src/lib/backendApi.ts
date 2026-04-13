@@ -965,6 +965,64 @@ export async function validateTzBeforeExport(
   return apiPost<TZValidateResponse>('/api/tz/validate', { rows, description: description ?? '' });
 }
 
+export interface FullValidateIssue {
+  message: string;
+  field: string;
+  detail: string;
+  autofix_hint: string;
+}
+
+export interface FullTestResult {
+  id: string;
+  name: string;
+  status: 'pass' | 'fail' | 'warn' | 'skip';
+  errors: FullValidateIssue[];
+  warnings: FullValidateIssue[];
+}
+
+export interface FullValidationResult {
+  tests: FullTestResult[];
+  passed: boolean;
+  error_count: number;
+  warning_count: number;
+  can_export: boolean;
+}
+
+export interface FullValidateSpec {
+  name: string;
+  value: string;
+  group: string;
+  unit?: string;
+}
+
+export interface FullValidateRowInput {
+  name: string;
+  field: string;
+  description?: string;
+  specs?: FullValidateSpec[];
+  qty?: number;
+  qty_unit?: string;
+  category?: string;
+}
+
+export async function validateTzFull(
+  rows: FullValidateRowInput[],
+  opts?: {
+    description?: string;
+    law_mode?: string;
+    doc_sections?: string[];
+    full_text?: string;
+  },
+): Promise<FullValidationResult> {
+  return apiPost<FullValidationResult>('/api/tz/validate/full', {
+    rows,
+    description: opts?.description ?? '',
+    law_mode: opts?.law_mode ?? '44',
+    doc_sections: opts?.doc_sections ?? [],
+    full_text: opts?.full_text ?? '',
+  });
+}
+
 export type TZReviewIssue = {
   id: string;
   level: 'blocking' | 'legal' | 'technical';

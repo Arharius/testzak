@@ -57,6 +57,7 @@ import type { AutomationSettings, EnterpriseSettings, PlatformIntegrationSetting
 import { GOODS_CATALOG, detectGoodsType, detectAllGoodsTypes, getNacRegime, type GoodsItem, type HardSpec } from '../data/goods-catalog';
 import { GENERAL_CATALOG, detectGeneralGoodsType, detectGeneralGoodsTypes, getGeneralNacRegime, type GeneralGoodsItem } from '../data/general-catalog';
 import { postProcessSpecs, parseAiResponse, type SpecItem } from '../utils/spec-processor';
+import { trackGoal } from '../utils/analytics';
 import { verifySpecsWithAI } from '../utils/verify';
 import { deriveCommercialContext, resolveCommercialTerms, type LdapLicenseProfile } from '../utils/commercial-terms';
 import { looksLikeSpecificModelQuery } from '../utils/model-search';
@@ -8353,6 +8354,14 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
     exportBlockingIssues.length > 0
   );
   const readyRowsCount = useMemo(() => rows.filter((row) => row.status === 'done' && row.specs?.length).length, [rows]);
+  const tzGoalFiredRef = useRef(false);
+  useEffect(() => {
+    if (readyRowsCount > 0 && !tzGoalFiredRef.current) {
+      tzGoalFiredRef.current = true;
+      trackGoal('tz_generated', { positions: readyRowsCount });
+    }
+    if (readyRowsCount === 0) { tzGoalFiredRef.current = false; }
+  }, [readyRowsCount]);
   const draftedRowsCount = useMemo(() => rows.filter((row) => row.model.trim().length > 0 || row.specs?.length).length, [rows]);
   const uiPhase = useMemo<'empty' | 'working' | 'ready'>(() => {
     if (docxReady) return 'ready';
@@ -11372,6 +11381,7 @@ ${hint || '- Используй детальные, проверяемые эк�
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
       showToast('DOCX скачивается. Запускаем аудит ТЗ...', true);
+      trackGoal('docx_downloaded');
       appendAutomationLog({ at: new Date().toISOString(), event: 'react.export_docx', ok: true });
 
       // Сохранить генерацию в историю (fire-and-forget, только для авторизованных)

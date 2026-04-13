@@ -16,6 +16,7 @@ import { PaymentSuccessPage } from './components/PaymentSuccessPage';
 import { PilotFeedbackModal } from './components/PilotFeedbackModal';
 import AdminUsersPage from './components/AdminUsersPage';
 import { LegalPage } from './components/LegalPage';
+import { trackGoal } from './utils/analytics';
 import { submitPilotFeedback } from './lib/backendApi';
 import {
   flushAutomationQueue,
@@ -325,6 +326,7 @@ export function App() {
         return;
       }
       setLoginSent(true);
+      trackGoal('registration_complete');
     } catch (err) {
       setLoginError(err instanceof Error ? err.message : 'Ошибка отправки');
     } finally {
@@ -959,6 +961,25 @@ export function App() {
         </div>
       </section>
 
+      <section style={{ background: '#f8fafc', padding: '48px 24px' }} aria-label="Узнаёте себя?">
+        <div style={{ maxWidth: 900, margin: '0 auto' }}>
+          <h2 style={{ textAlign: 'center', fontSize: 22, fontWeight: 700, color: '#1e293b', marginBottom: 32 }}>Узнаёте себя?</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16 }}>
+            {([
+              { icon: '⏱️', text: '2 часа на одно ТЗ вручную' },
+              { icon: '⚠️', text: 'Возврат из-за ошибок в характеристиках' },
+              { icon: '📋', text: 'Ручной поиск ОКПД2 и ОКЕИ кодов' },
+              { icon: '⚖️', text: 'Риск жалобы ФАС за бренд без эквивалента' },
+            ] as { icon: string; text: string }[]).map((p, i) => (
+              <div key={i} style={{ background: '#fff', borderRadius: 12, padding: '20px 16px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>{p.icon}</div>
+                <div style={{ fontSize: 14, color: '#64748b', lineHeight: 1.5 }}>{p.text}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="stats-section section-fade section-delay-2" aria-label="Показатели эффективности">
         <div className="stats-grid">
           <div className="stat-card">
@@ -1072,6 +1093,50 @@ export function App() {
           </div>
         </div>
       </section>
+
+      <section style={{ maxWidth: 760, margin: '0 auto', padding: '48px 24px' }} aria-label="Тарифы">
+        <h2 style={{ textAlign: 'center', fontSize: 22, fontWeight: 700, color: '#1e293b', marginBottom: 32 }}>Тарифы</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
+          <div style={{ borderRadius: 16, padding: 28, border: '2px solid #e2e8f0', background: '#fff' }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>Бесплатно</div>
+            <div style={{ marginBottom: 20 }}><span style={{ fontSize: 30, fontWeight: 700, color: '#1e293b' }}>0 ₽</span></div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {['3 генерации в месяц', 'Скачать DOCX', 'Шпаргалка ЕИС'].map((f, j) => (
+                <li key={j} style={{ fontSize: 14, color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#22c55e' }}>✓</span> {f}
+                </li>
+              ))}
+            </ul>
+            <button onClick={() => setShowLogin(true)} style={{ width: '100%', padding: '12px 0', borderRadius: 8, background: '#f1f5f9', color: '#374151', border: 'none', fontWeight: 600, cursor: 'pointer', fontSize: 15 }}>
+              Начать бесплатно
+            </button>
+          </div>
+          <div style={{ borderRadius: 16, padding: 28, border: '2px solid #2563eb', background: '#eff6ff' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Популярный</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>Профессионал</div>
+            <div style={{ marginBottom: 20 }}><span style={{ fontSize: 30, fontWeight: 700, color: '#1e293b' }}>3 500 ₽</span><span style={{ color: '#64748b', fontSize: 14 }}> / месяц</span></div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {['Неограниченные генерации', 'История и повтор ТЗ', 'Шаблоны КТРУ', 'Расчёт НМЦК', 'Проверка рисков ФАС', 'Приоритетная поддержка'].map((f, j) => (
+                <li key={j} style={{ fontSize: 14, color: '#1e40af', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#22c55e' }}>✓</span> {f}
+                </li>
+              ))}
+            </ul>
+            <button onClick={() => { setShowPricing(true); trackGoal('pricing_click', { plan: 'professional' }); }} style={{ width: '100%', padding: '12px 0', borderRadius: 8, background: '#2563eb', color: '#fff', border: 'none', fontWeight: 600, cursor: 'pointer', fontSize: 15 }}>
+              Подключить
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section style={{ background: '#2563eb', padding: '56px 24px', textAlign: 'center' }} aria-label="Финальный призыв">
+        <h2 style={{ fontSize: 28, fontWeight: 700, color: '#fff', marginBottom: 12 }}>Создайте первое ТЗ прямо сейчас</h2>
+        <p style={{ color: '#bfdbfe', marginBottom: 28, fontSize: 16 }}>Бесплатно. Без установки. Без карты.</p>
+        <button onClick={() => setShowLogin(true)} style={{ background: '#fff', color: '#2563eb', padding: '14px 36px', borderRadius: 12, fontSize: 17, fontWeight: 700, border: 'none', cursor: 'pointer' }}>
+          Начать бесплатно →
+        </button>
+      </section>
+
       </>)}
 
       {backendUser?.role === 'admin' && (

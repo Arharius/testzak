@@ -52,7 +52,21 @@ const PLACEHOLDER_PATTERNS = [
   /\[insert[^\]]*\]/i,
 ];
 
-export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
+const VT_GOODS_TYPES = new Set([
+  'pc', 'laptop', 'server', 'monitor', 'printer', 'mfu', 'workstation', 'minipc',
+  'nettop', 'thinClient', 'monoblock', 'allInOne', 'tablet', 'notebook',
+  'projector', 'ups', 'switch', 'router', 'nas', 'rack', 'pdu',
+]);
+
+function isVtGoodsType(goodsType?: string): boolean {
+  if (!goodsType) return false;
+  const t = goodsType.toLowerCase();
+  return VT_GOODS_TYPES.has(t) ||
+    /пк|системный блок|сервер|монитор|принтер|мфу|ноутбук|компьютер/i.test(t);
+}
+
+export function postProcessSpecs(specs: SpecItem[], goodsType?: string): SpecItem[] {
+  const isVt = isVtGoodsType(goodsType);
   return specs.flatMap((item) => {
     let name = String(item.name ?? '');
     let group = String(item.group ?? '');
@@ -262,7 +276,7 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
         unit = 'шт';
         (item as SpecItem)._fixed = true;
       } else if (/гарантия/i.test(nameLower)) {
-        value = 'не менее 12 месяцев';
+        value = isVt ? 'не менее 36 месяцев' : 'не менее 12 месяцев';
         unit = 'мес';
         (item as SpecItem)._fixed = true;
       } else {
@@ -315,11 +329,11 @@ export function postProcessSpecs(specs: SpecItem[]): SpecItem[] {
         'Дюймы/фунты/литры — единицы конкретной модели. Укажите требования в метрических единицах (мм, кг) с «не более»';
     }
 
-    // 21. Гарантия для ПК/серверов: если 12 мес и контекст ПК/монитор → рекомендовать 36 мес
+    // 21. Гарантия для ВТ: если 12 мес и контекст ВТ (ПК/монитор/сервер/принтер) → предупреждение
     if (/гарантия/i.test(nameLower)) {
       const isShortWarranty = /^(не\s+менее\s+)?12\b/.test(value.trim());
-      const isPcOrMonitor = /системн|пк\b|компьютер|desktop|workstation|монитор|monitor|принтер|server|сервер/i.test(groupLower);
-      if (isShortWarranty && isPcOrMonitor) {
+      const isPcOrMonitorGroup = /системн|пк\b|компьютер|desktop|workstation|монитор|monitor|принтер|server|сервер/i.test(groupLower);
+      if (isShortWarranty && (isVt || isPcOrMonitorGroup)) {
         (item as SpecItem)._warning = (item._warning ? item._warning + '; ' : '') +
           'Для ВТ рекомендуется гарантия не менее 36 месяцев (Постановление Правительства РФ № 1875 и практика ФАС)';
       }

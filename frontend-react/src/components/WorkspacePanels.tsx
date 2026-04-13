@@ -29,9 +29,9 @@ type WorkspaceSidePanelsProps = {
 };
 
 export function WorkspaceSidePanels({
-  publicationStatusTone,
-  publicationStatusLabel,
-  publicationLeadText,
+  publicationStatusTone: _publicationStatusTone,
+  publicationStatusLabel: _publicationStatusLabel,
+  publicationLeadText: _publicationLeadText,
   readinessGate,
   readyRowsCount,
   loggedIn,
@@ -44,7 +44,7 @@ export function WorkspaceSidePanels({
   exportsBlockedByReadiness,
   buildTzText,
   qaAutoRunKey,
-  onExportPackage,
+  onExportPackage: _onExportPackage,
   onExportDocx,
   onExportPdf,
   onSaveTZ,

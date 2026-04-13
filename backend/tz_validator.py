@@ -602,3 +602,143 @@ def validate_tz(
         warning_count=warning_count,
         can_export=can_export,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Авто-исправление: детерминированные фиксы для TEST-01/02/03/05
+# ─────────────────────────────────────────────────────────────────────────────
+@dataclass
+class FixReport:
+    test_id: str
+    field: str
+    action: str
+    before: str = ""
+    after: str = ""
+
+
+def _add_equiv_to_value(value: str) -> tuple[str, list[str]]:
+    """Добавить 'или эквивалент' после бренда в строке значения, если ещё нет."""
+    changed: list[str] = []
+    result = value
+    for brand in _BRANDS:
+        brand_lower = brand.lower()
+        if brand_lower in {s.lower() for s in _STANDARDS_EXEMPT}:
+            continue
+        brand_pat = re.compile(r'\b' + re.escape(brand) + r'\b', re.IGNORECASE)
+        if not brand_pat.search(result):
+            continue
+
+        def _replacer(m: re.Match, _brand: str = brand) -> str:
+            ctx_start = max(0, m.start() - 60)
+            ctx_end = min(len(result), m.end() + 60)
+            ctx = result[ctx_start:ctx_end]
+            if _EQUIV_MARKER.search(ctx):
+                return m.group(0)
+            changed.append(_brand)
+            return m.group(0) + ' или эквивалент'
+
+        result = brand_pat.sub(_replacer, result)
+    return result, changed
+
+
+def auto_fix_specs(
+    rows: list[SpecRow],
+    test_results: list[TestResult],
+    llm_fixes: dict[str, str] | None = None,
+) -> tuple[list[SpecRow], list[FixReport]]:
+    """
+    Применяет детерминированные авто-исправления к строкам по результатам тестов.
+    llm_fixes: {"{field}|{spec_name}": "новое_значение"} — результаты LLM для TEST-04.
+    Возвращает (исправленные строки, отчёт о фиксах).
+    """
+    failed_ids = {t.id for t in test_results if t.status == "fail"}
+    llm_fixes = llm_fixes or {}
+    reports: list[FixReport] = []
+
+    fixed_rows: list[SpecRow] = []
+    for row in rows:
+        specs: list[tuple[str, str, str]] = list(row.specs)
+
+        # ── TEST-01: удалить мета-комментарии из значений ─────────────────────
+        if "TEST-01" in failed_ids:
+            new_specs: list[tuple[str, str, str]] = []
+            for sn, sv, sg in specs:
+                fixed_v = sv
+                for pat, _ in _META_PATTERNS:
+                    fixed_v = pat.sub('', fixed_v).strip()
+                if fixed_v != sv:
+                    reports.append(FixReport("TEST-01", f"{row.field} → {sn}",
+                                             "remove_meta", sv[:80], fixed_v[:80]))
+                new_specs.append((sn, fixed_v, sg))
+            specs = new_specs
+
+        # ── TEST-02: удалить характеристики с запрещёнными формулировками ─────
+        if "TEST-02" in failed_ids:
+            clean_specs: list[tuple[str, str, str]] = []
+            for sn, sv, sg in specs:
+                combined = f"{sn} {sv}"
+                banned = any(pat.search(combined) for pat, _ in _BANNED_CRITICAL)
+                if banned:
+                    reports.append(FixReport("TEST-02", f"{row.field} → {sn}",
+                                             "remove_banned_spec", sv[:80], ""))
+                else:
+                    clean_specs.append((sn, sv, sg))
+            specs = clean_specs
+
+        # ── TEST-03: добавить «или эквивалент» после брендов ─────────────────
+        if "TEST-03" in failed_ids:
+            equiv_specs: list[tuple[str, str, str]] = []
+            for sn, sv, sg in specs:
+                new_v, brands_fixed = _add_equiv_to_value(sv)
+                for b in brands_fixed:
+                    reports.append(FixReport("TEST-03", f"{row.field} → {sn}",
+                                             "add_equivalent", b, f"{b} или эквивалент"))
+                equiv_specs.append((sn, new_v, sg))
+            specs = equiv_specs
+
+        # ── TEST-04: LLM-исправление неизмеримых значений ────────────────────
+        if "TEST-04" in failed_ids and llm_fixes:
+            llm_specs: list[tuple[str, str, str]] = []
+            for sn, sv, sg in specs:
+                key = f"{row.field}|{sn}"
+                if key in llm_fixes:
+                    new_v = llm_fixes[key].strip()
+                    reports.append(FixReport("TEST-04", f"{row.field} → {sn}",
+                                             "llm_measurable", sv[:80], new_v[:80]))
+                    llm_specs.append((sn, new_v, sg))
+                else:
+                    llm_specs.append((sn, sv, sg))
+            specs = llm_specs
+
+        # ── TEST-05: удалить дубли характеристик (оставить более полный) ─────
+        if "TEST-05" in failed_ids:
+            seen_idx: dict[str, int] = {}
+            dedup_specs: list[tuple[str, str, str]] = []
+            for sn, sv, sg in specs:
+                key = _normalize_name(sn)
+                if key in seen_idx:
+                    existing_i = seen_idx[key]
+                    _, existing_v, _ = dedup_specs[existing_i]
+                    if len(sv) > len(existing_v):
+                        reports.append(FixReport("TEST-05", row.field,
+                                                  "remove_duplicate", existing_v[:60], sv[:60]))
+                        dedup_specs[existing_i] = (sn, sv, sg)
+                    else:
+                        reports.append(FixReport("TEST-05", row.field,
+                                                  "remove_duplicate", sv[:60], existing_v[:60]))
+                else:
+                    seen_idx[key] = len(dedup_specs)
+                    dedup_specs.append((sn, sv, sg))
+            specs = dedup_specs
+
+        fixed_rows.append(SpecRow(
+            name=row.name,
+            field=row.field,
+            qty=row.qty,
+            qty_unit=row.qty_unit,
+            category=row.category,
+            specs=specs,
+            description=row.description,
+        ))
+
+    return fixed_rows, reports

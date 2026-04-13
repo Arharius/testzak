@@ -1023,6 +1023,67 @@ export async function validateTzFull(
   });
 }
 
+// ── Auto-fix (Level 3) ─────────────────────────────────────────────────────
+
+export interface FixReportItem {
+  test_id: string;
+  field: string;
+  action: string;
+  before: string;
+  after: string;
+}
+
+export interface AutoFixResponse {
+  rows: FullValidateRowInput[];
+  fix_report: FixReportItem[];
+  llm_called: boolean;
+  validation: FullValidationResult;
+}
+
+export async function autoFixTz(
+  rows: FullValidateRowInput[],
+  opts?: {
+    law_mode?: string;
+    doc_sections?: string[];
+    full_text?: string;
+    iteration?: number;
+  },
+): Promise<AutoFixResponse> {
+  return apiPost<AutoFixResponse>('/api/tz/auto-fix', {
+    rows,
+    law_mode: opts?.law_mode ?? '44',
+    doc_sections: opts?.doc_sections ?? [],
+    full_text: opts?.full_text ?? '',
+    iteration: opts?.iteration ?? 1,
+  }, false, 60000);
+}
+
+// ── Scenario tests (Level 4) ──────────────────────────────────────────────
+
+export interface ScenarioCheck {
+  name: string;
+  passed: boolean;
+  expected: string;
+  actual: string;
+}
+
+export interface ScenarioTestResult {
+  test_id: string;
+  description: string;
+  all_passed: boolean;
+  checks: ScenarioCheck[];
+}
+
+export async function runScenarioTest(testId: string): Promise<ScenarioTestResult> {
+  const url = buildApiUrl(`/api/tz/scenario-test/${testId}`);
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(String(err?.detail ?? resp.statusText));
+  }
+  return resp.json() as Promise<ScenarioTestResult>;
+}
+
 export type TZReviewIssue = {
   id: string;
   level: 'blocking' | 'legal' | 'technical';

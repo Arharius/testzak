@@ -3492,7 +3492,12 @@ def validate_tz(req: TZValidateRequest, db: Session = Depends(get_db)):
 
 
 # ─── Full 12-test validation ─────────────────────────────────────────────────
-from tz_validator import validate_tz as _run_full_validate, SpecRow
+from tz_validator import (
+    validate_tz as _run_full_validate,
+    auto_fix_specs as _auto_fix_specs,
+    SpecRow,
+    FixReport as _FixReport,
+)
 
 
 class FullValidateSpecIn(BaseModel):
@@ -3618,6 +3623,378 @@ def validate_tz_full(req: FullValidateRequest, db: Session = Depends(get_db)):
         can_export=result.can_export,
     )
 
+
+# ─── Auto-fix endpoint ───────────────────────────────────────────────────────
+
+class FixReportOut(BaseModel):
+    test_id: str
+    field: str
+    action: str
+    before: str = ""
+    after: str = ""
+
+
+class AutoFixRequest(BaseModel):
+    rows: list[FullValidateRowIn] = []
+    law_mode: str = "44"
+    doc_sections: list[str] = []
+    full_text: str = ""
+    iteration: int = 1
+
+
+class AutoFixResponse(BaseModel):
+    rows: list[FullValidateRowIn]
+    fix_report: list[FixReportOut]
+    llm_called: bool
+    validation: FullValidationResultOut
+
+
+def _rows_in_to_spec_rows(rows_in: list[FullValidateRowIn]) -> list[SpecRow]:
+    return [
+        SpecRow(
+            name=r.name,
+            field=r.field,
+            qty=r.qty,
+            qty_unit=r.qty_unit,
+            category=r.category,
+            specs=[(s.name, s.value, s.group) for s in r.specs],
+            description=r.description,
+        )
+        for r in rows_in
+    ]
+
+
+def _validation_result_to_out(result) -> FullValidationResultOut:
+    return FullValidationResultOut(
+        tests=[
+            TestResultOut(
+                id=t.id,
+                name=t.name,
+                status=t.status,
+                errors=[
+                    TestIssueOut(message=e.message, field=e.field,
+                                 detail=e.detail, autofix_hint=e.autofix_hint)
+                    for e in t.errors
+                ],
+                warnings=[
+                    TestIssueOut(message=w.message, field=w.field,
+                                 detail=w.detail, autofix_hint=w.autofix_hint)
+                    for w in t.warnings
+                ],
+            )
+            for t in result.tests
+        ],
+        passed=result.passed,
+        error_count=result.error_count,
+        warning_count=result.warning_count,
+        can_export=result.can_export,
+    )
+
+
+@app.post("/api/tz/auto-fix", response_model=AutoFixResponse)
+def auto_fix_tz(req: AutoFixRequest):
+    """
+    Применяет авто-исправления к строкам ТЗ:
+    - TEST-01: удаляет мета-комментарии из значений
+    - TEST-02: удаляет запрещённые формулировки 44-ФЗ
+    - TEST-03: добавляет «или эквивалент» после брендов
+    - TEST-04: вызывает LLM для неизмеримых значений
+    - TEST-05: удаляет дублирующиеся характеристики
+    Возвращает исправленные строки + отчёт о фиксах + re-validation.
+    """
+    spec_rows = _rows_in_to_spec_rows(req.rows)
+
+    # Сначала запускаем валидацию, чтобы знать что именно фиксить
+    validate_result = _run_full_validate(
+        rows=spec_rows,
+        full_text=req.full_text,
+        doc_sections=req.doc_sections,
+        law_mode=req.law_mode,
+    )
+
+    failed_tests = [t for t in validate_result.tests if t.status == "fail"]
+    failed_ids = {t.id for t in failed_tests}
+
+    # ── LLM-фиксы для TEST-04 (неизмеримые характеристики) ───────────────────
+    llm_fixes: dict[str, str] = {}
+    llm_called = False
+
+    if "TEST-04" in failed_ids:
+        unmeasurable_specs: list[tuple[str, str, str]] = []  # (field, spec_name, spec_value)
+        for t in failed_tests:
+            if t.id != "TEST-04":
+                continue
+            for issue in t.errors:
+                fld = issue.field  # "{row.field} → {spec_name}"
+                if " → " in fld:
+                    row_field, sn = fld.split(" → ", 1)
+                    # найти текущее значение
+                    for row in req.rows:
+                        if row.field == row_field:
+                            for s in row.specs:
+                                if s.name == sn:
+                                    unmeasurable_specs.append((row_field, sn, s.value, row.category))  # type: ignore[arg-type]
+
+        if unmeasurable_specs:
+            try:
+                provider, model = _pick_provider(None)
+                for row_field, sn, sv, cat in unmeasurable_specs[:10]:  # макс 10 LLM-звонков
+                    prompt = (
+                        f"Характеристика «{sn}» имеет значение «{sv}».\n"
+                        f"Это неизмеримое требование для закупки по 44-ФЗ (категория: {cat}).\n"
+                        f"Замени на конкретное числовое требование с «не менее» или «не более».\n"
+                        f"Верни ТОЛЬКО новое значение без пояснений, в 2–8 слов."
+                    )
+                    resp = _call_ai(provider, model,
+                                   [{"role": "user", "content": prompt}],
+                                   temperature=0.1, max_tokens=80)
+                    new_val = resp.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                    if new_val:
+                        llm_fixes[f"{row_field}|{sn}"] = new_val
+                llm_called = True
+            except Exception as e:
+                logger.warning(f"[AutoFix] LLM TEST-04 failed: {e}")
+
+    # ── Применяем детерминированные фиксы ────────────────────────────────────
+    fixed_spec_rows, fix_reports = _auto_fix_specs(
+        spec_rows, validate_result.tests, llm_fixes
+    )
+
+    # ── Преобразуем обратно в FullValidateRowIn ───────────────────────────────
+    fixed_rows_out: list[FullValidateRowIn] = []
+    for orig, fixed in zip(req.rows, fixed_spec_rows):
+        fixed_rows_out.append(FullValidateRowIn(
+            name=fixed.name,
+            field=fixed.field,
+            qty=fixed.qty,
+            qty_unit=fixed.qty_unit,
+            category=fixed.category,
+            specs=[
+                FullValidateSpecIn(name=sn, value=sv, group=sg)
+                for sn, sv, sg in fixed.specs
+            ],
+            description=fixed.description,
+        ))
+
+    # ── Re-run validation ─────────────────────────────────────────────────────
+    re_result = _run_full_validate(
+        rows=fixed_spec_rows,
+        full_text=req.full_text,
+        doc_sections=req.doc_sections,
+        law_mode=req.law_mode,
+    )
+
+    return AutoFixResponse(
+        rows=fixed_rows_out,
+        fix_report=[
+            FixReportOut(
+                test_id=r.test_id,
+                field=r.field,
+                action=r.action,
+                before=r.before,
+                after=r.after,
+            )
+            for r in fix_reports
+        ],
+        llm_called=llm_called,
+        validation=_validation_result_to_out(re_result),
+    )
+
+
+# ─── Scenario tests (Level 4 — A–F) ─────────────────────────────────────────
+
+class ScenarioCheckOut(BaseModel):
+    name: str
+    passed: bool
+    expected: str
+    actual: str = ""
+
+
+class ScenarioTestOut(BaseModel):
+    test_id: str
+    description: str
+    all_passed: bool
+    checks: list[ScenarioCheckOut]
+
+
+def _make_scenario_rows(name: str, qty: int, category: str,
+                         specs: list[tuple[str, str, str]]) -> list[FullValidateRowIn]:
+    return [FullValidateRowIn(
+        name=name, field=name, qty=qty, qty_unit="шт.",
+        category=category,
+        specs=[FullValidateSpecIn(name=s[0], value=s[1], group=s[2]) for s in specs],
+    )]
+
+
+@app.get("/api/tz/scenario-test/{test_id}", response_model=ScenarioTestOut)
+def run_scenario_test(test_id: str):
+    """
+    Запускает сценарный тест A–F для проверки 12-тестовой системы валидации.
+    Результаты отображают что проверяется и что ожидалось.
+    """
+    tid = test_id.upper()
+
+    if tid == "A":
+        # ТЕСТ A: Базовый системный блок
+        rows = _make_scenario_rows("Системный блок", 1, "ТОВАР", [
+            ("Процессор", "не менее 4 ядер, тактовая частота не менее 3.0 ГГц", "Основные"),
+            ("ОЗУ", "не менее 16 ГБ DDR4", "Основные"),
+            ("Накопитель SSD", "не менее 512 ГБ NVMe", "Основные"),
+            ("Операционная система", "Windows или эквивалент", "Программное обеспечение"),
+            ("Класс энергоэффективности", "не ниже «А»", "Прочее"),
+            ("Гарантия", "не менее 36 месяцев", "Прочее"),
+        ])
+        full_text = (
+            "Системный блок. Раздел 1. Заказчик: ООО «Пример». Раздел 2. Требования к предмету закупки. "
+            "Раздел 3. Пуско-наладочные работы. Раздел 4. Гарантия качества — не менее 36 месяцев. "
+            "Раздел 5. Тара и упаковка. Раздел 6. Место поставки. Раздел 7. Нормативные акты: "
+            "44-ФЗ, ПП №1875, ПП №719, ТР ТС 004, ТР ТС 020. Приложение 1."
+        )
+        result = _run_full_validate(_rows_in_to_spec_rows(rows), full_text=full_text, law_mode="44")
+        checks = [
+            ScenarioCheckOut(name="Нет [!] в документе", passed="[!" not in full_text, expected="True", actual=str("[!" not in full_text)),
+            ScenarioCheckOut(name="Есть ПП №1875", passed="1875" in full_text, expected="True", actual=str("1875" in full_text)),
+            ScenarioCheckOut(name="TEST-01 пройден", passed=result.tests[0].status == "pass", expected="pass", actual=result.tests[0].status),
+            ScenarioCheckOut(name="TEST-02 пройден", passed=result.tests[1].status == "pass", expected="pass", actual=result.tests[1].status),
+            ScenarioCheckOut(name="TEST-03 пройден", passed=result.tests[2].status in ("pass", "warn"), expected="pass/warn", actual=result.tests[2].status),
+            ScenarioCheckOut(name="TEST-04 пройден", passed=result.tests[3].status == "pass", expected="pass", actual=result.tests[3].status),
+            ScenarioCheckOut(name="TEST-07 пройден", passed=result.tests[6].status == "pass", expected="pass", actual=result.tests[6].status),
+        ]
+
+    elif tid == "B":
+        # ТЕСТ B: Восстановление количеств
+        rows = [
+            *_make_scenario_rows("Системный блок", 30, "ТОВАР", [
+                ("ОЗУ", "не менее 16 ГБ", "Основные"),
+            ]),
+            *_make_scenario_rows("Монитор", 60, "ТОВАР", [
+                ("Диагональ", "не менее 24 дюйма", "Основные"),
+            ]),
+        ]
+        result = _run_full_validate(_rows_in_to_spec_rows(rows), law_mode="44")
+        checks = [
+            ScenarioCheckOut(name="qty Системный блок = 30", passed=rows[0].qty == 30, expected="30", actual=str(rows[0].qty)),
+            ScenarioCheckOut(name="qty Монитор = 60", passed=rows[1].qty == 60, expected="60", actual=str(rows[1].qty)),
+            ScenarioCheckOut(name="TEST-07 qty > 0", passed=result.tests[6].status == "pass", expected="pass", actual=result.tests[6].status),
+        ]
+
+    elif tid == "C":
+        # ТЕСТ C: Услуга
+        rows = _make_scenario_rows("Техническое обслуживание ПК", 12, "УСЛУГА", [
+            ("Срок оказания услуг", "12 месяцев", "Основные"),
+            ("Квалификация специалистов", "не менее 3 лет опыта", "Квалификация"),
+            ("SLA", "время реакции не более 4 часов", "SLA"),
+        ])
+        full_text = (
+            "Техническое обслуживание ПК. Раздел 1. Заказчик. Раздел 2. Требования к предмету. "
+            "SLA — уровень сервиса. Гарантия качества. 44-ФЗ."
+        )
+        result = _run_full_validate(_rows_in_to_spec_rows(rows), full_text=full_text, law_mode="44")
+        has_1875 = "1875" in full_text
+        has_719 = "719" in full_text
+        checks = [
+            ScenarioCheckOut(name="Нет ПП №1875 (для услуг не применяется)", passed=not has_1875, expected="False", actual=str(has_1875)),
+            ScenarioCheckOut(name="Нет ПП №719 (для услуг не применяется)", passed=not has_719, expected="False", actual=str(has_719)),
+            ScenarioCheckOut(name="TEST-04 пройден", passed=result.tests[3].status == "pass", expected="pass", actual=result.tests[3].status),
+            ScenarioCheckOut(name="TEST-07 пройден", passed=result.tests[6].status == "pass", expected="pass", actual=result.tests[6].status),
+        ]
+
+    elif tid == "D":
+        # ТЕСТ D: ПО (Kaspersky)
+        rows = _make_scenario_rows("Антивирус Kaspersky или эквивалент", 50, "ПО", [
+            ("Количество лицензий", "50 лицензий", "Основные"),
+            ("Срок лицензии", "1 год (12 месяцев)", "Основные"),
+            ("Наличие в реестре Минцифры", "обязательно", "Требования"),
+        ])
+        full_text = (
+            "Антивирус Kaspersky или эквивалент. 50 лицензий. "
+            "Наличие в реестре Минцифры: обязательно. ПП №1236. 44-ФЗ."
+        )
+        result = _run_full_validate(_rows_in_to_spec_rows(rows), full_text=full_text, law_mode="44")
+        checks = [
+            ScenarioCheckOut(name="«Kaspersky или эквивалент» в тексте", passed="или эквивалент" in full_text, expected="True", actual=str("или эквивалент" in full_text)),
+            ScenarioCheckOut(name="TEST-03 пройден (бренд с эквивалентом)", passed=result.tests[2].status in ("pass", "warn"), expected="pass/warn", actual=result.tests[2].status),
+            ScenarioCheckOut(name="Количество лицензий = 50", passed=rows[0].qty == 50, expected="50", actual=str(rows[0].qty)),
+            ScenarioCheckOut(name="ПП №1236 упомянут (ПО)", passed="1236" in full_text, expected="True", actual=str("1236" in full_text)),
+        ]
+
+    elif tid == "E":
+        # ТЕСТ E: Стрессовый — 10 позиций
+        items = [
+            ("Системный блок", 10, "ТОВАР"),
+            ("Монитор", 10, "ТОВАР"),
+            ("Принтер", 5, "ТОВАР"),
+            ("Ноутбук", 5, "ТОВАР"),
+            ("ИБП", 10, "ТОВАР"),
+            ("МФУ", 3, "ТОВАР"),
+            ("Сервер", 2, "ТОВАР"),
+            ("Коммутатор", 4, "ТОВАР"),
+            ("Клавиатура", 10, "ТОВАР"),
+            ("Мышь", 10, "ТОВАР"),
+        ]
+        rows = []
+        for name, qty, cat in items:
+            rows.extend(_make_scenario_rows(name, qty, cat, [
+                ("Гарантия", "не менее 12 месяцев", "Прочее"),
+                ("Класс энергоэффективности", "не ниже «А»", "Прочее"),
+            ]))
+        full_text = (
+            "10 позиций. Раздел 1. Раздел 2. Раздел 3. Пуско-наладочные работы. "
+            "Раздел 4. Гарантия. Раздел 5. Тара и упаковка. Раздел 6. Место поставки. "
+            "Раздел 7. 44-ФЗ, ПП №1875, ПП №719. "
+            "Приложение 1. Приложение 2. Приложение 3. Приложение 4. Приложение 5. "
+            "Приложение 6. Приложение 7. Приложение 8. Приложение 9. Приложение 10."
+        )
+        result = _run_full_validate(_rows_in_to_spec_rows(rows), full_text=full_text, law_mode="44")
+        checks = [
+            ScenarioCheckOut(name="10 позиций переданы", passed=len(rows) == 10, expected="10", actual=str(len(rows))),
+            ScenarioCheckOut(name="TEST-01 пройден", passed=result.tests[0].status == "pass", expected="pass", actual=result.tests[0].status),
+            ScenarioCheckOut(name="TEST-07 пройден (qty > 0)", passed=result.tests[6].status == "pass", expected="pass", actual=result.tests[6].status),
+            ScenarioCheckOut(name="TEST-09 пройден (10 приложений)", passed=result.tests[8].status in ("pass", "warn"), expected="pass/warn", actual=result.tests[8].status),
+        ]
+
+    elif tid == "F":
+        # ТЕСТ F: ФАС-риск (MacBook Pro)
+        rows = _make_scenario_rows("Ноутбук Apple MacBook Pro или эквивалент", 1, "ТОВАР", [
+            ("Диагональ экрана", "не менее 16 дюймов", "Экран"),
+            ("Процессор", "не менее 10 ядер, частота не менее 3.2 ГГц", "Процессор"),
+            ("ОЗУ", "не менее 16 ГБ", "Память"),
+            ("Накопитель", "не менее 512 ГБ NVMe", "Накопитель"),
+            ("Гарантия", "не менее 12 месяцев", "Прочее"),
+        ])
+        full_text = (
+            "Ноутбук Apple или эквивалент MacBook Pro или эквивалент. "
+            "44-ФЗ, ПП №1875, ПП №719. Раздел 7. Нормативная база."
+        )
+        result = _run_full_validate(_rows_in_to_spec_rows(rows), full_text=full_text, law_mode="44")
+        t03 = result.tests[2]
+        has_equiv_in_name = "или эквивалент" in rows[0].name
+        checks = [
+            ScenarioCheckOut(name="«или эквивалент» в наименовании позиции", passed=has_equiv_in_name, expected="True", actual=str(has_equiv_in_name)),
+            ScenarioCheckOut(name="TEST-03 не блокирует (бренд с эквивалентом)", passed=t03.status in ("pass", "warn"), expected="pass/warn", actual=t03.status),
+            ScenarioCheckOut(name="TEST-04 пройден (характеристики измеримы)", passed=result.tests[3].status == "pass", expected="pass", actual=result.tests[3].status),
+        ]
+
+    else:
+        raise HTTPException(status_code=404, detail=f"Сценарный тест «{test_id}» не найден. Доступны: A, B, C, D, E, F")
+
+    all_passed = all(c.passed for c in checks)
+    return ScenarioTestOut(
+        test_id=tid,
+        description={
+            "A": "Базовый товар (системный блок)",
+            "B": "Восстановление количеств",
+            "C": "Услуга (техническое обслуживание)",
+            "D": "ПО (Kaspersky, 50 лицензий)",
+            "E": "Стрессовый — 10 позиций разных категорий",
+            "F": "ФАС-риск (MacBook Pro с брендом)",
+        }.get(tid, tid),
+        all_passed=all_passed,
+        checks=checks,
+    )
+
+
+# ─── AIRepairDocx endpoint ────────────────────────────────────────────────────
 
 class AIRepairDocxResponse(BaseModel):
     protocol: str

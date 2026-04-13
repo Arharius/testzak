@@ -31,7 +31,9 @@ import {
   type TZDocumentSummary,
   type TZValidateResponse,
   type FullValidationResult,
+  type FixReportItem,
   validateTzFull,
+  autoFixTz,
   searchOkpd2,
   saveGeneration,
 } from '../lib/backendApi';
@@ -7578,6 +7580,9 @@ export function Workspace({ automationSettings, platformSettings, enterpriseSett
   const [pendingExportFn, setPendingExportFn] = useState<(() => void) | null>(null);
   const [fullValidationResult, setFullValidationResult] = useState<FullValidationResult | null>(null);
   const [fullValidationRunning, setFullValidationRunning] = useState(false);
+  const [fixIteration, setFixIteration] = useState(0);
+  const [isAutoFixing, setIsAutoFixing] = useState(false);
+  const [lastFixReport, setLastFixReport] = useState<FixReportItem[]>([]);
   // Автодетект: ID строки, где только что сменился тип (для подсветки)
   const [autoDetectedRow, setAutoDetectedRow] = useState<number | null>(null);
   const [focusedRowId, setFocusedRowId] = useState<number | null>(null);
@@ -10962,6 +10967,8 @@ ${hint || '- Используй детальные, проверяемые эк�
         law_mode: lawMode,
       });
       setFullValidationResult(result);
+      setFixIteration(0);
+      setLastFixReport([]);
       if (onDone) onDone(result.can_export);
     } catch (err) {
       showToast('⚠️ Не удалось выполнить проверку ТЗ', false);
@@ -10970,6 +10977,79 @@ ${hint || '- Используй детальные, проверяемые эк�
       setFullValidationRunning(false);
     }
   }, [lawMode, rows, showToast, useBackend]);
+
+  const MAX_FIX_ITERATIONS = 3;
+
+  const runAutoFix = useCallback(async () => {
+    if (!useBackend || isAutoFixing) return;
+    if (fixIteration >= MAX_FIX_ITERATIONS) {
+      showToast('⚠️ Максимум итераций исправления достигнут. Проверьте ТЗ вручную.', false);
+      return;
+    }
+    setIsAutoFixing(true);
+    const nextIteration = fixIteration + 1;
+    try {
+      const validateRows = rows.map((row) => {
+        const typeLow = (row.type || '').toLowerCase();
+        const cat = typeLow.includes('услуг') ? 'УСЛУГА'
+          : (typeLow.includes(' по') || typeLow.includes('лицензи') || typeLow.includes('software')) ? 'ПО'
+          : 'ТОВАР';
+        return {
+          name: row.model || row.type || '',
+          field: row.type || '',
+          qty: row.qty ?? 1,
+          qty_unit: 'шт.',
+          category: cat,
+          description: '',
+          specs: (row.specs || []).map((s) => ({
+            name: s.name || '',
+            value: s.value || '',
+            group: s.group || '',
+          })),
+        };
+      });
+
+      const fixResult = await autoFixTz(validateRows, {
+        law_mode: lawMode,
+        iteration: nextIteration,
+      });
+
+      // Apply fixed specs back to rows state
+      if (fixResult.fix_report.length > 0) {
+        setRows(prev => prev.map((row, idx) => {
+          const fixedRow = fixResult.rows[idx];
+          if (!fixedRow) return row;
+          const newSpecs = (fixedRow.specs || []).map((s: { name: string; value: string; group: string }) => ({
+            name: s.name,
+            value: s.value,
+            group: s.group,
+            unit: '',
+          }));
+          if (JSON.stringify(newSpecs) === JSON.stringify(row.specs)) return row;
+          return { ...row, specs: newSpecs };
+        }));
+      }
+
+      setLastFixReport(fixResult.fix_report);
+      setFixIteration(nextIteration);
+      setFullValidationResult(fixResult.validation);
+
+      const remaining = fixResult.validation.error_count;
+      if (remaining === 0) {
+        showToast(`✅ Все ошибки устранены за ${nextIteration} итераций!`, true);
+      } else if (nextIteration >= MAX_FIX_ITERATIONS) {
+        showToast(`⚠️ Итерация ${nextIteration}/${MAX_FIX_ITERATIONS}: осталось ${remaining} ошибок. Проверьте вручную.`, false);
+      } else {
+        const fixed = fixResult.fix_report.length;
+        showToast(`🔧 Итерация ${nextIteration}: исправлено ${fixed} элементов, осталось ${remaining} ошибок`, fixed > 0);
+      }
+    } catch (err) {
+      showToast('⚠️ Ошибка при авто-исправлении. Попробуйте вручную.', false);
+      console.error('AutoFix error:', err);
+    } finally {
+      setIsAutoFixing(false);
+    }
+  }, [useBackend, isAutoFixing, fixIteration, rows, lawMode, showToast, setRows]);
 
   const exportDocx = async () => {
     if (!ensurePaidFeatureAccess('Пробный период завершён. Оформите Pro Business для экспорта DOCX.')) {
@@ -12311,17 +12391,20 @@ ${hint || '- Используй детальные, проверяемые эк�
       {fullValidationResult && (
         <FullValidationPanel
           result={fullValidationResult}
-          isFixing={false}
-          onClose={() => setFullValidationResult(null)}
+          isFixing={isAutoFixing}
+          fixIteration={fixIteration}
+          maxIterations={MAX_FIX_ITERATIONS}
+          lastFixReport={lastFixReport}
+          onClose={() => {
+            setFullValidationResult(null);
+            setFixIteration(0);
+            setLastFixReport([]);
+          }}
           onProceed={async () => {
             setFullValidationResult(null);
             await exportDocx();
           }}
-          onAutoFix={() => {
-            applyAntiFasAutoFix();
-            setFullValidationResult(null);
-            showToast('🔧 Автоисправления применены. Повторите проверку.', true);
-          }}
+          onAutoFix={() => void runAutoFix()}
         />
       )}
       {showReviewPanel && (

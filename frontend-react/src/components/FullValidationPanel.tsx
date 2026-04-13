@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { FullValidationResult, FullTestResult, FullValidateIssue } from '../lib/backendApi';
+import type { FullValidationResult, FullTestResult, FullValidateIssue, FixReportItem } from '../lib/backendApi';
 
 type Props = {
   result: FullValidationResult;
@@ -7,6 +7,17 @@ type Props = {
   onProceed: () => void;
   onAutoFix: () => void;
   isFixing?: boolean;
+  fixIteration?: number;
+  maxIterations?: number;
+  lastFixReport?: FixReportItem[];
+};
+
+const ACTION_LABELS: Record<string, string> = {
+  remove_meta: 'Удалён мета-комментарий',
+  remove_banned_spec: 'Удалена запрещённая характеристика',
+  add_equivalent: 'Добавлено «или эквивалент»',
+  llm_measurable: 'Исправлено LLM (измеримость)',
+  remove_duplicate: 'Удалён дубль характеристики',
 };
 
 function statusIcon(status: FullTestResult['status']): string {
@@ -78,11 +89,7 @@ function TestRow({ test }: { test: FullTestResult }) {
   const hasIssues = test.errors.length > 0 || test.warnings.length > 0;
 
   return (
-    <div
-      style={{
-        borderBottom: '1px solid rgba(255,255,255,0.06)',
-      }}
-    >
+    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
       <div
         style={{
           display: 'grid',
@@ -129,7 +136,63 @@ function TestRow({ test }: { test: FullTestResult }) {
   );
 }
 
-export function FullValidationPanel({ result, onClose, onProceed, onAutoFix, isFixing }: Props) {
+function FixReportPanel({ items }: { items: FixReportItem[] }) {
+  const [open, setOpen] = useState(true);
+  if (items.length === 0) return null;
+
+  const byTest = items.reduce<Record<string, FixReportItem[]>>((acc, r) => {
+    (acc[r.test_id] = acc[r.test_id] || []).push(r);
+    return acc;
+  }, {});
+
+  return (
+    <div style={{
+      margin: '0 0 0 0',
+      borderTop: '1px solid rgba(74,222,128,0.2)',
+      background: 'rgba(5,46,22,0.6)',
+    }}>
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 16px', cursor: 'pointer',
+          fontSize: 12, fontWeight: 600, color: '#86efac',
+        }}
+        onClick={() => setOpen(x => !x)}
+      >
+        <span>✅ Исправлено {items.length} элементов</span>
+        <span style={{ marginLeft: 'auto', color: '#4ade80' }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && (
+        <div style={{ paddingBottom: 8 }}>
+          {Object.entries(byTest).map(([testId, fixes]) => (
+            <div key={testId} style={{ padding: '2px 16px 4px 28px' }}>
+              <div style={{ fontSize: 10, color: '#4ade80', fontWeight: 700, marginBottom: 2 }}>{testId}</div>
+              {fixes.map((f, i) => (
+                <div key={i} style={{ fontSize: 11, color: '#86efac', marginBottom: 2, lineHeight: 1.4 }}>
+                  <span style={{ color: '#4ade80', marginRight: 4 }}>›</span>
+                  {ACTION_LABELS[f.action] ?? f.action}
+                  {f.field && <span style={{ opacity: 0.7 }}> в «{f.field.split(' → ').pop()}»</span>}
+                  {f.before && f.after && (
+                    <div style={{ paddingLeft: 12, opacity: 0.7, fontSize: 10 }}>
+                      <span style={{ color: '#f87171' }}>«{f.before.slice(0, 30)}{f.before.length > 30 ? '…' : ''}»</span>
+                      {' → '}
+                      <span style={{ color: '#86efac' }}>«{f.after.slice(0, 30)}{f.after.length > 30 ? '…' : ''}»</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function FullValidationPanel({
+  result, onClose, onProceed, onAutoFix, isFixing,
+  fixIteration = 0, maxIterations = 3, lastFixReport = [],
+}: Props) {
   const hasErrors = result.error_count > 0;
   const totalTests = result.tests.filter(t => t.status !== 'skip').length;
   const passed = result.tests.filter(t => t.status === 'pass').length;
@@ -140,6 +203,8 @@ export function FullValidationPanel({ result, onClose, onProceed, onAutoFix, isF
     : result.warning_count > 0
       ? 'linear-gradient(135deg, rgba(120,53,15,0.9), rgba(146,64,14,0.85))'
       : 'linear-gradient(135deg, rgba(5,46,22,0.9), rgba(20,83,45,0.85))';
+
+  const canTryFix = hasErrors && fixIteration < maxIterations;
 
   return (
     <div
@@ -190,7 +255,7 @@ export function FullValidationPanel({ result, onClose, onProceed, onAutoFix, isF
           </div>
 
           {/* Summary bar */}
-          <div style={{ display: 'flex', gap: 20, marginTop: 14 }}>
+          <div style={{ display: 'flex', gap: 20, marginTop: 14, alignItems: 'flex-end' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 22, fontWeight: 800, color: '#f1f5f9' }}>{passed}/{totalTests}</div>
               <div style={{ fontSize: 10, color: 'rgba(241,245,249,0.6)', letterSpacing: '0.05em' }}>ПРОЙДЕНО</div>
@@ -213,8 +278,24 @@ export function FullValidationPanel({ result, onClose, onProceed, onAutoFix, isF
                 <div style={{ fontSize: 10, color: 'rgba(100,116,139,0.7)', letterSpacing: '0.05em' }}>ПРОПУЩЕНО</div>
               </div>
             )}
+            {/* Iteration badge */}
+            {fixIteration > 0 && (
+              <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                <div style={{
+                  fontSize: 11, fontWeight: 700, color: '#93c5fd',
+                  background: 'rgba(59,130,246,0.15)',
+                  borderRadius: 6, padding: '3px 10px',
+                  border: '1px solid rgba(59,130,246,0.3)',
+                }}>
+                  Итерация {fixIteration}/{maxIterations}
+                </div>
+              </div>
+            )}
           </div>
         </div>
+
+        {/* ── Fix report (after auto-fix) ── */}
+        {lastFixReport.length > 0 && <FixReportPanel items={lastFixReport} />}
 
         {/* ── Tests list ── */}
         <div style={{ overflowY: 'auto', flex: 1 }}>
@@ -231,7 +312,7 @@ export function FullValidationPanel({ result, onClose, onProceed, onAutoFix, isF
             flexShrink: 0,
           }}
         >
-          {hasErrors && (
+          {canTryFix && (
             <button
               onClick={onAutoFix}
               disabled={isFixing}
@@ -243,8 +324,24 @@ export function FullValidationPanel({ result, onClose, onProceed, onAutoFix, isF
                 cursor: isFixing ? 'not-allowed' : 'pointer',
               }}
             >
-              {isFixing ? '⏳ Исправляется...' : '🔧 Исправить автоматически'}
+              {isFixing
+                ? `⏳ Исправляется... (${fixIteration + 1}/${maxIterations})`
+                : fixIteration === 0
+                  ? '🔧 Исправить автоматически'
+                  : `🔧 Повторить исправление (${fixIteration + 1}/${maxIterations})`
+              }
             </button>
+          )}
+          {hasErrors && fixIteration >= maxIterations && (
+            <div style={{
+              flex: 1, minWidth: 160, padding: '9px 16px',
+              borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)',
+              background: 'rgba(239,68,68,0.05)',
+              color: '#f87171', fontSize: 12,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              ⚠️ Все {maxIterations} итерации выполнены — проверьте ТЗ вручную
+            </div>
           )}
           {!hasErrors && (
             <button

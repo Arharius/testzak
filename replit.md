@@ -54,6 +54,37 @@ Core differentiators: Double-Equivalent algorithm (ensures ≥2 competing manufa
 - Dynamic PORT via `os.environ.get("PORT", 8000)` for PaaS compatibility.
 - Static file serving: FastAPI mounts `static/assets/` and serves SPA fallback `index.html` for all non-API routes (only when `static/` directory exists in production build).
 
+## Master Prompt Integration (Extended — April 2026)
+Integrated the full extended master prompt (БЛОК 0–5) into the AI generation system:
+
+### БЛОК 0 — Category Detection
+- **ТОВАРЫ**: physical goods — ПП №1875 + ПП №719 apply
+- **РАБОТЫ**: works (installation, cabling, mounting) — ПП №1875 applies to materials; СНиП/ГОСТ for construction
+- **УСЛУГИ**: services (maintenance, IT support, training) — ПП №1875 does NOT apply
+- **ПО/ЛИЦЕНЗИИ**: software — only ПП №1236 (Mintsifry registry)
+- **СМЕШАННАЯ**: mixed — norms applied per position
+
+### New Catalog Types (general-catalog.ts)
+- `isWork?: boolean` — new interface flag for РАБОТЫ category
+- Services: `serviceEquipMaintenance`, `serviceITSupport`, `serviceTraining`
+- Works: `worksCabling`, `worksEquipInstall`, `otherWork` (free-text)
+- GENERAL_GROUPS: 2 new groups "🔧 Техобслуживание" and "🏗️ Работы"
+
+### New Prompt Logic (Workspace.tsx)
+- `isWork` detection from catalog flag + `isUniversalWorkType()` for `otherWork`
+- `isUniversalGoodsType` now includes `otherWork` for AI text classification
+- Works prompt block (РАЗДЕЛ 1–6): scope, execution requirements, materials (с ПП №1875), quality/acceptance, safety/permits, norms
+- Service prompt block updated to handle both universal (`otherService`) and named service types (`serviceEquipMaintenance`, etc.) — full 6-section structure
+- Regulatory matrix added to system prompt: enforces correct norm application per category
+
+### Regulatory Matrix (in system prompt)
+| Документ | ТОВАРЫ | РАБОТЫ | УСЛУГИ | ПО |
+|---|---|---|---|---|
+| 44-ФЗ | ДА | ДА | ДА | ДА |
+| ПП №1875 | ДА | ДА* | НЕТ | НЕТ |
+| ПП №1236 | НЕТ | НЕТ | НЕТ | ДА |
+| ПП №878/616/925 | УСТАРЕЛИ — НИКОГДА |
+
 ## Key Features (after refactoring)
 - **Legal OS UI**: Inter font, Deep Blue `#1e293b` theme, high-contrast data tables
 - **Double-Equivalent Algorithm**: Auto-verifies ≥2 manufacturers match each spec after generation; auto-triggers via backend AI; shows validation dashboard (`DoubleEquivalentReport`)

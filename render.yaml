@@ -16,7 +16,7 @@ services:
           name: tz-generator-db
           property: connectionString
       - key: CORS_ALLOW_ORIGINS
-        value: https://tz-gen.vercel.app,https://tz-gen.ru
+        value: https://testzak.vercel.app,https://tz-gen.vercel.app,https://tz-gen.ru
       - key: DEEPSEEK_API_KEY
         sync: false
       - key: OPENROUTER_API_KEY
@@ -36,7 +36,7 @@ services:
       - key: FROM_EMAIL
         sync: false
       - key: SITE_URL
-        value: https://tz-gen.vercel.app
+        value: https://testzak.vercel.app
       - key: YOOKASSA_SHOP_ID
         sync: false
       - key: YOOKASSA_SECRET_KEY

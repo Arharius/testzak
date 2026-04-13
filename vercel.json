@@ -6,11 +6,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://tz-generator-backend.onrender.com/api/:path*"
+      "destination": "https://testzak.onrender.com/api/:path*"
     },
     {
       "source": "/health",
-      "destination": "https://tz-generator-backend.onrender.com/health"
+      "destination": "https://testzak.onrender.com/health"
     },
     {
       "source": "/(.*)",

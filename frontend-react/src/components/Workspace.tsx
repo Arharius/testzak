@@ -9982,6 +9982,37 @@ ${hint || '- Используй детальные, проверяемые эк�
         setDocxReady(doneRows.length > 0);
         if (doneRows.length > 0) {
           setQaAutoRunKey((k) => k + 1);
+
+          // Авто-сохранение в tz_history сразу после успешной генерации
+          if (isLoggedIn()) {
+            void (async () => {
+              try {
+                const appendices = doneRows.map(r => {
+                  const g = lookupCatalog(r.type);
+                  return {
+                    position_name: r.model?.trim() || g.name,
+                    unit:          'шт',
+                    quantity:      r.qty ?? 1,
+                    okpd2_code:    r.meta?.okpd2_code || g.okpd2 || '',
+                    okpd2_name:    r.meta?.okpd2_name || g.okpd2name || '',
+                  };
+                });
+                const categoryHint = doneRows.some(r => lookupCatalog(r.type)?.isSoftware)
+                  ? 'ПО'
+                  : doneRows.some(r => isServiceCatalogType(r.type))
+                  ? 'УСЛУГА'
+                  : 'ТОВАР';
+                const token = getStoredToken();
+                await fetch('/api/tz-history/save', {
+                  method:  'POST',
+                  headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                  body:    JSON.stringify({ result_json: { meta: { category: categoryHint, law_mode: lawMode }, appendices } }),
+                });
+              } catch (e) {
+                console.warn('[TZ-History] Auto-save after generation failed:', e);
+              }
+            })();
+          }
         }
         if (doneRows.length > 0 && (useBackendAi || apiKey.trim())) {
           void runDeCheck(next);
@@ -11325,7 +11356,10 @@ ${hint || '- Используй детальные, проверяемые эк�
       }
 
       const date = new Date().toISOString().slice(0, 10);
-      const filename = `TZ_${date}.docx`;
+      const firstDone = rows.find(r => r.status === 'done');
+      const rawPosName = firstDone?.model?.trim() || lookupCatalog(firstDone?.type || '')?.name || 'ТЗ';
+      const safePosName = rawPosName.replace(/[^а-яёА-ЯЁa-zA-Z0-9 _-]/g, '').trim().slice(0, 30).replace(/\s+/g, '_');
+      const filename = `ТЗ_${safePosName}_${date}.docx`;
       const blobUrl = URL.createObjectURL(finalBlob);
       const a = document.createElement('a');
       a.href = blobUrl;

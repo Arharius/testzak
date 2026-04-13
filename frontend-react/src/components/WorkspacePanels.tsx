@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import type { TZDocumentSummary } from '../lib/backendApi';
 import type { PublicationStatusTone, ReadinessGateSummaryLike } from './workspace-panels.types';
 import { QaAuditBlock } from './QaAuditBlock';
@@ -66,6 +67,9 @@ export function WorkspaceSidePanels({
   onLoadHistoryItem,
   onDeleteHistoryItem,
 }: WorkspaceSidePanelsProps) {
+  const [totalNmck, setTotalNmck] = useState<number>(0);
+  const handleNmckTotal = useCallback((total: number) => setTotalNmck(total), []);
+
   return (
     <>
       <div className="workspace-side-card">
@@ -162,7 +166,7 @@ export function WorkspaceSidePanels({
         )}
 
         {docxReady && toolPositions.length > 0 && (
-          <EISCard positions={toolPositions} />
+          <EISCard positions={toolPositions} nmck={totalNmck > 0 ? totalNmck : null} />
         )}
       </div>
 
@@ -175,7 +179,7 @@ export function WorkspaceSidePanels({
                 <strong>Калькулятор начальной цены</strong>
               </div>
             </div>
-            <NMCKCalculator positions={toolPositions} />
+            <NMCKCalculator positions={toolPositions} onNmckTotal={handleNmckTotal} />
           </div>
 
           <div className="workspace-side-card">

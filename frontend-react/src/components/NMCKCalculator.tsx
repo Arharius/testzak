@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { buildApiUrl, getStoredToken } from '../lib/backendApi';
 
 interface NMCKPosition {
@@ -34,6 +34,7 @@ interface NMCKResult {
 
 interface NMCKCalculatorProps {
   positions: NMCKPosition[];
+  onNmckTotal?: (total: number) => void;
 }
 
 const fmt = (n?: number | null) =>
@@ -41,7 +42,7 @@ const fmt = (n?: number | null) =>
     ? new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 }).format(n)
     : '—';
 
-export function NMCKCalculator({ positions }: NMCKCalculatorProps) {
+export function NMCKCalculator({ positions, onNmckTotal }: NMCKCalculatorProps) {
   const [results, setResults] = useState<Record<number, NMCKResult>>({});
   const [loading, setLoading] = useState<Record<number, boolean>>({});
 
@@ -74,64 +75,77 @@ export function NMCKCalculator({ positions }: NMCKCalculatorProps) {
     .filter(r => r?.result?.nmck)
     .reduce((sum, r) => sum + (r.result?.nmck ?? 0), 0);
 
+  useEffect(() => {
+    if (onNmckTotal) onNmckTotal(totalNMCK);
+  }, [totalNMCK, onNmckTotal]);
+
   if (!positions.length) return null;
 
   return (
-    <div className="border border-green-200 rounded-lg bg-green-50 p-4 mt-4">
-      <h3 className="font-semibold text-green-800 mb-3 text-sm flex items-center gap-2">
+    <div style={{ border: '1px solid #bbf7d0', borderRadius: 8, background: '#f0fdf4', padding: 16, marginTop: 16 }}>
+      <h3 style={{ fontWeight: 600, color: '#166534', marginBottom: 12, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 12px 0' }}>
         <span>💰</span>
         <span>Калькулятор НМЦК (ч.1 ст.22 44-ФЗ)</span>
       </h3>
 
-      <div className="space-y-3">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {positions.map((pos, i) => {
           const res = results[i];
           return (
-            <div key={i} className="bg-white rounded border border-green-100 p-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-medium text-sm text-gray-800">{pos.name} × {pos.quantity}</span>
+            <div key={i} style={{ background: '#fff', borderRadius: 6, border: '1px solid #dcfce7', padding: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span style={{ fontWeight: 600, fontSize: 13, color: '#1e293b' }}>{pos.name} × {pos.quantity}</span>
                 <button
                   onClick={() => calculate(pos, i)}
                   disabled={loading[i]}
-                  className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 disabled:opacity-50"
+                  style={{
+                    fontSize: 12,
+                    background: loading[i] ? '#86efac' : '#16a34a',
+                    color: '#fff',
+                    padding: '4px 12px',
+                    borderRadius: 4,
+                    border: 'none',
+                    cursor: loading[i] ? 'default' : 'pointer',
+                    opacity: loading[i] ? 0.7 : 1,
+                  }}
                 >
                   {loading[i] ? 'Ищем...' : 'Рассчитать'}
                 </button>
               </div>
 
               {res && (
-                <div className="text-xs space-y-1">
+                <div style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {res.ok && res.result ? (
                     <>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">НМЦК:</span>
-                        <span className="font-bold text-green-700">{fmt(res.result.nmck)}</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#64748b' }}>НМЦК:</span>
+                        <span style={{ fontWeight: 700, color: '#15803d' }}>{fmt(res.result.nmck)}</span>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">С НДС 20%:</span>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: '#64748b' }}>С НДС 20%:</span>
                         <span>{fmt(res.result.nmck_with_vat ?? res.result.nmck * 1.2)}</span>
                       </div>
                       {res.result.nmck_range && (
-                        <div className="flex justify-between text-gray-400">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#94a3b8' }}>
                           <span>Диапазон:</span>
                           <span>{fmt(res.result.nmck_range.min)} — {fmt(res.result.nmck_range.max)}</span>
                         </div>
                       )}
                       {res.fallback && res.result.warning && (
-                        <div className="text-amber-600 mt-1 flex items-start gap-1">
+                        <div style={{ color: '#d97706', marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
                           <span>⚠️</span>
                           <span>{res.result.warning}</span>
                         </div>
                       )}
-                      <div className="text-gray-400 mt-1">
+                      <div style={{ color: '#94a3b8', marginTop: 4 }}>
                         {res.result.legal_basis || res.legal_basis}
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="text-red-500">{res.error}</div>
+                      <div style={{ color: '#dc2626' }}>{res.error}</div>
                       {res.recommendation && (
-                        <div className="text-amber-600 mt-1">💡 {res.recommendation}</div>
+                        <div style={{ color: '#d97706', marginTop: 4 }}>💡 {res.recommendation}</div>
                       )}
                     </>
                   )}
@@ -143,9 +157,9 @@ export function NMCKCalculator({ positions }: NMCKCalculatorProps) {
       </div>
 
       {totalNMCK > 0 && (
-        <div className="mt-3 pt-3 border-t border-green-200 flex justify-between items-center">
-          <span className="font-semibold text-green-800 text-sm">Итого НМЦК:</span>
-          <span className="text-lg font-bold text-green-700">{fmt(totalNMCK)}</span>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontWeight: 600, color: '#166534', fontSize: 13 }}>Итого НМЦК:</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: '#15803d' }}>{fmt(totalNMCK)}</span>
         </div>
       )}
     </div>

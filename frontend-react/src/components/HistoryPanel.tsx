@@ -60,12 +60,12 @@ export function HistoryPanel({ onRepeat }: HistoryPanelProps) {
   };
 
   if (loading) {
-    return <div className="text-gray-500 text-sm py-4 text-center">Загрузка...</div>;
+    return <div style={{ color: '#94a3b8', fontSize: 13, padding: '16px 0', textAlign: 'center' }}>Загрузка...</div>;
   }
 
   if (!items.length) {
     return (
-      <div className="text-center text-gray-400 py-8 text-sm">
+      <div style={{ textAlign: 'center', color: '#94a3b8', padding: '32px 0', fontSize: 13 }}>
         История пуста. Сгенерируйте первое ТЗ.
       </div>
     );
@@ -76,23 +76,34 @@ export function HistoryPanel({ onRepeat }: HistoryPanelProps) {
   const sorted = [...favorites, ...others];
 
   return (
-    <div className="space-y-2">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {sorted.map(item => (
         <div
           key={item.id}
-          className="bg-white border border-gray-200 rounded-lg p-3 flex items-center justify-between hover:border-blue-300 transition-colors"
+          style={{
+            background: '#fff',
+            border: '1.5px solid #e2e8f0',
+            borderRadius: 8,
+            padding: '10px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            transition: 'border-color 0.2s',
+          }}
         >
-          <div className="min-w-0 flex-1">
-            <div className="font-medium text-gray-800 text-sm truncate">{item.title}</div>
-            <div className="text-xs text-gray-400 mt-0.5">
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {item.title}
+            </div>
+            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
               {item.category} · {item.positions_count} поз. ·{' '}
               {new Date(item.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
             </div>
           </div>
-          <div className="flex items-center gap-1.5 ml-3 shrink-0">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 12, flexShrink: 0 }}>
             <button
               onClick={() => handleFavorite(item.id)}
-              className="text-base leading-none hover:scale-110 transition-transform"
+              style={{ fontSize: 16, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
               title="В избранное"
             >
               {item.is_favorite ? '⭐' : '☆'}
@@ -100,14 +111,14 @@ export function HistoryPanel({ onRepeat }: HistoryPanelProps) {
             {onRepeat && (
               <button
                 onClick={() => handleRepeat(item.id)}
-                className="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700"
+                style={{ fontSize: 11, background: '#2563eb', color: '#fff', padding: '4px 10px', borderRadius: 4, border: 'none', cursor: 'pointer' }}
               >
                 Повторить
               </button>
             )}
             <button
               onClick={() => handleDelete(item.id)}
-              className="text-xs text-red-400 hover:text-red-600"
+              style={{ fontSize: 11, color: '#f87171', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
               title="Удалить"
             >
               ✕

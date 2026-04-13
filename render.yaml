@@ -2,7 +2,7 @@ services:
   - type: web
     name: tz-generator-backend
     runtime: docker
-    dockerfilePath: backend/Dockerfile
+    dockerfilePath: Dockerfile.backend
     plan: free
     region: frankfurt
     healthCheckPath: /health

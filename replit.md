@@ -1,11 +1,13 @@
 # TZ Generator (Генератор ТЗ для госзакупок 44-ФЗ) — Программа №1 в России
 
 ## Replit Environment Setup
-- Python packages installed via `pip install` (fastapi, uvicorn, sqlalchemy, alembic, psycopg2-binary, pyjwt, python-multipart, slowapi, httpx)
-- Node packages installed via `npm install` in `frontend-react/`
-- Database: Replit PostgreSQL (DATABASE_URL set as a secret)
-- Backend runs on port 8000, Frontend runs on port 5000
+- **Modules**: nodejs-20, python-3.12, postgresql-16
+- **Node packages**: installed via `npm install` to root `node_modules` (managed by Replit); workflow uses `npm run dev --prefix frontend-react` to run from root
+- **Python packages**: installed via uv/pip to `.pythonlibs` (fastapi, uvicorn, sqlalchemy, alembic, psycopg2-binary, pyjwt, python-multipart, slowapi, httpx, apscheduler, gigachat, python-docx, aiofiles, gunicorn)
+- **Database**: Replit PostgreSQL (DATABASE_URL set as a secret)
+- **Backend** runs on port 8000, **Frontend** runs on port 5000
 - Vite proxies `/api` and `/health` to `http://localhost:8000`
+- Vite config: `host: '0.0.0.0'`, `allowedHosts: true` (required for Replit proxy)
 
 
 ## Project Overview

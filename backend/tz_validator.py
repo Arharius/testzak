@@ -183,21 +183,22 @@ _RECOMMENDED_NORMATIVE = ['ТР ТС 004', 'ТР ТС 020']
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TEST-09: обязательные разделы документа (для товаров)
+# Кортеж: (ключ, regex, метка, уровень: 'error'|'warn')
 # ─────────────────────────────────────────────────────────────────────────────
 _REQUIRED_SECTIONS_GOODS = [
-    ('Раздел 1', r'(Раздел\s*1|наименование|заказчик)', 'Раздел 1: Общие сведения'),
-    ('Раздел 2', r'(Раздел\s*2|требования к предмету|предмет закупки)', 'Раздел 2: Требования к предмету'),
-    ('Раздел 3', r'(Раздел\s*3|пуско-наладочн|пусконаладочн)', 'Раздел 3: Пуско-наладочные работы'),
-    ('Раздел 4', r'(Раздел\s*4|гарантия качества|гарантийн)', 'Раздел 4: Гарантия качества'),
-    ('Раздел 5', r'(Раздел\s*5|тара|упаковка)', 'Раздел 5: Тара и упаковка'),
-    ('Раздел 6', r'(Раздел\s*6|место.{0,30}поставк|условия поставк|срок.{0,30}поставк)', 'Раздел 6: Условия поставки'),
-    ('Раздел 7', r'(Раздел\s*7|нормативн|норматив)', 'Раздел 7: Нормативная база'),
-    ('Приложени', r'(Приложение|Приложения|Приложение\s*\d)', 'Приложения с характеристиками'),
+    ('Раздел 1', r'(Раздел\s*1|наименование|заказчик|предмет)', 'Раздел 1: Общие сведения', 'error'),
+    ('Раздел 2', r'(Раздел\s*2|требования к предмету|предмет закупки|технические требования|требования к товару)', 'Раздел 2: Требования к предмету', 'error'),
+    ('Раздел 3', r'(Раздел\s*3|пуско-наладочн|пусконаладочн|монтаж|установка)', 'Раздел 3: Пуско-наладочные работы', 'warn'),
+    ('Раздел 4', r'(Раздел\s*4|гарантия качества|гарантийн|гарантийный срок)', 'Раздел 4: Гарантия качества', 'error'),
+    ('Раздел 5', r'(Раздел\s*5|тара|упаковка)', 'Раздел 5: Тара и упаковка', 'warn'),
+    ('Раздел 6', r'(Раздел\s*6|место.{0,30}поставк|условия поставк|срок.{0,30}поставк|поставк)', 'Раздел 6: Условия поставки', 'error'),
+    ('Раздел 7', r'(Раздел\s*7|нормативн|норматив|44-ФЗ|223-ФЗ)', 'Раздел 7: Нормативная база', 'warn'),
+    ('Приложени', r'(Приложение|Приложения|Приложение\s*\d|характеристик)', 'Приложения с характеристиками', 'warn'),
 ]
 _REQUIRED_SECTIONS_SERVICE = [
-    ('Наименование', r'(Раздел\s*1|наименование|заказчик)', 'Раздел 1: Общие сведения'),
-    ('Требования', r'(Раздел\s*2|требования к предмету|предмет)', 'Раздел 2: Требования'),
-    ('Гарантия/SLA', r'(sla|гарантия|уровень сервис)', 'SLA или уровень сервиса'),
+    ('Наименование', r'(Раздел\s*1|наименование|заказчик)', 'Раздел 1: Общие сведения', 'error'),
+    ('Требования', r'(Раздел\s*2|требования к предмету|предмет)', 'Раздел 2: Требования', 'error'),
+    ('Гарантия/SLA', r'(sla|гарантия|уровень сервис)', 'SLA или уровень сервиса', 'warn'),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -228,24 +229,50 @@ _OFFICE_PC_KEYWORDS = re.compile(
 # ─────────────────────────────────────────────────────────────────────────────
 # TEST-13: единицы измерения
 # ─────────────────────────────────────────────────────────────────────────────
+# Имена характеристик, для которых проверка единиц НЕ применяется
+# (тип, количество слотов, интерфейс — не объёмы)
+_UNIT_SPEC_EXCLUSIONS: list[re.Pattern] = [
+    re.compile(r'^тип\b', re.IGNORECASE),                      # "Тип оперативной памяти"
+    re.compile(r'количество\s+слот', re.IGNORECASE),           # "Количество слотов для ОЗУ"
+    re.compile(r'^количество\b', re.IGNORECASE),               # "Количество ядер", "Количество портов"
+    re.compile(r'интерфейс', re.IGNORECASE),                   # тип интерфейса
+    re.compile(r'форм.?фактор', re.IGNORECASE),                # форм-фактор
+    re.compile(r'поколение', re.IGNORECASE),                   # поколение DDR
+    re.compile(r'стандарт', re.IGNORECASE),                    # стандарт памяти
+]
+
+# Паттерн нотации оптических приводов: "8x", "16x", "48x" — валидные единицы
+_OPT_DRIVE_SPEED_PAT = re.compile(r'\b\d+x\b', re.IGNORECASE)
+_OPT_DRIVE_SPEC_PAT = re.compile(r'(DVD|CD|Blu.?[Rr]ay|оптическ)', re.IGNORECASE)
+
+# Правила: специфичные — ПЕРВЫМИ, общие — после; только первое совпадение применяется
 _UNIT_RULES: list[tuple[re.Pattern, list[str]]] = [
-    (re.compile(r'оперативн|ОЗУ|RAM', re.IGNORECASE),                 ['ГБ', 'МБ', 'ТБ']),
-    (re.compile(r'накопитель|SSD|HDD|ПЗУ', re.IGNORECASE),            ['ГБ', 'ТБ', 'МБ']),
+    # Частоты (специфичны — до общего правила «оперативн»)
     (re.compile(r'частота.*процессора|тактовая частота', re.IGNORECASE), ['ГГц', 'МГц']),
-    (re.compile(r'частота.*памяти|memory speed', re.IGNORECASE),       ['МГц', 'ГГц']),
-    (re.compile(r'частота обновления|refresh rate', re.IGNORECASE),    ['Гц', 'Hz']),
-    (re.compile(r'диагональ', re.IGNORECASE),                          ['дюйм', '"', 'см']),
-    (re.compile(r'потребляемая мощность|TDP|блок питания', re.IGNORECASE), ['Вт', 'кВт']),
-    (re.compile(r'время отклика', re.IGNORECASE),                      ['мс']),
-    (re.compile(r'угол обзора', re.IGNORECASE),                        ['°', 'градус']),
-    (re.compile(r'яркость', re.IGNORECASE),                            ['кд/м²', 'нит', 'cd/m²']),
-    (re.compile(r'контрастность', re.IGNORECASE),                      [':1']),
-    (re.compile(r'вес|масса', re.IGNORECASE),                          ['кг', 'г']),
-    (re.compile(r'габарит|ширина|высота|глубина', re.IGNORECASE),      ['мм', 'см', 'м']),
-    (re.compile(r'гарантийный срок|гарантия', re.IGNORECASE),          ['мес', 'год', 'лет']),
-    (re.compile(r'скорость.*чтения|скорость.*записи', re.IGNORECASE),  ['МБ/с', 'ГБ/с', 'MB/s']),
-    (re.compile(r'уровень шума', re.IGNORECASE),                       ['дБ', 'дБА']),
-    (re.compile(r'температура.*эксплуатации', re.IGNORECASE),          ['°C']),
+    (re.compile(r'частота.*памяти|memory speed', re.IGNORECASE),         ['МГц', 'ГГц']),
+    (re.compile(r'частота обновления|refresh rate', re.IGNORECASE),      ['Гц', 'Hz']),
+    # Объём памяти (исключение «тип», «слот», «количество» применяется ниже)
+    (re.compile(r'оперативн|ОЗУ|RAM', re.IGNORECASE),                   ['ГБ', 'МБ', 'ТБ']),
+    (re.compile(r'накопитель|SSD|HDD|ПЗУ', re.IGNORECASE),              ['ГБ', 'ТБ', 'МБ']),
+    # Скорости оптических приводов: "8x" — валидно; для жёстких дисков — МБ/с
+    (re.compile(r'скорость.*(DVD|CD|Blu)', re.IGNORECASE),               ['x', 'МБ/с', 'ГБ/с']),
+    (re.compile(r'скорость.*чтения|скорость.*записи', re.IGNORECASE),    ['МБ/с', 'ГБ/с', 'MB/s']),
+    # Дисплей
+    (re.compile(r'диагональ', re.IGNORECASE),                            ['дюйм', '"', 'см']),
+    (re.compile(r'яркость', re.IGNORECASE),                              ['кд/м²', 'нит', 'cd/m²']),
+    (re.compile(r'контрастность', re.IGNORECASE),                        [':1']),
+    (re.compile(r'время отклика', re.IGNORECASE),                        ['мс']),
+    (re.compile(r'угол обзора', re.IGNORECASE),                          ['°', 'градус']),
+    # Питание и тепло
+    (re.compile(r'потребляемая мощность|TDP|тепловыделение', re.IGNORECASE), ['Вт', 'кВт']),
+    # Физические размеры
+    (re.compile(r'вес|масса', re.IGNORECASE),                            ['кг', 'г']),
+    (re.compile(r'габарит|ширина|высота|глубина', re.IGNORECASE),        ['мм', 'см', 'м']),
+    # Гарантия
+    (re.compile(r'гарантийный срок|гарантия', re.IGNORECASE),            ['мес', 'год', 'лет']),
+    # Шум, температура
+    (re.compile(r'уровень шума', re.IGNORECASE),                         ['дБ', 'дБА']),
+    (re.compile(r'температура.*эксплуатации', re.IGNORECASE),            ['°C']),
 ]
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -532,10 +559,13 @@ def validate_tz(
     if doc_sections or full_text:
         combined_sections = "\n".join(doc_sections) + "\n" + full_text[:8000]
         required = _REQUIRED_SECTIONS_GOODS if has_goods else _REQUIRED_SECTIONS_SERVICE
-        for _key, pat_str, label in required:
+        for _key, pat_str, label, level in required:
             pat = re.compile(pat_str, re.IGNORECASE)
             if not pat.search(combined_sections):
-                t09.fail(f"Отсутствует обязательный раздел: «{label}»")
+                if level == 'error':
+                    t09.fail(f"Отсутствует обязательный раздел: «{label}»")
+                else:
+                    t09.warn(f"Рекомендуется добавить раздел: «{label}»")
         if has_goods and rows:
             n_rows = len(rows)
             append_count = len(re.findall(r'Приложение\s*\d', combined_sections, re.IGNORECASE))
@@ -644,17 +674,27 @@ def validate_tz(
     t13 = TestResult("TEST-13", "Единицы измерения характеристик")
     for row in rows:
         for spec_name, spec_value, _grp in row.specs:
-            if not spec_value.strip() or spec_value.strip() in ('-', '—'):
+            sv = spec_value.strip()
+            if not sv or sv in ('-', '—'):
                 continue
+            # Пропустить имена характеристик, не требующих единиц (тип, кол-во слотов…)
+            if any(excl.search(spec_name) for excl in _UNIT_SPEC_EXCLUSIONS):
+                continue
+            # Проверяем только по первому совпавшему правилу (break предотвращает дубли)
             for param_pat, allowed_units in _UNIT_RULES:
-                if param_pat.search(spec_name):
-                    unit_ok = any(u.lower() in spec_value.lower() for u in allowed_units)
-                    if not unit_ok:
-                        t13.fail(
-                            f"«{spec_name}»: значение «{spec_value[:60]}» — ожидаются единицы {allowed_units}",
-                            fld=f"{row.field} → {spec_name}",
-                            autofix="fix_unit",
-                        )
+                if not param_pat.search(spec_name):
+                    continue
+                # Для DVD/CD приводов нотация «8x» считается валидной
+                if _OPT_DRIVE_SPEC_PAT.search(spec_name) and _OPT_DRIVE_SPEED_PAT.search(sv):
+                    break
+                unit_ok = any(u.lower() in sv.lower() for u in allowed_units)
+                if not unit_ok:
+                    t13.fail(
+                        f"«{spec_name}»: значение «{sv[:60]}» — ожидаются единицы {allowed_units}",
+                        fld=f"{row.field} → {spec_name}",
+                        autofix="fix_unit",
+                    )
+                break  # применяем только первое совпавшее правило
     results.append(t13)
 
     # ── TEST-14 ────────────────────────────────────────────────────────────
@@ -897,6 +937,29 @@ def auto_fix_specs(
                     seen_idx[key] = len(dedup_specs)
                     dedup_specs.append((sn, sv, sg))
             specs = dedup_specs
+
+        # ── TEST-13: добавить пропущенные единицы к числовым значениям ──────
+        if "TEST-13" in failed_ids:
+            unit_fixed_specs: list[tuple[str, str, str]] = []
+            for sn, sv, sg in specs:
+                new_v = sv
+                # Пропускаем исключения (тип, кол-во слотов и т.п.)
+                if not any(excl.search(sn) for excl in _UNIT_SPEC_EXCLUSIONS):
+                    for param_pat, allowed_units in _UNIT_RULES:
+                        if not param_pat.search(sn):
+                            continue
+                        unit_ok = any(u.lower() in sv.lower() for u in allowed_units)
+                        if not unit_ok and re.search(r'\d\s*$', sv.strip()):
+                            # Значение заканчивается числом — добавляем первую подходящую единицу
+                            unit_to_add = allowed_units[0]
+                            new_v = sv.strip() + ' ' + unit_to_add
+                            reports.append(FixReport(
+                                "TEST-13", f"{row.field} → {sn}",
+                                "fix_qty_unit", sv[:80], new_v[:80],
+                            ))
+                        break
+                unit_fixed_specs.append((sn, new_v, sg))
+            specs = unit_fixed_specs
 
         # ── TEST-07: исправить некорректные количества / единицы ─────────────
         fixed_qty = row.qty

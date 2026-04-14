@@ -725,7 +725,6 @@ export function App() {
               <div className="micro-label">Авторизация</div>
               <h3>{loginMode === 'password' ? 'Вход по логину' : 'Вход по ссылке в email'}</h3>
             </div>
-            <span className="auth-popover-mark">DeepSeek</span>
           </div>
 
           {/* Mode switcher */}
@@ -831,15 +830,6 @@ export function App() {
               </p>
             </>
           )}
-          <div className="auth-pro-box">
-            <div className="micro-label">Pro доступ</div>
-            <strong>Pro Business — 29 900 &#x20bd;/мес за компанию</strong><br />
-            &bull; Безлимитные ТЗ<br />
-            &bull; Поиск в интернете (реальные характеристики)<br />
-            &bull; Поиск в ЕИС (готовые ТЗ из zakupki.gov.ru)<br />
-            &bull; Не нужен собственный API-ключ<br />
-            &bull; Новым аккаунтам — 14 дней полного trial
-          </div>
         </div>
       )}
 
@@ -1094,36 +1084,65 @@ export function App() {
         </div>
       </section>
 
-      <section style={{ maxWidth: 760, margin: '0 auto', padding: '48px 24px' }} aria-label="Тарифы">
-        <h2 style={{ textAlign: 'center', fontSize: 22, fontWeight: 700, color: '#1e293b', marginBottom: 32 }}>Тарифы</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20 }}>
-          <div style={{ borderRadius: 16, padding: 28, border: '2px solid #e2e8f0', background: '#fff' }}>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>Бесплатно</div>
-            <div style={{ marginBottom: 20 }}><span style={{ fontSize: 30, fontWeight: 700, color: '#1e293b' }}>0 ₽</span></div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {['3 генерации в месяц', 'Скачать DOCX', 'Шпаргалка ЕИС'].map((f, j) => (
-                <li key={j} style={{ fontSize: 14, color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: '#22c55e' }}>✓</span> {f}
+      <section style={{ maxWidth: 900, margin: '0 auto', padding: '48px 24px' }} aria-label="Тарифы">
+        <h2 style={{ textAlign: 'center', fontSize: 22, fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>Тарифы</h2>
+        <p style={{ textAlign: 'center', color: '#64748b', marginBottom: 32, fontSize: 15 }}>Начните бесплатно — 3 ТЗ без карты</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+          <div style={{ borderRadius: 16, padding: 24, border: '2px solid #e2e8f0', background: '#fff' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>Пробный</div>
+            <div style={{ marginBottom: 16 }}><span style={{ fontSize: 28, fontWeight: 700, color: '#1e293b' }}>0 ₽</span></div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {['3 ТЗ бесплатно', 'Все функции разблокированы', 'Скачать DOCX', 'Без карты'].map((f, j) => (
+                <li key={j} style={{ fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#22c55e', fontWeight: 700 }}>✓</span> {f}
                 </li>
               ))}
             </ul>
-            <button onClick={() => setShowLogin(true)} style={{ width: '100%', padding: '12px 0', borderRadius: 8, background: '#f1f5f9', color: '#374151', border: 'none', fontWeight: 600, cursor: 'pointer', fontSize: 15 }}>
+            <button onClick={() => setShowLogin(true)} style={{ width: '100%', padding: '11px 0', borderRadius: 8, background: '#f1f5f9', color: '#374151', border: 'none', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>
               Начать бесплатно
             </button>
           </div>
-          <div style={{ borderRadius: 16, padding: 28, border: '2px solid #2563eb', background: '#eff6ff' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Популярный</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#1e293b', marginBottom: 8 }}>Профессионал</div>
-            <div style={{ marginBottom: 20 }}><span style={{ fontSize: 30, fontWeight: 700, color: '#1e293b' }}>3 500 ₽</span><span style={{ color: '#64748b', fontSize: 14 }}> / месяц</span></div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 24px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {['Неограниченные генерации', 'История и повтор ТЗ', 'Шаблоны КТРУ', 'Расчёт НМЦК', 'Проверка рисков ФАС', 'Приоритетная поддержка'].map((f, j) => (
-                <li key={j} style={{ fontSize: 14, color: '#1e40af', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: '#22c55e' }}>✓</span> {f}
+          <div style={{ borderRadius: 16, padding: 24, border: '2px solid #e2e8f0', background: '#fff' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>Старт</div>
+            <div style={{ marginBottom: 16 }}><span style={{ fontSize: 28, fontWeight: 700, color: '#1e293b' }}>1 900 ₽</span><span style={{ color: '#64748b', fontSize: 13 }}> / мес</span></div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {['15 ТЗ в месяц', 'Загрузка DOCX / XLSX', 'История ТЗ', 'AI-генерация по 44-ФЗ / 223-ФЗ'].map((f, j) => (
+                <li key={j} style={{ fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#22c55e', fontWeight: 700 }}>✓</span> {f}
                 </li>
               ))}
             </ul>
-            <button onClick={() => { setShowPricing(true); trackGoal('pricing_click', { plan: 'professional' }); }} style={{ width: '100%', padding: '12px 0', borderRadius: 8, background: '#2563eb', color: '#fff', border: 'none', fontWeight: 600, cursor: 'pointer', fontSize: 15 }}>
+            <button onClick={() => { setShowPricing(true); trackGoal('pricing_click', { plan: 'start' }); }} style={{ width: '100%', padding: '11px 0', borderRadius: 8, background: '#f1f5f9', color: '#374151', border: 'none', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>
+              Выбрать
+            </button>
+          </div>
+          <div style={{ borderRadius: 16, padding: 24, border: '2px solid #2563eb', background: '#eff6ff', position: 'relative' }}>
+            <div style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', background: '#2563eb', color: '#fff', fontSize: 11, fontWeight: 700, padding: '3px 14px', borderRadius: 20, whiteSpace: 'nowrap' }}>Популярный</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#2563eb', marginBottom: 6 }}>Базовый</div>
+            <div style={{ marginBottom: 16 }}><span style={{ fontSize: 28, fontWeight: 700, color: '#1e293b' }}>4 900 ₽</span><span style={{ color: '#64748b', fontSize: 13 }}> / мес</span></div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {['50 ТЗ в месяц', 'Автопоиск характеристик', 'Аудит ТЗ по 9 критериям', 'AI-исправление загруженного ТЗ', 'DeepSeek + OpenRouter'].map((f, j) => (
+                <li key={j} style={{ fontSize: 13, color: '#1e40af', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#22c55e', fontWeight: 700 }}>✓</span> {f}
+                </li>
+              ))}
+            </ul>
+            <button onClick={() => { setShowPricing(true); trackGoal('pricing_click', { plan: 'base' }); }} style={{ width: '100%', padding: '11px 0', borderRadius: 8, background: '#2563eb', color: '#fff', border: 'none', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>
               Подключить
+            </button>
+          </div>
+          <div style={{ borderRadius: 16, padding: 24, border: '2px solid #e2e8f0', background: '#fff' }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#64748b', marginBottom: 6 }}>Команда</div>
+            <div style={{ marginBottom: 16 }}><span style={{ fontSize: 28, fontWeight: 700, color: '#1e293b' }}>12 900 ₽</span><span style={{ color: '#64748b', fontSize: 13 }}> / мес</span></div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 20px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {['Безлимит ТЗ', 'До 5 пользователей', 'Все функции', 'Выделенная поддержка'].map((f, j) => (
+                <li key={j} style={{ fontSize: 13, color: '#64748b', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#22c55e', fontWeight: 700 }}>✓</span> {f}
+                </li>
+              ))}
+            </ul>
+            <button onClick={() => { setShowPricing(true); trackGoal('pricing_click', { plan: 'team' }); }} style={{ width: '100%', padding: '11px 0', borderRadius: 8, background: '#f1f5f9', color: '#374151', border: 'none', fontWeight: 600, cursor: 'pointer', fontSize: 14 }}>
+              Выбрать
             </button>
           </div>
         </div>

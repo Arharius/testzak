@@ -3555,6 +3555,7 @@ from tz_validator import (
     validate_tz as _run_full_validate,
     auto_fix_specs as _auto_fix_specs,
     fix_normative_text as _fix_normative_text,
+    fix_brands_in_text as _fix_brands_in_text,
     SpecRow,
     FixReport as _FixReport,
 )
@@ -3826,11 +3827,16 @@ def auto_fix_tz(req: AutoFixRequest):
     else:
         normative_reports = []
 
+    # ── TEST-03: добавить «или эквивалент» после брендов в full_text ─────────
+    brand_text_reports: list[_FixReport] = []
+    if "TEST-03" in failed_ids and fixed_full_text:
+        fixed_full_text, brand_text_reports = _fix_brands_in_text(fixed_full_text)
+
     # ── Применяем детерминированные фиксы ────────────────────────────────────
     fixed_spec_rows, fix_reports = _auto_fix_specs(
         spec_rows, validate_result.tests, llm_fixes
     )
-    fix_reports = normative_reports + fix_reports
+    fix_reports = normative_reports + brand_text_reports + fix_reports
 
     # ── Преобразуем обратно в FullValidateRowIn ───────────────────────────────
     fixed_rows_out: list[FullValidateRowIn] = []

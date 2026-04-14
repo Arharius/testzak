@@ -205,11 +205,30 @@ def sync_user_entitlements(user: User) -> bool:
         user.role = "admin"
         changed = True
 
-    # Keep unlimited for admin/pro, standardize free trial limit for free users.
-    if user.role in {"admin", "pro"}:
+    # Sync role/limits based on plan:
+    # - admin always gets unlimited (-1)
+    # - pro with unlimited plans (team/corp/pilot) get -1
+    # - pro with limited plans (start/base) keep their stored tz_limit
+    # - free users get TRIAL_TZ_COUNT
+    plan = (getattr(user, "plan", None) or "").lower().strip()
+    unlimited_plans = {"team", "corp", "pilot", "admin"}
+
+    if user.role == "admin":
         if user.tz_limit != -1:
             user.tz_limit = -1
             changed = True
+    elif user.role == "pro":
+        if plan in unlimited_plans:
+            if user.tz_limit != -1:
+                user.tz_limit = -1
+                changed = True
+        elif plan in PLAN_TZ_LIMITS and PLAN_TZ_LIMITS[plan] is not None:
+            # Respect plan-specific limit — don't override what admin PATCH set
+            expected = PLAN_TZ_LIMITS[plan]
+            if user.tz_limit != expected:
+                user.tz_limit = expected
+                changed = True
+        # If plan unknown or limit already correct, leave as is
     else:
         # Free user — set limit to trial count (enforced via tz_count check)
         desired_limit = TRIAL_TZ_COUNT

@@ -7,11 +7,12 @@ import { GOODS_CATALOG } from '../data/goods-catalog';
  * - same-origin API on Netlify via /api/* proxy redirects
  */
 
-const CURRENT_BACKEND_URL = 'https://tz-generator.onrender.com';
+const CURRENT_BACKEND_URL = 'https://tz-generator-backend.onrender.com';
 const DEPRECATED_BACKEND_URLS = new Set([
   'https://backend-production-3b942.up.railway.app',
   'https://backend-production-f736.up.railway.app',
   'https://archibald123-tz-generator-backend.hf.space',
+  'https://tz-generator.onrender.com',
 ]);
 
 function normalizeBackendUrl(value: string): string {
@@ -22,7 +23,7 @@ function normalizeBackendUrl(value: string): string {
 }
 
 // If VITE_BACKEND_URL is empty, requests go to same-origin (/api/...) which
-// allows Netlify/Replit to proxy API calls to the backend service.
+// allows Vercel/Netlify/Replit to proxy API calls to the backend service.
 // NOTE: Vite only replaces `import.meta.env.VITE_*` statically — dynamic access won't work.
 export const BACKEND_URL = normalizeBackendUrl(String(import.meta.env.VITE_BACKEND_URL || ''));
 const NON_LATIN1_RE = /[^\x00-\xff]/;
@@ -32,16 +33,13 @@ function shouldUseSameOriginApi(): boolean {
   const host = String(window.location.hostname || '').toLowerCase();
   if (host === 'localhost' || host === '127.0.0.1') return true;
   if (host.endsWith('.replit.dev') || host.endsWith('.repl.co') || host.endsWith('.janeway.replit.dev')) return true;
+  // Vercel и GitHub Pages используют свой proxy (/api/* → Render), относительные URL
+  if (host.endsWith('.vercel.app') || host.endsWith('.github.io')) return true;
   return false;
 }
 
 function getRuntimeBackendUrl(): string {
   if (BACKEND_URL) return BACKEND_URL;
-  if (typeof window === 'undefined') return '';
-  const host = String(window.location.hostname || '').toLowerCase();
-  if (host.endsWith('.vercel.app') || host.endsWith('.github.io')) {
-    return CURRENT_BACKEND_URL;
-  }
   return '';
 }
 

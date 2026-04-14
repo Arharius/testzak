@@ -5293,12 +5293,17 @@ function getDetailedSpecHint(type: string): string {
 }
 
 const SIMPLE_SUPPLY_TYPES = new Set([
-  'flashDrive', 'dvd', 'patchCord', 'fiberCable', 'hdmiCable', 'powerCable', 'cartridge', 'paper', 'toner', 'drum',
+  'flashDrive', 'dvd', 'cdr', 'cdrw', 'dvdr', 'dvdrw', 'bdr', 'ltoTape', 'ltoCleaningCartridge',
+  'patchCord', 'fiberCable', 'hdmiCable', 'powerCable', 'cartridge', 'paper', 'toner', 'drum',
   'battery', 'batteryLithium', 'thermalPaste', 'cleaningSet', 'usbCable', 'labelTape', 'mousePad', 'shredderOil',
   'presentationClicker', 'rj45Connector', 'keystoneJack', 'networkSocket', 'rj45Coupler', 'fiberPatchCord',
   'fiberPigtail', 'spliceTray', 'discCase', 'discSleeve', 'audioCable', 'serialCable', 'consoleCable',
   'usbAdapter', 'surgeProtector', 'extensionCord', 'plugAdapter', 'electricalTape', 'heatShrinkTube',
   'solderWire', 'cableTie', 'cableChannel', 'thermalPaper', 'wasteToner',
+]);
+const CONSUMABLE_MEDIA_TYPES = new Set([
+  'dvd', 'cdr', 'cdrw', 'dvdr', 'dvdrw', 'bdr', 'ltoTape', 'ltoCleaningCartridge',
+  'paper', 'toner', 'drum', 'cartridge', 'wasteToner', 'thermalPaper',
 ]);
 
 const COMPUTE_HW_TYPES = new Set([
@@ -5456,6 +5461,7 @@ function buildCatalogTemplateFallback(row: GoodsRow): { specs: SpecItem[]; meta:
 }
 
 function getTypeFamilyMinimum(row: GoodsRow): number {
+  if (CONSUMABLE_MEDIA_TYPES.has(row.type)) return 5;
   if (SIMPLE_SUPPLY_TYPES.has(row.type)) return 24;
   if (ACCESSORY_TYPES.has(row.type)) return 28;
   if (DISPLAY_AV_TYPES.has(row.type) || NETWORK_INFRA_TYPES.has(row.type) || COMPUTE_HW_TYPES.has(row.type) || STORAGE_COMPONENT_TYPES.has(row.type) || PRINT_DOC_TYPES.has(row.type)) {

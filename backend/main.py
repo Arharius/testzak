@@ -1435,7 +1435,23 @@ PLAN_PRICES = {
         "days": 30,
         "role": "starter",
     },
+    "start": {
+        "amount": "1900.00",
+        "currency": "RUB",
+        "label": "Старт — 15 ТЗ",
+        "tz_limit": 15,
+        "days": 30,
+        "role": "starter",
+    },
     "pro": {
+        "amount": "4900.00",
+        "currency": "RUB",
+        "label": "Базовый — 50 ТЗ",
+        "tz_limit": 50,
+        "days": 30,
+        "role": "pro",
+    },
+    "base": {
         "amount": "4900.00",
         "currency": "RUB",
         "label": "Базовый — 50 ТЗ",
@@ -1447,6 +1463,22 @@ PLAN_PRICES = {
         "amount": "12900.00",
         "currency": "RUB",
         "label": "Команда — безлимит",
+        "tz_limit": -1,
+        "days": 30,
+        "role": "annual",
+    },
+    "team": {
+        "amount": "12900.00",
+        "currency": "RUB",
+        "label": "Команда — безлимит",
+        "tz_limit": -1,
+        "days": 30,
+        "role": "annual",
+    },
+    "corp": {
+        "amount": "35000.00",
+        "currency": "RUB",
+        "label": "Корпоратив — безлимит",
         "tz_limit": -1,
         "days": 30,
         "role": "annual",
@@ -2171,6 +2203,9 @@ class UpdatePlanRequest(BaseModel):
     plan: str
     months: int = 1
 
+class SetTzCountRequest(BaseModel):
+    tz_count: int
+
 
 def _user_to_admin_dict(u: User) -> dict:
     """Serialize a User row for the admin API."""
@@ -2182,6 +2217,8 @@ def _user_to_admin_dict(u: User) -> dict:
         "name": u.username or "",
         "plan": u.plan or "trial",
         "role": u.role or "free",
+        "tz_count": u.tz_count or 0,
+        "tz_limit": u.tz_limit,
         "trial_tz_used": u.tz_count or 0,
         "trial_expires_at": trial_ends.isoformat() if trial_ends else None,
         "subscription_expires_at": sub_until.isoformat() if sub_until else None,
@@ -2260,6 +2297,26 @@ def admin_update_user_plan(
             },
             user_id=target.id,
         )
+    return _user_to_admin_dict(target)
+
+
+@app.patch("/api/admin/users/{user_id}/count")
+def admin_set_tz_count(
+    user_id: str,
+    req: SetTzCountRequest,
+    admin: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Admin: directly set tz_count for a user (for testing and manual correction)."""
+    if admin.role != "admin":
+        raise HTTPException(status_code=403, detail="Требуются права администратора")
+    target = db.query(User).filter_by(id=user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if req.tz_count < 0:
+        raise HTTPException(status_code=400, detail="tz_count не может быть отрицательным")
+    target.tz_count = req.tz_count
+    db.commit()
     return _user_to_admin_dict(target)
 
 
@@ -2580,7 +2637,7 @@ async def search_debug(q: str = "HP ProBook 450 G10", admin: User = Depends(get_
 def payment_create(request: Request, req: PaymentCreateRequest, user: User = Depends(get_current_user)):
     plan = req.plan.strip().lower()
     if plan not in PLAN_PRICES:
-        raise HTTPException(status_code=400, detail="Неверный план. Доступно: starter, pro, annual")
+        raise HTTPException(status_code=400, detail="Неверный план. Доступно: start, base, team, corp")
     info = PLAN_PRICES[plan]
     return_url = req.return_url or YOOKASSA_RETURN_URL
     metadata = {"user_email": user.email, "plan": plan}

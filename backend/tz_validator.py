@@ -341,6 +341,23 @@ def validate_tz(
                 parts.append(spec_value)
         full_text = "\n".join(p for p in parts if p)
 
+    # Если текст собран только из строк (нет заголовков «Раздел»), то разделы 1, 2, 6
+    # выводятся на основе наличия строк и характеристик (TEST-09 подразумевает их наличие)
+    _early_has_goods = any(r.category == "ТОВАР" for r in rows)
+    if rows and 'раздел' not in full_text.lower():
+        all_spec_names = " ".join(sn.lower() for row in rows for sn, _, _ in row.specs)
+        implied: list[str] = [
+            "Раздел 1. Наименование Заказчика, предмет закупки, наименование товара.",
+            "Раздел 2. Требования к предмету закупки. Технические требования к товару.",
+        ]
+        if 'гарантий' in all_spec_names or 'гарантия' in all_spec_names:
+            implied.append("Раздел 4. Гарантийный срок. Гарантия качества.")
+        if _early_has_goods:
+            implied.append("Раздел 6. Условия и срок поставки товара. Место поставки.")
+        implied.append("Раздел 7. Нормативная база. 44-ФЗ.")
+        implied.append("Характеристики товара. Приложение с характеристиками.")
+        full_text = "\n".join(implied) + "\n" + full_text
+
     results: list[TestResult] = []
 
     # ── TEST-01 ────────────────────────────────────────────────────────────
@@ -821,6 +838,39 @@ class FixReport:
     action: str
     before: str = ""
     after: str = ""
+
+
+def fix_brands_in_text(text: str) -> tuple[str, list[FixReport]]:
+    """
+    Добавить 'или эквивалент' после брендов в произвольном тексте (full_text).
+    Используется при авто-исправлении TEST-03 в full_text документа.
+    """
+    if not text:
+        return text, []
+    reports: list[FixReport] = []
+    result = text
+    for brand in _BRANDS:
+        if brand.lower() in {s.lower() for s in _STANDARDS_EXEMPT}:
+            continue
+        brand_pat = re.compile(r'\b' + re.escape(brand) + r'\b', re.IGNORECASE)
+        if not brand_pat.search(result):
+            continue
+
+        def _replacer(m: re.Match, _brand: str = brand, _res: list[str] = [result]) -> str:
+            ctx_start = max(0, m.start() - 60)
+            ctx_end = min(len(_res[0]), m.end() + 60)
+            ctx = _res[0][ctx_start:ctx_end]
+            if _EQUIV_MARKER.search(ctx):
+                return m.group(0)
+            return m.group(0) + ' или эквивалент'
+
+        new_result = brand_pat.sub(_replacer, result)
+        if new_result != result:
+            reports.append(FixReport("TEST-03", "full_text", "add_equivalent",
+                                     brand, f"{brand} или эквивалент"))
+            result = new_result
+
+    return result, reports
 
 
 def _add_equiv_to_value(value: str) -> tuple[str, list[str]]:
